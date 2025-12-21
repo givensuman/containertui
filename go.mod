@@ -1,4 +1,4 @@
-module github.com/givensuman/dockertui
+module github.com/givensuman/oci-tui
 
 go 1.25.5
 

@@ -1,7 +1,8 @@
 <div align="center">
-  <img alt="dockertui logo" src="./assets/logo.png" />
-  <h1>dockertui</h1>
+  <img alt="oci-tui logo" src="./assets/logo.png" />
 </div>
+
+<br />
 
 A terminal-based user interface (TUI) for managing container lifecycles, built on [Moby](https://github.com/moby/moby) and powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and excessive coffee consumption.
 
