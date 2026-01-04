@@ -32,11 +32,12 @@ type Item struct {
 func (i Item) FilterValue() string {
 	return i.Name
 }
+var _ list.Item = Item{}
 
-func (i Item) Title() string {
-	selectedIcon := ""
+func (i *Item) Title() string {
+	selectedIcon := "[ ]"
 	if i.Selected {
-		selectedIcon = selectedItemStyle.Render("")
+		selectedIcon = selectedItemStyle.Render("[x]")
 	}
 
 	stateIcon := "⏸︎"
@@ -58,7 +59,7 @@ func (i Item) Title() string {
 	return fmt.Sprintf("%s %s", selectedIcon, sTitle)
 }
 
-func (i Item) Description() string {
+func (i *Item) Description() string {
 	return fmt.Sprintf("   %s - %s", i.Image, i.State)
 }
 
@@ -133,27 +134,25 @@ func NewList() list.Model {
 }
 
 type ListModel struct {
-	selectedContainers map[string]int
-	list               list.Model
-	keys               *listKeyMap
+	list list.Model
+	keys *listKeyMap
 }
 
 func (lm ListModel) Init() tea.Cmd {
 	return nil
 }
 
-func (lm ListModel) getSelectedContainers() ([]string, []int) {
-	var containerIDs []string
-	var indexes []int
-	for id, index := range lm.selectedContainers {
-		containerIDs = append(containerIDs, id)
-		indexes = append(indexes, index)
+func (lm ListModel) getSelectedItems() ([]Item, []int) {
+	var selected []Item
+	var indices []int
+	items := lm.list.Items()
+	for i, item := range items {
+		if it, ok := item.(Item); ok && it.Selected {
+			selected = append(selected, it)
+			indices = append(indices, i)
+		}
 	}
-	return containerIDs, indexes
-}
-
-func (lm ListModel) getSelectedContainerSize() int {
-	return len(lm.selectedContainers)
+	return selected, indices
 }
 
 func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
@@ -171,22 +170,21 @@ func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 			selectedItem, ok := lm.list.SelectedItem().(Item)
 			if ok {
 				selectedItem.Selected = !selectedItem.Selected
-				_, keyExist := lm.selectedContainers[selectedItem.ID]
-				if keyExist {
-					delete(lm.selectedContainers, selectedItem.ID)
-				} else {
-					lm.selectedContainers[selectedItem.ID] = lm.list.Index()
-				}
 				lm.list.SetItem(lm.list.Index(), selectedItem)
 			}
 
-		case key.Matches(msg, lm.keys.pauseContainer):
-			selectedCount := lm.getSelectedContainerSize()
+			return lm, nil
 
-			if selectedCount > 0 {
-				// pause seleted container
-				selectedIDs, selectedIndexes := lm.getSelectedContainers()
-				context.GetClient().PauseContainers(selectedIDs)
+		case key.Matches(msg, lm.keys.pauseContainer):
+			selectedItems, selectedIndexes := lm.getSelectedItems()
+
+			if len(selectedItems) > 0 {
+				// pause selected containers
+				var ids []string
+				for _, it := range selectedItems {
+					ids = append(ids, it.ID)
+				}
+				context.GetClient().PauseContainers(ids)
 				items := lm.list.Items()
 				for _, index := range selectedIndexes {
 					curItem := items[index].(Item)
@@ -203,14 +201,18 @@ func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 				}
 			}
 
+			return lm, nil
+
 		case key.Matches(msg, lm.keys.unpauseContainer):
+			selectedItems, selectedIndexes := lm.getSelectedItems()
 
-			selectedCount := lm.getSelectedContainerSize()
-
-			if selectedCount > 0 {
-				// unpause seleted container
-				selectedIDs, selectedIndexes := lm.getSelectedContainers()
-				context.GetClient().UnpauseContainers(selectedIDs)
+			if len(selectedItems) > 0 {
+				// unpause selected containers
+				var ids []string
+				for _, it := range selectedItems {
+					ids = append(ids, it.ID)
+				}
+				context.GetClient().UnpauseContainers(ids)
 				items := lm.list.Items()
 				for _, index := range selectedIndexes {
 					curItem := items[index].(Item)
@@ -228,13 +230,18 @@ func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 
 			}
 
-		case key.Matches(msg, lm.keys.startContainer):
-			selectedCount := lm.getSelectedContainerSize()
+			return lm, nil
 
-			if selectedCount > 0 {
-				// start seleted container
-				selectedIDs, selectedIndexes := lm.getSelectedContainers()
-				context.GetClient().StartContainers(selectedIDs)
+		case key.Matches(msg, lm.keys.startContainer):
+			selectedItems, selectedIndexes := lm.getSelectedItems()
+
+			if len(selectedItems) > 0 {
+				// start selected containers
+				var ids []string
+				for _, it := range selectedItems {
+					ids = append(ids, it.ID)
+				}
+				context.GetClient().StartContainers(ids)
 				items := lm.list.Items()
 				for _, index := range selectedIndexes {
 					curItem := items[index].(Item)
@@ -251,13 +258,18 @@ func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 				}
 			}
 
-		case key.Matches(msg, lm.keys.stopContainer):
-			selectedCount := lm.getSelectedContainerSize()
+			return lm, nil
 
-			if selectedCount > 0 {
-				// stop seleted container
-				selectedIDs, selectedIndexes := lm.getSelectedContainers()
-				context.GetClient().StopContainers(selectedIDs)
+		case key.Matches(msg, lm.keys.stopContainer):
+			selectedItems, selectedIndexes := lm.getSelectedItems()
+
+			if len(selectedItems) > 0 {
+				// stop selected containers
+				var ids []string
+				for _, it := range selectedItems {
+					ids = append(ids, it.ID)
+				}
+				context.GetClient().StopContainers(ids)
 				items := lm.list.Items()
 				for _, index := range selectedIndexes {
 					curItem := items[index].(Item)
@@ -274,12 +286,12 @@ func (lm ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 				}
 			}
 
+			return lm, nil
 		}
 
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		lm.list.SetSize(msg.Width-h, msg.Height-v)
-
 	}
 
 	var cmd tea.Cmd

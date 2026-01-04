@@ -5,14 +5,16 @@ import (
 	"sync"
 
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/config"
 )
 
 var (
 	clientInstance *client.ClientWrapper
-	once     sync.Once
+	configInstance *config.Config
+	once           sync.Once
 )
 
-func Init() {
+func InitializeClient() {
 	once.Do(func() {
 		clientInstance = client.NewClient()
 	})
@@ -21,6 +23,16 @@ func Init() {
 // GetClient returns the shared client instance.
 func GetClient() *client.ClientWrapper {
 	return clientInstance
+}
+
+// SetConfig sets the shared config instance.
+func SetConfig(cfg *config.Config) {
+	configInstance = cfg
+}
+
+// GetConfig returns the shared config instance.
+func GetConfig() *config.Config {
+	return configInstance
 }
 
 // CloseClient closes the shared client instance.

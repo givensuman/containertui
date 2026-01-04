@@ -41,9 +41,8 @@ func Start() {
 		}
 	}
 	lm := ListModel{
-		selectedContainers: make(map[string]int),
-		list:               l,
-		keys:               listKeys,
+		list: l,
+		keys: listKeys,
 	}
 	m := Model{
 		listModel: lm,
