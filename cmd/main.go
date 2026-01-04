@@ -24,6 +24,8 @@ func main() {
 				if err != nil {
 					return err
 				}
+			} else {
+				cfg = config.DefaultConfig()
 			}
 
 			if noNerdFonts {

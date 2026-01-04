@@ -6,6 +6,11 @@ import (
 	"github.com/givensuman/containertui/internal/context"
 )
 
+// ListModel wraps the bubbles list model.
+type ListModel struct {
+	list list.Model
+}
+
 // NewListModel creates a new list model for containers.
 func NewListModel() ListModel {
 	// Get containers from client
@@ -14,7 +19,7 @@ func NewListModel() ListModel {
 
 	items := make([]list.Item, len(containers))
 	for i, c := range containers {
-		items[i] = ContainerItem{container: c}
+		items[i] = NewContainerItem(c)
 	}
 
 	width, height := context.GetWindowSize()
