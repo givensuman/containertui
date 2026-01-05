@@ -20,7 +20,7 @@ type ColorConfig struct {
 
 // Config holds the application configuration.
 type Config struct {
-	NoNerdFonts ConfigBool        `yaml:"no-nerd-fonts"`
+	NoNerdFonts ConfigBool  `yaml:"no-nerd-fonts"`
 	Colors      ColorConfig `yaml:"colors,omitempty"`
 }
 

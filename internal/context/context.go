@@ -16,8 +16,8 @@ var (
 	// Configuration file/runtime instance
 	configInstance *config.Config
 	// Window width and height
-	windowSize     WindowSize
-	once           sync.Once
+	windowSize WindowSize
+	once       sync.Once
 )
 
 // InitializeClient initializes the shared client instance.

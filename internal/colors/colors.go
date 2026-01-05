@@ -96,4 +96,3 @@ func Primary() lipgloss.Color {
 	}
 	return Blue() // Default to blue for primary
 }
-
