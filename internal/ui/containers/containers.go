@@ -50,8 +50,8 @@ type selectedContainers struct {
 	selections map[string]int
 }
 
-func newSelectedContainers() selectedContainers {
-	return selectedContainers{
+func newSelectedContainers() *selectedContainers {
+	return &selectedContainers{
 		selections: make(map[string]int),
 	}
 }

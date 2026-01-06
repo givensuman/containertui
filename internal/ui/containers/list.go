@@ -12,7 +12,7 @@ var style lipgloss.Style = lipgloss.NewStyle().Margin(1, 2)
 
 type Model struct {
 	list               list.Model
-	selectedContainers selectedContainers
+	selectedContainers *selectedContainers
 	keybindings        *keybindings
 }
 
@@ -36,7 +36,7 @@ func NewContainersList() Model {
 
 	list.SetShowTitle(false)
 	list.SetShowStatusBar(false)
-	list.SetFilteringEnabled(false)
+	list.SetFilteringEnabled(false) // TODO: Workout styling issues with filtering
 
 	selectedContainers := newSelectedContainers()
 
@@ -68,6 +68,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetWidth(msg.Width - widthOffset)
 		m.list.SetHeight(msg.Height - heightOffset)
 	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
 		switch {
 		case key.Matches(msg, m.keybindings.pauseContainer):
 			m.handlePauseContainers()
