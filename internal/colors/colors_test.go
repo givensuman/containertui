@@ -54,8 +54,8 @@ func TestColorFunctions(t *testing.T) {
 	}
 
 	// Test that Primary defaults to Gray
-	if primary != gray {
-		t.Error("Primary() should default to Gray()")
+	if primary != blue {
+		t.Error("Primary() should default to Blue()")
 	}
 }
 
