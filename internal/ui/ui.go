@@ -1,22 +1,26 @@
-// Package ui implements the terminal user interface
+// Package ui implements the terminal user interface.
 package ui
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/containers"
 )
 
 type Model struct {
-	width  int
-	height int
+	width           int
+	height          int
+	containersModel containers.Model
 }
 
 func NewModel() Model {
-	return Model{}
+	width, height := context.GetWindowSize()
+
+	return Model{
+		width:           width,
+		height:          height,
+		containersModel: containers.NewContainersList(),
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -24,6 +28,8 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -35,46 +41,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	}
-	return m, nil
+
+	containersModel, cmd := m.containersModel.Update(msg)
+	m.containersModel = containersModel.(containers.Model)
+
+	return m, cmd
 }
 
 func (m Model) View() string {
-	// Create styles
-	titleStyle := lipgloss.NewStyle().
-		Foreground(colors.Primary()).
-		Bold(true).
-		Align(lipgloss.Center)
-
-	subtitleStyle := lipgloss.NewStyle().
-		Foreground(colors.Yellow()).
-		Align(lipgloss.Center)
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(colors.Green()).
-		Align(lipgloss.Center)
-
-	// Content
-	title := titleStyle.Render("ContainerTUI")
-	subtitle := subtitleStyle.Render("A terminal UI for managing container lifecycles")
-	help := helpStyle.Render("Press 'q' to quit")
-
-	// Combine content
-	content := strings.Join([]string{title, "", subtitle, "", help}, "\n")
-
-	// Create a full-screen container
-	container := lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		Align(lipgloss.Center).
-		AlignVertical(lipgloss.Center)
-
-	return container.Render(content)
+	return m.containersModel.View()
 }
 
+// Start the UI rendering loop.
 func Start() error {
 	model := NewModel()
 
+	file, err := tea.LogToFile("debug.log", "debug")
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		err = file.Close()
+	}()
+	if err != nil {
+		panic(err)
+	}
+
 	p := tea.NewProgram(model, tea.WithAltScreen())
-	_, err := p.Run()
+	_, err = p.Run()
 	return err
 }

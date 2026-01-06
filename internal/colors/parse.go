@@ -39,7 +39,7 @@ func ParseColors(colorStrings []string) (*config.ColorConfig, error) {
 			return nil, fmt.Errorf("invalid color format: %s (expected key=value)", pair)
 		}
 
-		key := strings.TrimSpace(parts[0])
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
 		value := strings.TrimSpace(parts[1])
 
 		// Validate that value doesn't contain '=' (invalid format)
@@ -54,10 +54,12 @@ func ParseColors(colorStrings []string) (*config.ColorConfig, error) {
 			colorConfig.Yellow = config.ConfigString(value)
 		case "green":
 			colorConfig.Green = config.ConfigString(value)
-		case "red":
-			colorConfig.Red = config.ConfigString(value)
+		case "gray":
+			colorConfig.Gray = config.ConfigString(value)
 		case "blue":
 			colorConfig.Blue = config.ConfigString(value)
+		case "white":
+			colorConfig.White = config.ConfigString(value)
 		default:
 			return nil, fmt.Errorf("unknown color key: %s", key)
 		}

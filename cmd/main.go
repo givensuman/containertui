@@ -50,11 +50,11 @@ func main() {
 				if colorOverrides.Green.IsAssigned() {
 					cfg.Colors.Green = colorOverrides.Green
 				}
-				if colorOverrides.Red.IsAssigned() {
-					cfg.Colors.Red = colorOverrides.Red
-				}
 				if colorOverrides.Blue.IsAssigned() {
 					cfg.Colors.Blue = colorOverrides.Blue
+				}
+				if colorOverrides.White.IsAssigned() {
+					cfg.Colors.White = colorOverrides.White
 				}
 			}
 

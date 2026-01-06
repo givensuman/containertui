@@ -11,10 +11,10 @@ import (
 // Container represents a Docker container with essential details.
 type Container struct {
 	container.Config
-	ID    string `json:"Id"`
-	Name  string `json:"Name"`
-	Image string `json:"Image"`
-	State string `json:"State"`
+	ID    string                   `json:"Id"`
+	Name  string                   `json:"Name"`
+	Image string                   `json:"Image"`
+	State container.ContainerState `json:"State"`
 }
 
 // ClientWrapper wraps the Docker client to provide container management functionalities.
@@ -55,7 +55,7 @@ func (cw *ClientWrapper) GetContainers() []Container {
 			ID:    container.ID,
 			Name:  container.Names[0][1:],
 			Image: container.Image,
-			State: string(container.State),
+			State: container.State,
 		})
 	}
 	return dockerContainers

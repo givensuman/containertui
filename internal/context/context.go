@@ -8,16 +8,17 @@ import (
 	"github.com/givensuman/containertui/internal/config"
 )
 
-type WindowSize struct{ width, height int }
-
 var (
 	// Shared Moby client instance
 	clientInstance *client.ClientWrapper
 	// Configuration file/runtime instance
 	configInstance *config.Config
 	// Window width and height
-	windowSize WindowSize
-	once       sync.Once
+	windowSize struct {
+		Width  int
+		Height int
+	}
+	once sync.Once
 )
 
 // InitializeClient initializes the shared client instance.
@@ -51,11 +52,11 @@ func GetConfig() *config.Config {
 
 // SetWindowSize sets the current window size.
 func SetWindowSize(width, height int) {
-	windowSize.width = width
-	windowSize.height = height
+	windowSize.Width = width
+	windowSize.Height = height
 }
 
 // GetWindowSize returns the current window size.
 func GetWindowSize() (int, int) {
-	return windowSize.width, windowSize.height
+	return windowSize.Width, windowSize.Height
 }

@@ -11,15 +11,15 @@ help: ## list makefile targets
 .PHONY: build
 build: ## build golang binary
 	@mkdir -p bin
-	@go build -o bin/$(projectname) ./cmd
+	go build -o bin/$(projectname) ./cmd
 
 .PHONY: install
 install: ## install golang binary
-	@go install ./cmd
+	go install ./cmd
 
 .PHONY: run
 run: ## run the app
-	@go run ./cmd
+	go run ./cmd
 
 .PHONY: test
 test: clean ## run tests with coverage

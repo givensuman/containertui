@@ -70,22 +70,28 @@ func Green() lipgloss.Color {
 	return lipgloss.Color(ColorBrightGreen.String())
 }
 
-// Red returns the red color, using config override if available
-func Red() lipgloss.Color {
+func Gray() lipgloss.Color {
 	cfg := context.GetConfig()
-	if cfg.Colors.Red.IsAssigned() {
-		return lipgloss.Color(cfg.Colors.Red)
+	if cfg.Colors.Gray.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.Gray)
 	}
-	return lipgloss.Color(ColorBrightRed.String())
+	return lipgloss.Color(ColorBrightBlack.String())
 }
 
-// Blue returns the blue color, using config override if available
 func Blue() lipgloss.Color {
 	cfg := context.GetConfig()
 	if cfg.Colors.Blue.IsAssigned() {
 		return lipgloss.Color(cfg.Colors.Blue)
 	}
-	return lipgloss.Color(ColorBrightBlue.String())
+	return lipgloss.Color(ColorBlue.String())
+}
+
+func White() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.White.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.White)
+	}
+	return lipgloss.Color(ColorWhite.String())
 }
 
 // Primary returns the primary color, using config override if available, defaults to Blue
@@ -94,5 +100,5 @@ func Primary() lipgloss.Color {
 	if cfg.Colors.Primary.IsAssigned() {
 		return lipgloss.Color(cfg.Colors.Primary)
 	}
-	return Blue() // Default to blue for primary
+	return Gray() // Default to blue for primary
 }

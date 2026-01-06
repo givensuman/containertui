@@ -14,8 +14,9 @@ type ColorConfig struct {
 	Primary ConfigString `yaml:"primary,omitempty"`
 	Yellow  ConfigString `yaml:"yellow,omitempty"`
 	Green   ConfigString `yaml:"green,omitempty"`
-	Red     ConfigString `yaml:"red,omitempty"`
+	Gray    ConfigString `yaml:"gray,omitempty"`
 	Blue    ConfigString `yaml:"blue,omitempty"`
+	White   ConfigString `yaml:"white,omitempty"`
 }
 
 // Config holds the application configuration.
@@ -32,8 +33,8 @@ func DefaultConfig() *Config {
 			Primary: "",
 			Yellow:  "",
 			Green:   "",
-			Red:     "",
 			Blue:    "",
+			White:   "",
 		},
 	}
 }

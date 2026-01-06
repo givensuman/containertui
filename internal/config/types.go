@@ -7,7 +7,3 @@ func (cs ConfigString) IsAssigned() bool {
 }
 
 type ConfigBool bool
-
-func (cb ConfigBool) IsAssigned() bool {
-	return bool(cb)
-}

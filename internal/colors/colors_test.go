@@ -33,14 +33,9 @@ func TestColorFunctions(t *testing.T) {
 		t.Error("Green() returned empty color")
 	}
 
-	red := Red()
-	if red == "" {
-		t.Error("Red() returned empty color")
-	}
-
-	blue := Blue()
-	if blue == "" {
-		t.Error("Blue() returned empty color")
+	gray := Gray()
+	if gray == "" {
+		t.Error("Gray() returned empty color")
 	}
 
 	primary := Primary()
@@ -48,9 +43,19 @@ func TestColorFunctions(t *testing.T) {
 		t.Error("Primary() returned empty color")
 	}
 
-	// Test that Primary defaults to Blue
-	if primary != blue {
-		t.Error("Primary() should default to Blue()")
+	blue := Blue()
+	if blue == "" {
+		t.Error("Blue() returned empty color")
+	}
+
+	white := White()
+	if white == "" {
+		t.Error("White() returned empty color")
+	}
+
+	// Test that Primary defaults to Gray
+	if primary != gray {
+		t.Error("Primary() should default to Gray()")
 	}
 }
 
@@ -58,6 +63,8 @@ func TestColorOverrides(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Colors.Yellow = "#FFFF00"
 	cfg.Colors.Green = "#00FF00"
+	cfg.Colors.Blue = "#0000FF"
+	cfg.Colors.White = "#FFFFFF"
 	context.SetConfig(cfg)
 
 	yellow := Yellow()
@@ -71,8 +78,18 @@ func TestColorOverrides(t *testing.T) {
 	}
 
 	blue := Blue()
-	if blue == "" {
-		t.Error("Blue() should still return default color when not overridden")
+	if blue != lipgloss.Color("#0000FF") {
+		t.Errorf("expected Blue to be '#0000FF', got %s", blue)
+	}
+
+	white := White()
+	if white != lipgloss.Color("#FFFFFF") {
+		t.Errorf("expected White to be '#FFFFFF', got %s", white)
+	}
+
+	gray := Gray()
+	if gray == "" {
+		t.Error("Gray() should still return default color when not overridden")
 	}
 }
 
@@ -147,12 +164,11 @@ func TestParseColors(t *testing.T) {
 		},
 		{
 			name:  "all colors",
-			input: []string{"primary=#FF0000,yellow=#FFFF00,green=#00FF00,red=#FF0000,blue=#0000FF"},
+			input: []string{"primary=#FF0000,yellow=#FFFF00,green=#00FF00,blue=#0000FF"},
 			expected: &config.ColorConfig{
 				Primary: config.ConfigString("#FF0000"),
 				Yellow:  config.ConfigString("#FFFF00"),
 				Green:   config.ConfigString("#00FF00"),
-				Red:     config.ConfigString("#FF0000"),
 				Blue:    config.ConfigString("#0000FF"),
 			},
 		},
@@ -183,11 +199,11 @@ func TestParseColors(t *testing.T) {
 			if result.Green != tt.expected.Green {
 				t.Errorf("expected Green=%s, got %s", tt.expected.Green, result.Green)
 			}
-			if result.Red != tt.expected.Red {
-				t.Errorf("expected Red=%s, got %s", tt.expected.Red, result.Red)
-			}
 			if result.Blue != tt.expected.Blue {
 				t.Errorf("expected Blue=%s, got %s", tt.expected.Blue, result.Blue)
+			}
+			if result.White != tt.expected.White {
+				t.Errorf("expected White=%s, got %s", tt.expected.White, result.White)
 			}
 		})
 	}
