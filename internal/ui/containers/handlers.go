@@ -5,26 +5,26 @@ import (
 	"github.com/moby/moby/api/types/container"
 )
 
-func (m Model) getSelectedContainerIDs() []string {
-	selectedContainerIDs := make([]string, len(m.selectedContainers))
-	for id := range m.selectedContainers {
+func (m *Model) getSelectedContainerIDs() []string {
+	selectedContainerIDs := make([]string, len(m.selectedContainers.selections))
+	for id := range m.selectedContainers.selections {
 		selectedContainerIDs = append(selectedContainerIDs, id)
 	}
 
 	return selectedContainerIDs
 }
 
-func (m Model) getSelectedContainerIndices() []int {
-	selectedContainerIndices := make([]int, len(m.selectedContainers))
-	for _, index := range m.selectedContainers {
+func (m *Model) getSelectedContainerIndices() []int {
+	selectedContainerIndices := make([]int, len(m.selectedContainers.selections))
+	for _, index := range m.selectedContainers.selections {
 		selectedContainerIndices = append(selectedContainerIndices, index)
 	}
 
 	return selectedContainerIndices
 }
 
-func (m Model) handlePauseContainers() Model {
-	if len(m.selectedContainers) > 0 {
+func (m *Model) handlePauseContainers() {
+	if len(m.selectedContainers.selections) > 0 {
 		selectedContainerIDs := m.getSelectedContainerIDs()
 		selectedContainerIndices := m.getSelectedContainerIndices()
 
@@ -43,12 +43,10 @@ func (m Model) handlePauseContainers() Model {
 			m.list.SetItem(m.list.Index(), selectedItem)
 		}
 	}
-
-	return m
 }
 
-func (m Model) handleUnpauseContainers() Model {
-	if len(m.selectedContainers) > 0 {
+func (m *Model) handleUnpauseContainers() {
+	if len(m.selectedContainers.selections) > 0 {
 		selectedContainerIDs := m.getSelectedContainerIDs()
 		selectedContainerIndices := m.getSelectedContainerIndices()
 
@@ -67,12 +65,10 @@ func (m Model) handleUnpauseContainers() Model {
 			m.list.SetItem(m.list.Index(), selectedItem)
 		}
 	}
-
-	return m
 }
 
-func (m Model) handleStartContainers() Model {
-	if len(m.selectedContainers) > 0 {
+func (m *Model) handleStartContainers() {
+	if len(m.selectedContainers.selections) > 0 {
 		selectedContainerIDs := m.getSelectedContainerIDs()
 		selectedContainerIndices := m.getSelectedContainerIndices()
 
@@ -91,12 +87,10 @@ func (m Model) handleStartContainers() Model {
 			m.list.SetItem(m.list.Index(), selectedItem)
 		}
 	}
-
-	return m
 }
 
-func (m Model) handleStopContainers() Model {
-	if len(m.selectedContainers) > 0 {
+func (m *Model) handleStopContainers() {
+	if len(m.selectedContainers.selections) > 0 {
 		selectedContainerIDs := m.getSelectedContainerIDs()
 		selectedContainerIndices := m.getSelectedContainerIndices()
 
@@ -115,6 +109,60 @@ func (m Model) handleStopContainers() Model {
 			m.list.SetItem(m.list.Index(), selectedItem)
 		}
 	}
+}
 
-	return m
+func (m *Model) handleToggleSelection() {
+	index := m.list.Index()
+	selectedItem, ok := m.list.SelectedItem().(ContainerItem)
+	if ok {
+		isSelected := selectedItem.isSelected
+
+		if isSelected {
+			m.selectedContainers.unselectContainerInList(selectedItem.ID)
+		} else {
+			m.selectedContainers.selectContainerInList(selectedItem.ID, index)
+		}
+
+		selectedItem.isSelected = !isSelected
+		m.list.SetItem(index, selectedItem)
+	}
+}
+
+func (m *Model) handleToggleSelectionOfAll() {
+	allAlreadySelected := true
+	items := m.list.Items()
+
+	for _, item := range items {
+		if c, ok := item.(ContainerItem); ok {
+			if _, selected := m.selectedContainers.selections[c.ID]; !selected {
+				allAlreadySelected = false
+				break
+			}
+		}
+	}
+
+	if allAlreadySelected {
+		// Unselect all items
+		m.selectedContainers = newSelectedContainers()
+
+		for index, item := range m.list.Items() {
+			item, ok := item.(ContainerItem)
+			if ok {
+				item.isSelected = false
+				m.list.SetItem(index, item)
+			}
+		}
+	} else {
+		// Select all items
+		m.selectedContainers = newSelectedContainers()
+
+		for index, item := range m.list.Items() {
+			item, ok := item.(ContainerItem)
+			if ok {
+				item.isSelected = true
+				m.list.SetItem(index, item)
+				m.selectedContainers.selectContainerInList(item.ID, index)
+			}
+		}
+	}
 }

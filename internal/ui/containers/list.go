@@ -34,6 +34,12 @@ func NewContainersList() Model {
 	width, height := context.GetWindowSize()
 	list := list.New(containerItems, newDefaultDelegate(), width, height)
 
+	list.SetShowTitle(false)
+	list.SetShowStatusBar(false)
+	list.SetFilteringEnabled(false)
+
+	selectedContainers := newSelectedContainers()
+
 	keybindings := newKeybindings()
 	list.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
@@ -46,12 +52,6 @@ func NewContainersList() Model {
 		}
 	}
 
-	list.SetShowTitle(false)
-	list.SetShowStatusBar(false)
-	list.SetFilteringEnabled(false)
-
-	selectedContainers := make(selectedContainers)
-
 	return Model{list, selectedContainers, keybindings}
 }
 
@@ -61,7 +61,6 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	model := m
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -71,72 +70,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keybindings.pauseContainer):
-			model = m.handlePauseContainers()
+			m.handlePauseContainers()
 		case key.Matches(msg, m.keybindings.unpauseContainer):
-			model = m.handleUnpauseContainers()
+			m.handleUnpauseContainers()
 		case key.Matches(msg, m.keybindings.startContainer):
-			model = m.handleStartContainers()
+			m.handleStartContainers()
 		case key.Matches(msg, m.keybindings.stopContainer):
-			model = m.handleStopContainers()
+			m.handleStopContainers()
 		case key.Matches(msg, m.keybindings.toggleSelection):
-			index := m.list.Index()
-			selectedItem, ok := m.list.SelectedItem().(ContainerItem)
-			if ok {
-				isSelected := selectedItem.isSelected
-
-				if isSelected {
-					m.selectedContainers = m.selectedContainers.unselectContainerInList(selectedItem.ID)
-				} else {
-					m.selectedContainers = m.selectedContainers.selectContainerInList(selectedItem.ID, index)
-				}
-
-				selectedItem.isSelected = !isSelected
-				m.list.SetItem(index, selectedItem)
-			}
+			m.handleToggleSelection()
 		case key.Matches(msg, m.keybindings.toggleSelectionOfAll):
-			allAlreadySelected := true
-			items := m.list.Items()
-
-			for _, item := range items {
-				if c, ok := item.(ContainerItem); ok {
-					if _, selected := m.selectedContainers[c.ID]; !selected {
-						allAlreadySelected = false
-						break
-					}
-				}
-			}
-
-			if allAlreadySelected {
-				// Unselect all items
-				model.selectedContainers = make(selectedContainers)
-
-				for index, item := range m.list.Items() {
-					item, ok := item.(ContainerItem)
-					if ok {
-						item.isSelected = false
-						model.list.SetItem(index, item)
-					}
-				}
-			} else {
-				// Select all items
-				model.selectedContainers = make(selectedContainers)
-
-				for index, item := range m.list.Items() {
-					item, ok := item.(ContainerItem)
-					if ok {
-						item.isSelected = true
-						model.list.SetItem(index, item)
-						model.selectedContainers = model.selectedContainers.selectContainerInList(item.ID, index)
-					}
-				}
-			}
+			m.handleToggleSelectionOfAll()
 		}
 	}
 
-	list, cmd := m.list.Update(msg)
-	model.list = list
-
-	return model, cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
 }
 
 func (m Model) View() string {

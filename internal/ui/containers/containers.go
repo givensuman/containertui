@@ -46,14 +46,20 @@ func newKeybindings() *keybindings {
 
 // selectedContainers is map of a container's ID to
 // its index in the list
-type selectedContainers map[string]int
-
-func (sc selectedContainers) selectContainerInList(id string, index int) selectedContainers {
-	sc[id] = index
-	return sc
+type selectedContainers struct {
+	selections map[string]int
 }
 
-func (sc selectedContainers) unselectContainerInList(id string) selectedContainers {
-	delete(sc, id)
-	return sc
+func newSelectedContainers() selectedContainers {
+	return selectedContainers{
+		selections: make(map[string]int),
+	}
+}
+
+func (sc *selectedContainers) selectContainerInList(id string, index int) {
+	sc.selections[id] = index
+}
+
+func (sc selectedContainers) unselectContainerInList(id string) {
+	delete(sc.selections, id)
 }
