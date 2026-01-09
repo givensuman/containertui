@@ -65,6 +65,7 @@ func (sc *selectedContainers) selectContainerInList(id string, index int) {
 func (sc selectedContainers) unselectContainerInList(id string) {
 	delete(sc.selections, id)
 }
+
 type ContainerList struct {
 	style              lipgloss.Style
 	list               list.Model

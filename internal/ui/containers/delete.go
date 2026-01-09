@@ -2,7 +2,9 @@ package containers
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/moby/moby/api/types/container"
 )
 
@@ -25,11 +27,17 @@ func (bo buttonOption) String() string {
 }
 
 type DeleteConfirmation struct {
-	item *ContainerItem
+	style lipgloss.Style
+	item  *ContainerItem
 }
 
 func NewDeleteConfirmation(item *ContainerItem) DeleteConfirmation {
-	return DeleteConfirmation{item}
+	var style lipgloss.Style = lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder(), true, true).
+		BorderForeground(colors.Primary())
+
+	return DeleteConfirmation{style, item}
 }
 
 func (dc *DeleteConfirmation) Delete() {
@@ -49,5 +57,5 @@ func (dc DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (dc DeleteConfirmation) View() string {
-	return "Hello World!"
+	return dc.style.Render("Hello World!")
 }
