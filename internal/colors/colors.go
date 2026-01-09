@@ -103,3 +103,111 @@ func Primary() lipgloss.Color {
 
 	return Blue()
 }
+
+func Black() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.Black.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.Black)
+	}
+
+	return lipgloss.Color(ColorBlack.String())
+}
+
+func Red() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.Red.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.Red)
+	}
+
+	return lipgloss.Color(ColorRed.String())
+}
+
+func Magenta() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.Magenta.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.Magenta)
+	}
+
+	return lipgloss.Color(ColorMagenta.String())
+}
+
+func Cyan() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.Cyan.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.Cyan)
+	}
+
+	return lipgloss.Color(ColorCyan.String())
+}
+
+func BrightBlack() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightBlack.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightBlack)
+	}
+
+	return lipgloss.Color(ColorBrightBlack.String())
+}
+
+func BrightRed() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightRed.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightRed)
+	}
+
+	return lipgloss.Color(ColorBrightRed.String())
+}
+
+func BrightGreen() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightGreen.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightGreen)
+	}
+
+	return lipgloss.Color(ColorBrightGreen.String())
+}
+
+func BrightYellow() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightYellow.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightYellow)
+	}
+
+	return lipgloss.Color(ColorBrightYellow.String())
+}
+
+func BrightBlue() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightBlue.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightBlue)
+	}
+
+	return lipgloss.Color(ColorBrightBlue.String())
+}
+
+func BrightMagenta() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightMagenta.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightMagenta)
+	}
+
+	return lipgloss.Color(ColorBrightMagenta.String())
+}
+
+func BrightCyan() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightCyan.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightCyan)
+	}
+
+	return lipgloss.Color(ColorBrightCyan.String())
+}
+
+func BrightWhite() lipgloss.Color {
+	cfg := context.GetConfig()
+	if cfg.Colors.BrightWhite.IsAssigned() {
+		return lipgloss.Color(cfg.Colors.BrightWhite)
+	}
+
+	return lipgloss.Color(ColorBrightWhite.String())
+}

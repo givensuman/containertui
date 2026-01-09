@@ -60,6 +60,30 @@ func ParseColors(colorStrings []string) (*config.ColorConfig, error) {
 			colorConfig.Blue = config.ConfigString(value)
 		case "white":
 			colorConfig.White = config.ConfigString(value)
+		case "black":
+			colorConfig.Black = config.ConfigString(value)
+		case "red":
+			colorConfig.Red = config.ConfigString(value)
+		case "magenta":
+			colorConfig.Magenta = config.ConfigString(value)
+		case "cyan":
+			colorConfig.Cyan = config.ConfigString(value)
+		case "bright-black":
+			colorConfig.BrightBlack = config.ConfigString(value)
+		case "bright-red":
+			colorConfig.BrightRed = config.ConfigString(value)
+		case "bright-green":
+			colorConfig.BrightGreen = config.ConfigString(value)
+		case "bright-yellow":
+			colorConfig.BrightYellow = config.ConfigString(value)
+		case "bright-blue":
+			colorConfig.BrightBlue = config.ConfigString(value)
+		case "bright-magenta":
+			colorConfig.BrightMagenta = config.ConfigString(value)
+		case "bright-cyan":
+			colorConfig.BrightCyan = config.ConfigString(value)
+		case "bright-white":
+			colorConfig.BrightWhite = config.ConfigString(value)
 		default:
 			return nil, fmt.Errorf("unknown color key: %s", key)
 		}
