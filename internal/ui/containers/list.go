@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/types"
+	"github.com/givensuman/containertui/internal/ui/shared"
 )
 
 type keybindings struct {
@@ -78,7 +78,7 @@ func (sc selectedContainers) unselectContainerInList(id string) {
 }
 
 type ContainerList struct {
-	types.Component
+	shared.Component
 	style              lipgloss.Style
 	list               list.Model
 	selectedContainers *selectedContainers
@@ -87,7 +87,7 @@ type ContainerList struct {
 
 var (
 	_ tea.Model            = (*ContainerList)(nil)
-	_ types.ComponentModel = (*ContainerList)(nil)
+	_ shared.ComponentModel = (*ContainerList)(nil)
 )
 
 func newContainerList() ContainerList {

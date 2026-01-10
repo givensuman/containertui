@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/types"
+	"github.com/givensuman/containertui/internal/ui/shared"
 )
 
 type buttonOption int
@@ -29,7 +29,7 @@ func (bo buttonOption) String() string {
 }
 
 type DeleteConfirmation struct {
-	types.Component
+	shared.Component
 	style               lipgloss.Style
 	requestedContainers []*ContainerItem
 	hoveredButtonOption buttonOption
@@ -37,7 +37,7 @@ type DeleteConfirmation struct {
 
 var (
 	_ tea.Model            = (*DeleteConfirmation)(nil)
-	_ types.ComponentModel = (*DeleteConfirmation)(nil)
+	_ shared.ComponentModel = (*DeleteConfirmation)(nil)
 )
 
 func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirmation {

@@ -2,17 +2,17 @@ package containers
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/givensuman/containertui/internal/ui/types"
+	"github.com/givensuman/containertui/internal/ui/shared"
 )
 
 type ContainerLogs struct {
-	types.Component
+	shared.Component
 	container *ContainerItem
 }
 
 var (
 	_ tea.Model            = (*ContainerLogs)(nil)
-	_ types.ComponentModel = (*ContainerLogs)(nil)
+	_ shared.ComponentModel = (*ContainerLogs)(nil)
 )
 
 func newContainerLogs(container *ContainerItem) ContainerLogs {

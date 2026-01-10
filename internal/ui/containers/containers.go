@@ -3,7 +3,7 @@ package containers
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/givensuman/containertui/internal/ui/types"
+	"github.com/givensuman/containertui/internal/ui/shared"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
@@ -15,7 +15,7 @@ const (
 )
 
 type Model struct {
-	types.Component
+	shared.Component
 	sessionState sessionState
 	foreground   tea.Model
 	background   tea.Model
@@ -24,7 +24,7 @@ type Model struct {
 
 var (
 	_ tea.Model            = (*Model)(nil)
-	_ types.ComponentModel = (*Model)(nil)
+	_ shared.ComponentModel = (*Model)(nil)
 )
 
 func New() Model {

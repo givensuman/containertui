@@ -1,5 +1,4 @@
-// Package types defines types for UI components
-package types
+package shared
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
