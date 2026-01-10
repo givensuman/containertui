@@ -137,3 +137,10 @@ func (cw *ClientWrapper) RemoveContainer(id string) {
 		return
 	}
 }
+
+// RemoveContaienrs removes multiple Docker containers by their IDs
+func (cw *ClientWrapper) RemoveContainers(ids []string) {
+	for _, id := range ids {
+		cw.RemoveContainer(id)
+	}
+}

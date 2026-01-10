@@ -6,7 +6,7 @@ import (
 )
 
 func (cl *ContainerList) getSelectedContainerIDs() []string {
-	selectedContainerIDs := make([]string, len(cl.selectedContainers.selections))
+	selectedContainerIDs := make([]string, 0, len(cl.selectedContainers.selections))
 	for id := range cl.selectedContainers.selections {
 		selectedContainerIDs = append(selectedContainerIDs, id)
 	}
@@ -15,7 +15,7 @@ func (cl *ContainerList) getSelectedContainerIDs() []string {
 }
 
 func (cl *ContainerList) getSelectedContainerIndices() []int {
-	selectedContainerIndices := make([]int, len(cl.selectedContainers.selections))
+	selectedContainerIndices := make([]int, 0, len(cl.selectedContainers.selections))
 	for _, index := range cl.selectedContainers.selections {
 		selectedContainerIndices = append(selectedContainerIndices, index)
 	}
@@ -111,6 +111,24 @@ func (cl *ContainerList) handleStopContainers() {
 	}
 }
 
+func (cl *ContainerList) handleConfirmationOfRemoveContainers() {
+	if len(cl.selectedContainers.selections) > 0 {
+		selectedContainerIDs := cl.getSelectedContainerIDs()
+		selectedContainerIndices := cl.getSelectedContainerIndices()
+
+		context.GetClient().RemoveContainers(selectedContainerIDs)
+		for _, index := range selectedContainerIndices {
+			cl.list.RemoveItem(index)
+		}
+	} else {
+		item, ok := cl.list.SelectedItem().(ContainerItem)
+		if ok {
+			context.GetClient().RemoveContainer(item.ID)
+			cl.list.RemoveItem(cl.list.Index())
+		}
+	}
+}
+
 func (cl *ContainerList) handleToggleSelection() {
 	index := cl.list.Index()
 	selectedItem, ok := cl.list.SelectedItem().(ContainerItem)
@@ -165,13 +183,4 @@ func (cl *ContainerList) handleToggleSelectionOfAll() {
 			}
 		}
 	}
-}
-
-func (cl *ContainerList) handleConfirmationOfRemoveContainer(msg MessageConfirmDelete) {
-	itemIndex, exists := cl.getItemListIndexById(msg.item.ID)
-	if exists {
-		cl.list.RemoveItem(itemIndex)
-	}
-
-	context.GetClient().RemoveContainer(msg.item.ID)
 }

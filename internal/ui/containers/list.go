@@ -123,19 +123,6 @@ func newContainerList() ContainerList {
 	return ContainerList{style, list, selectedContainers, keybindings}
 }
 
-func (cl *ContainerList) getItemListIndexById(id string) (int, bool) {
-	for index, item := range cl.list.Items() {
-		item, ok := item.(ContainerItem)
-		if ok {
-			if item.ID == id {
-				return index, ok
-			}
-		}
-	}
-
-	return -1, false
-}
-
 func (cl ContainerList) Init() tea.Cmd {
 	return nil
 }
@@ -153,7 +140,7 @@ func (cl ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cl.list.SetHeight(msg.Height - heightOffset)
 
 	case MessageConfirmDelete:
-		cl.handleConfirmationOfRemoveContainer(msg)
+		cl.handleConfirmationOfRemoveContainers()
 
 	case tea.KeyMsg:
 		if cl.list.FilterState() == list.Filtering {

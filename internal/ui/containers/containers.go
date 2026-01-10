@@ -46,12 +46,14 @@ func New() Model {
 	}
 }
 
+var _ tea.Model = (*Model)(nil)
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// var cmd tea.Cmd
+	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch m.sessionState {
@@ -76,14 +78,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionState = viewOverlay
 	}
 
-	m.overlayModel = overlay.New(
-		m.foreground,
-		m.background,
-		overlay.Center,
-		overlay.Center,
-		0,
-		0,
-	)
+	m.overlayModel.Foreground = m.foreground
+	m.overlayModel.Background = m.background
+
+	updatedOverlayModel, cmd := m.overlayModel.Update(msg)
+	overlayModel, ok := updatedOverlayModel.(*overlay.Model)
+	if ok {
+		m.overlayModel = overlayModel
+		cmds = append(cmds, cmd)
+	}
 
 	return m, tea.Batch(cmds...)
 }
