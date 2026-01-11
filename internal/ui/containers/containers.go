@@ -80,10 +80,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MessageOpenDeleteConfirmationDialog:
 		m.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
 		m.sessionState = viewOverlay
+		cmds = append(cmds, m.foreground.Init())
 
 	case MessageOpenContainerLogs:
 		m.foreground = newContainerLogs(msg.container)
 		m.sessionState = viewOverlay
+		cmds = append(cmds, m.foreground.Init())
 	}
 
 	m.overlayModel.Foreground = m.foreground

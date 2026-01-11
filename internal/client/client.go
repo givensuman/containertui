@@ -132,15 +132,26 @@ func (cw *ClientWrapper) StopContainers(ids []string) {
 
 // RemoveContainer removes a specific Docker container by its ID
 func (cw *ClientWrapper) RemoveContainer(id string) {
-	_, err := cw.client.ContainerRemove(context.Background(), id, client.ContainerRemoveOptions{})
+	_, err := cw.client.ContainerRemove(context.Background(), id, client.ContainerRemoveOptions{Force: true})
 	if err != nil {
 		return
 	}
 }
 
-// RemoveContaienrs removes multiple Docker containers by their IDs
+// RemoveContainers removes multiple Docker containers by their IDs
 func (cw *ClientWrapper) RemoveContainers(ids []string) {
 	for _, id := range ids {
 		cw.RemoveContainer(id)
 	}
+}
+
+type Logs client.ContainerLogsResult
+
+func (cw *ClientWrapper) OpenLogs(id string) Logs {
+	reader, err := cw.client.ContainerLogs(context.Background(), id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true, Tail: "all"})
+	if err != nil {
+		panic(err)
+	}
+
+	return reader
 }
