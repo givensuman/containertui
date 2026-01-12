@@ -100,7 +100,7 @@ func (cl ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case tea.KeyEscape.String(), tea.KeyEsc.String():
-			cl.logs.Close()
+			_ = cl.logs.Close()
 			return cl, CloseOverlay()
 		}
 	}

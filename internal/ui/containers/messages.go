@@ -44,6 +44,15 @@ type MessageContainerOperationResult struct {
 	Error     error
 }
 
+type Operation int // TODO: Better implementation
+const (
+	Pause Operation = iota
+	Unpause
+	Start
+	Stop
+	Remove
+)
+
 // PerformContainerOperation performs the specified operation on the given container IDs asynchronously
 func PerformContainerOperation(operation string, ids []string) tea.Cmd {
 	return func() tea.Msg {

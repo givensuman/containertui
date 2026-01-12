@@ -1,2 +1,25 @@
 Not sure if config system works yet from file
 Modify keys component with state, possibly through context?
+Fix logs on large screen dimensions
+Why do containers started in TUI not continue outside of it?
+  - Doesn't always happen?
+
+---
+
+Main container view
+  - lifecycle operations
+  - logs
+  - shell
+
+Tab component
+
+Images, Volumes, Networks view
+
+Deploy to NPX, brew
+
+===> MVP
+
+Remote repository view
+  - list component
+  - markdown render on side
+  - pull operation
