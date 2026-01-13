@@ -118,6 +118,14 @@ func newDefaultDelegate() list.DefaultDelegate {
 	return d
 }
 
+func newSpinner() spinner.Model {
+	spinnerModel := spinner.New()
+	spinnerModel.Spinner = spinner.Dot
+	spinnerModel.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+
+	return spinnerModel
+}
+
 func (ci ContainerItem) FilterValue() string {
 	return ci.Name
 }

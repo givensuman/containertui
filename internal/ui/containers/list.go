@@ -3,7 +3,6 @@ package containers
 import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/context"
@@ -101,7 +100,7 @@ func newContainerList() ContainerList {
 				Container:  container,
 				isSelected: false,
 				isWorking:  false,
-				spinner:    spinner.New(),
+				spinner:    newSpinner(),
 			},
 		)
 	}
