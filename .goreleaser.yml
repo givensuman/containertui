@@ -1,22 +1,39 @@
+# from: https://github.com/jesseduffield/lazygit
+version: 2
+
 builds:
-  - env: [CGO_ENABLED=0]
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - freebsd
+      - windows
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm
+      - arm64
+      - '386'
+    # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}`.
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.buildSource=binaryRelease
 
-nfpms:
-  - formats:
-      - deb
-      - rpm
-      - apk
-      - archlinux
-    recommends:
-      - docker
-      - podman
-
-brews:
-  - name: containertui
-    repository:
-      owner: givensuman
-      name: containertui
-    homepage: "https://github.com/givensuman/containertui"
-    description: "a terminal ui for managing container lifecycles"
+archives:
+  - name_template: >-
+      {{- .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}32-bit
+      {{- else if eq .Arch "arm" }}armv6
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [ zip ]
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  version_template: '{{ .Tag }}-next'
+changelog:
+  use: github-native
+  sort: asc
