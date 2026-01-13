@@ -5,9 +5,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
@@ -101,6 +101,17 @@ func newDefaultDelegate() list.DefaultDelegate {
 		Bold(true)
 
 	d.UpdateFunc = func(msg tea.Msg, m *list.Model) tea.Cmd {
+		if _, ok := msg.(spinner.TickMsg); ok {
+			items := m.Items()
+			for i, item := range items {
+				if c, ok := item.(ContainerItem); ok && c.isWorking {
+					var cmd tea.Cmd
+					c.spinner, cmd = c.spinner.Update(msg)
+					m.SetItem(i, c)
+					return cmd
+				}
+			}
+		}
 		return nil
 	}
 
@@ -112,7 +123,12 @@ func (ci ContainerItem) FilterValue() string {
 }
 
 func (ci ContainerItem) Title() string {
-	isSelectedIcon := ci.getIsSelectedIcon()
+	var statusIcon string
+	if ci.isWorking {
+		statusIcon = ci.spinner.View()
+	} else {
+		statusIcon = ci.getIsSelectedIcon()
+	}
 	titleOrnament := ci.getTitleOrnament()
 	containerStateIcon := ci.getContainerStateIcon()
 	shortID := ci.ID[len(ci.ID)-12:]
@@ -137,18 +153,20 @@ func (ci ContainerItem) Title() string {
 		Foreground(titleColor).
 		Render(title)
 
-	var isSelectedColor lipgloss.Color
-	switch ci.isSelected {
-	case true:
-		isSelectedColor = colors.Blue()
-	case false:
-		isSelectedColor = colors.White()
+	if !ci.isWorking {
+		var isSelectedColor lipgloss.Color
+		switch ci.isSelected {
+		case true:
+			isSelectedColor = colors.Blue()
+		case false:
+			isSelectedColor = colors.White()
+		}
+		statusIcon = lipgloss.NewStyle().
+			Foreground(isSelectedColor).
+			Render(statusIcon)
 	}
-	isSelectedIcon = lipgloss.NewStyle().
-		Foreground(isSelectedColor).
-		Render(isSelectedIcon)
 
-	return fmt.Sprintf("%s %s", isSelectedIcon, title)
+	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
 func (ci ContainerItem) Description() string {

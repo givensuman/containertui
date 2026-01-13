@@ -3,6 +3,7 @@ package containers
 import (
 	"log"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/moby/moby/api/types/container"
 )
@@ -25,13 +26,33 @@ func (cl *ContainerList) getSelectedContainerIndices() []int {
 	return selectedContainerIndices
 }
 
+func (cl *ContainerList) setWorkingState(ids []string, working bool) {
+	items := cl.list.Items()
+	for i, item := range items {
+		if c, ok := item.(ContainerItem); ok {
+			for _, id := range ids {
+				if c.ID == id {
+					c.isWorking = working
+					if working {
+						c.spinner = spinner.New()
+					}
+					cl.list.SetItem(i, c)
+					break
+				}
+			}
+		}
+	}
+}
+
 func (cl *ContainerList) handlePauseContainers() tea.Cmd {
 	if len(cl.selectedContainers.selections) > 0 {
 		selectedContainerIDs := cl.getSelectedContainerIDs()
+		cl.setWorkingState(selectedContainerIDs, true)
 		return PerformContainerOperation(Pause, selectedContainerIDs)
 	} else {
 		selectedItem, ok := cl.list.SelectedItem().(ContainerItem)
 		if ok {
+			cl.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Pause, []string{selectedItem.ID})
 		}
 	}
@@ -41,10 +62,12 @@ func (cl *ContainerList) handlePauseContainers() tea.Cmd {
 func (cl *ContainerList) handleUnpauseContainers() tea.Cmd {
 	if len(cl.selectedContainers.selections) > 0 {
 		selectedContainerIDs := cl.getSelectedContainerIDs()
+		cl.setWorkingState(selectedContainerIDs, true)
 		return PerformContainerOperation(Unpause, selectedContainerIDs)
 	} else {
 		selectedItem, ok := cl.list.SelectedItem().(ContainerItem)
 		if ok {
+			cl.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Unpause, []string{selectedItem.ID})
 		}
 	}
@@ -54,10 +77,12 @@ func (cl *ContainerList) handleUnpauseContainers() tea.Cmd {
 func (cl *ContainerList) handleStartContainers() tea.Cmd {
 	if len(cl.selectedContainers.selections) > 0 {
 		selectedContainerIDs := cl.getSelectedContainerIDs()
+		cl.setWorkingState(selectedContainerIDs, true)
 		return PerformContainerOperation(Start, selectedContainerIDs)
 	} else {
 		selectedItem, ok := cl.list.SelectedItem().(ContainerItem)
 		if ok {
+			cl.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Start, []string{selectedItem.ID})
 		}
 	}
@@ -68,10 +93,12 @@ func (cl *ContainerList) handleStartContainers() tea.Cmd {
 func (cl *ContainerList) handleStopContainers() tea.Cmd {
 	if len(cl.selectedContainers.selections) > 0 {
 		selectedContainerIDs := cl.getSelectedContainerIDs()
+		cl.setWorkingState(selectedContainerIDs, true)
 		return PerformContainerOperation(Stop, selectedContainerIDs)
 	} else {
 		selectedItem, ok := cl.list.SelectedItem().(ContainerItem)
 		if ok {
+			cl.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Stop, []string{selectedItem.ID})
 		}
 	}
@@ -125,10 +152,12 @@ func (cl *ContainerList) handleShowLogs() tea.Cmd {
 func (cl *ContainerList) handleConfirmationOfRemoveContainers() tea.Cmd {
 	if len(cl.selectedContainers.selections) > 0 {
 		selectedContainerIDs := cl.getSelectedContainerIDs()
+		cl.setWorkingState(selectedContainerIDs, true)
 		return PerformContainerOperation(Remove, selectedContainerIDs)
 	} else {
 		item, ok := cl.list.SelectedItem().(ContainerItem)
 		if ok {
+			cl.setWorkingState([]string{item.ID}, true)
 			return PerformContainerOperation(Remove, []string{item.ID})
 		}
 	}
@@ -193,6 +222,9 @@ func (cl *ContainerList) handleToggleSelectionOfAll() {
 }
 
 func (cl *ContainerList) handleContainerOperationResult(msg MessageContainerOperationResult) {
+	// Always set working state to false, even on error
+	cl.setWorkingState(msg.IDs, false)
+
 	if msg.Error != nil {
 		// TODO: Replace with notification
 		return
