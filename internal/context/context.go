@@ -22,10 +22,13 @@ var (
 )
 
 // InitializeClient initializes the shared client instance.
-func InitializeClient() {
+// Returns error if initialization fails (e.g., no Docker daemon).
+func InitializeClient() error {
+	var err error
 	once.Do(func() {
-		clientInstance = client.NewClient()
+		clientInstance, err = client.NewClient()
 	})
+	return err
 }
 
 // GetClient returns the shared client instance.
@@ -34,10 +37,12 @@ func GetClient() *client.ClientWrapper {
 }
 
 // CloseClient closes the shared client instance.
-func CloseClient() {
+// Logs error if closing fails.
+func CloseClient() error {
 	if clientInstance != nil {
-		clientInstance.CloseClient()
+		return clientInstance.CloseClient()
 	}
+	return nil
 }
 
 // SetConfig sets the shared config instance.

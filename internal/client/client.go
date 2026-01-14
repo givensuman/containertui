@@ -9,6 +9,7 @@ import (
 )
 
 // Container represents a Docker container with essential details
+// Only the relevant fields are exposed for convenience.
 type Container struct {
 	container.Config
 	ID    string                   `json:"Id"`
@@ -18,36 +19,36 @@ type Container struct {
 }
 
 // ClientWrapper wraps the Docker client to provide container management functionalities
+// All methods return errors (never panic).
 type ClientWrapper struct {
 	client *client.Client
 }
 
-// NewClient creates a new ClientWrapper with an initialized Docker client
-func NewClient() *ClientWrapper {
+// NewClient creates a new ClientWrapper with an initialized Docker client.
+// Returns an error if the client cannot be constructed.
+func NewClient() (*ClientWrapper, error) {
 	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-
-	return &ClientWrapper{client: dockerClient}
+	return &ClientWrapper{client: dockerClient}, nil
 }
 
-// CloseClient closes the Docker client connection
-func (cw *ClientWrapper) CloseClient() {
-	err := cw.client.Close()
-	if err != nil {
-		panic(err)
-	}
+// CloseClient closes the Docker client connection.
+// Always check the returned error.
+func (cw *ClientWrapper) CloseClient() error {
+	return cw.client.Close()
 }
 
-// GetContainers retrieves a list of all Docker containers
-func (cw *ClientWrapper) GetContainers() []Container {
+// GetContainers retrieves a list of all Docker containers.
+// Returns slice and error if retrieval fails.
+func (cw *ClientWrapper) GetContainers() ([]Container, error) {
 	containers, err := cw.client.ContainerList(
 		context.Background(),
 		client.ContainerListOptions{All: true},
 	)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	dockerContainers := make([]Container, 0, len(containers.Items))
 	for _, container := range containers.Items {
@@ -58,16 +59,17 @@ func (cw *ClientWrapper) GetContainers() []Container {
 			State: container.State,
 		})
 	}
-	return dockerContainers
+	return dockerContainers, nil
 }
 
-// GetContainerState retrieves the current state of a specific Docker container by its ID
-func (cw *ClientWrapper) GetContainerState(id string) string {
+// GetContainerState retrieves the current state of a specific Docker container by its ID.
+// Returns the state string and an error if inspect fails.
+func (cw *ClientWrapper) GetContainerState(id string) (string, error) {
 	inspectResponse, err := cw.client.ContainerInspect(context.Background(), id, client.ContainerInspectOptions{})
 	if err != nil {
-		return "unknown"
+		return "unknown", err
 	}
-	return string(inspectResponse.Container.State.Status)
+	return string(inspectResponse.Container.State.Status), nil
 }
 
 // PauseContainer pauses a specific Docker container by its ID
@@ -150,13 +152,15 @@ func (cw *ClientWrapper) RemoveContainers(ids []string) error {
 	return nil
 }
 
+// Logs is a type alias for Docker logs result (for API clarity)
 type Logs client.ContainerLogsResult
 
-func (cw *ClientWrapper) OpenLogs(id string) Logs {
+// OpenLogs streams logs from a Docker container.
+// Returns the log reader and error if retrieval fails.
+func (cw *ClientWrapper) OpenLogs(id string) (Logs, error) {
 	reader, err := cw.client.ContainerLogs(context.Background(), id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true, Tail: "all"})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
-	return reader
+	return reader, nil
 }

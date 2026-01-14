@@ -14,11 +14,17 @@ const (
 	viewOverlay
 )
 
+// Model is the main containers screen for the TUI.
+// Manages two views: either normal container list or overlay (logs, delete dialog).
 type Model struct {
 	shared.Component
+	// sessionState governs whether we're in main or overlay view
 	sessionState sessionState
-	foreground   tea.Model
-	background   tea.Model
+	// foreground is the currently active overlay model (logs, confirmation, etc)
+	foreground tea.Model
+	// background is the container list model
+	background tea.Model
+	// overlayModel manages overlay transitions and rendering
 	overlayModel *overlay.Model
 }
 
@@ -46,6 +52,8 @@ func New() Model {
 	}
 }
 
+// UpdateWindowDimensions updates all sub-models with latest terminal size.
+// Called during resize events or window size changes.
 func (m *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	m.WindowWidth = msg.Width
 	m.WindowHeight = msg.Height
@@ -57,6 +65,7 @@ func (m *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 			m.background = cl
 		}
 	case viewOverlay:
+		// Forward dimension updates to correct overlay model
 		switch fg := m.foreground.(type) {
 		case *ContainerLogs:
 			fg.setDimensions(msg.Width, msg.Height)
@@ -72,10 +81,13 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles all Bubbletea messages relevant to this containers screen.
+// Manages both main view logic and overlay/dialog/confirmation sub-models.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	// Update foreground/background model based on session mode.
 	switch m.sessionState {
 	case viewMain:
 		bg, cmd := m.background.Update(msg)
@@ -87,6 +99,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	// Handle special message types (resize, open/close dialogs, etc)
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.UpdateWindowDimensions(msg)
@@ -105,6 +118,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.foreground.Init())
 	}
 
+	// Always update the overlay model and sync submodels
 	m.overlayModel.Foreground = m.foreground
 	m.overlayModel.Background = m.background
 
@@ -118,6 +132,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// View renders the TUI for containers.
+// If an overlay is open, delegates to overlay model’s view,
+// Otherwise renders the main container background view.
 func (m Model) View() string {
 	if m.sessionState == viewOverlay && m.foreground != nil {
 		return m.overlayModel.View()
