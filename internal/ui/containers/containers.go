@@ -75,6 +75,7 @@ func newDetailsKeybindings() detailsKeybindings {
 // Model represents the containers component state.
 type Model struct {
 	shared.Component
+	// sessionState governs whether we're in main or overlay view
 	sessionState sessionState
 	focusedView  int
 
@@ -196,6 +197,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, foregroundCmd)
 	}
 
+	// Handle special message types (resize, open/close dialogs, etc)
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		model.UpdateWindowDimensions(msg)

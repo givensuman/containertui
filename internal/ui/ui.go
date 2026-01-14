@@ -105,6 +105,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.help.Width = msg.Width
 
 	case tea.KeyMsg:
+		// Handle quit signals (Ctrl-C, Ctrl-D)
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
 			return model, tea.Quit
