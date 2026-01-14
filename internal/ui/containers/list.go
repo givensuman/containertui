@@ -56,6 +56,10 @@ func newKeybindings() *keybindings {
 			key.WithKeys("x"),
 			key.WithHelp("x", "exec shell"),
 		),
+		execShell: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "exec shell"),
+		),
 		toggleSelection: key.NewBinding(
 			key.WithKeys(tea.KeySpace.String()),
 			key.WithHelp("space", "toggle selection"),
