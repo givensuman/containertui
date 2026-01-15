@@ -18,11 +18,11 @@ var (
 		Width  int
 		Height int
 	}
+	// ～(^з^)~~☆
 	once sync.Once
 )
 
 // InitializeClient initializes the shared client instance.
-// Returns error if initialization fails (e.g., no Docker daemon).
 func InitializeClient() error {
 	var err error
 	once.Do(func() {
@@ -37,11 +37,11 @@ func GetClient() *client.ClientWrapper {
 }
 
 // CloseClient closes the shared client instance.
-// Logs error if closing fails.
 func CloseClient() error {
 	if clientInstance != nil {
 		return clientInstance.CloseClient()
 	}
+
 	return nil
 }
 

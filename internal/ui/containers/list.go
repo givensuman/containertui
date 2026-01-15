@@ -46,8 +46,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("r", "remove container"),
 		),
 		showLogs: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "show container logs"),
+			key.WithKeys("L"),
+			key.WithHelp("L", "show container logs"),
 		),
 		execShell: key.NewBinding(
 			key.WithKeys("x"),

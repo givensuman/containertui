@@ -14,7 +14,7 @@ func ParseColors(colorStrings []string) (*config.ThemeConfig, error) {
 		return &config.ThemeConfig{}, nil
 	}
 
-	colorConfig := &config.ThemeConfig{}
+	themeConfig := &config.ThemeConfig{}
 	allPairs := []string{}
 
 	// Collect all pairs from all strings
@@ -23,6 +23,7 @@ func ParseColors(colorStrings []string) (*config.ThemeConfig, error) {
 		if colorString == "" {
 			continue
 		}
+
 		// Split each string by commas to handle cases where users might still use commas
 		pairs := strings.Split(colorString, ",")
 		allPairs = append(allPairs, pairs...)
@@ -49,25 +50,25 @@ func ParseColors(colorStrings []string) (*config.ThemeConfig, error) {
 
 		switch key {
 		case "primary":
-			colorConfig.Primary = config.ConfigString(value)
+			themeConfig.Primary = config.ConfigString(value)
 		case "border":
-			colorConfig.Border = config.ConfigString(value)
+			themeConfig.Border = config.ConfigString(value)
 		case "text":
-			colorConfig.Text = config.ConfigString(value)
+			themeConfig.Text = config.ConfigString(value)
 		case "muted":
-			colorConfig.Muted = config.ConfigString(value)
+			themeConfig.Muted = config.ConfigString(value)
 		case "selected":
-			colorConfig.Selected = config.ConfigString(value)
+			themeConfig.Selected = config.ConfigString(value)
 		case "success":
-			colorConfig.Success = config.ConfigString(value)
+			themeConfig.Success = config.ConfigString(value)
 		case "warning":
-			colorConfig.Warning = config.ConfigString(value)
+			themeConfig.Warning = config.ConfigString(value)
 		case "error":
-			colorConfig.Error = config.ConfigString(value)
+			themeConfig.Error = config.ConfigString(value)
 		default:
-			return nil, fmt.Errorf("unknown color key: %s", key)
+			return nil, fmt.Errorf("unknown theme key: %s", key)
 		}
 	}
 
-	return colorConfig, nil
+	return themeConfig, nil
 }
