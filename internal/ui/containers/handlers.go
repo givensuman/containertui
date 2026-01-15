@@ -173,7 +173,17 @@ func (cl *ContainerList) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	return OpenContainerLogs(&item)
+	c := exec.Command("sh", "-c", "docker logs \"$0\" 2>&1 | less", item.ID)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return notifications.AddNotificationMsg{
+				Message:  err.Error(),
+				Level:    notifications.Error,
+				Duration: 10 * 1000 * 1000 * 1000, // 10s
+			}
+		}
+		return nil
+	})
 }
 
 func (cl *ContainerList) handleExecShell() tea.Cmd {
@@ -190,7 +200,7 @@ func (cl *ContainerList) handleExecShell() tea.Cmd {
 	// This suspends the Bubbletea UI and lets the subprocess take over TTY
 	// Note: We are using "sh" as a generic shell, but some containers might only have "bash" or "ash".
 	// Ideally we could probe or let user choose, but "sh" is safest default.
-	c := exec.Command("docker", "exec", "-it", item.ID, "/bin/sh")
+	c := exec.Command("sh", "-c", "exec docker exec -it \"$0\" /bin/sh", item.ID)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
 			// tea.ExecProcess callback returns a Msg, not a Cmd.

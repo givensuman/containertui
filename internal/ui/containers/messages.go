@@ -15,18 +15,6 @@ func CloseOverlay() tea.Cmd {
 	}
 }
 
-// MessageOpenContainerLogs indicates the user
-// has requested to view the logs of the selected container
-type MessageOpenContainerLogs struct {
-	container *ContainerItem
-}
-
-func OpenContainerLogs(container *ContainerItem) tea.Cmd {
-	return func() tea.Msg {
-		return MessageOpenContainerLogs{container}
-	}
-}
-
 // MessageOpenDeleteConfirmationDialog indicates the user
 // has requested to delete an item in the ContainerList
 type MessageOpenDeleteConfirmationDialog struct {

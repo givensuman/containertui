@@ -112,10 +112,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionState = viewOverlay
 		cmds = append(cmds, m.foreground.Init())
 
-	case MessageOpenContainerLogs:
-		m.foreground = newContainerLogs(msg.container)
-		m.sessionState = viewOverlay
-		cmds = append(cmds, m.foreground.Init())
+		// case MessageOpenContainerLogs:
+		// 	m.foreground = newContainerLogs(msg.container)
+		// 	m.sessionState = viewOverlay
+		// 	cmds = append(cmds, m.foreground.Init())
 	}
 
 	// Always update the overlay model and sync submodels
