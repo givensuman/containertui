@@ -120,6 +120,14 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "?" {
 			model.help.ShowAll = !model.help.ShowAll
 		}
+
+		// Delegate tab switching to tabs model
+		// This now handles tab/shift+tab and 1-4
+		newTabs, cmd := m.tabsModel.Update(msg)
+		m.tabsModel = newTabs.(tabs.Model)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	updatedNotifications, notificationsCmd := model.notificationsModel.Update(msg)
