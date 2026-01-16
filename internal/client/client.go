@@ -54,6 +54,29 @@ type Volume struct {
 	Mountpoint string `json:"Mountpoint"`
 }
 
+// Image represents a Docker image.
+type Image struct {
+	ID       string   `json:"Id"`
+	RepoTags []string `json:"RepoTags"`
+	Size     int64    `json:"Size"`
+	Created  int64    `json:"Created"`
+}
+
+// Network represents a Docker network.
+type Network struct {
+	ID     string `json:"Id"`
+	Name   string `json:"Name"`
+	Driver string `json:"Driver"`
+	Scope  string `json:"Scope"`
+}
+
+// Volume represents a Docker volume.
+type Volume struct {
+	Name       string `json:"Name"`
+	Driver     string `json:"Driver"`
+	Mountpoint string `json:"Mountpoint"`
+}
+
 // ClientWrapper wraps the Docker client to provide container management functionalities.
 type ClientWrapper struct {
 	client *client.Client

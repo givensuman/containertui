@@ -104,6 +104,15 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		model.help.Width = msg.Width
 
+		newImgs, _ := m.imagesModel.Update(contentMsg)
+		m.imagesModel = newImgs.(images.Model)
+
+		newVols, _ := m.volumesModel.Update(contentMsg)
+		m.volumesModel = newVols.(volumes.Model)
+
+		newNets, _ := m.networksModel.Update(contentMsg)
+		m.networksModel = newNets.(networks.Model)
+
 	case tea.KeyMsg:
 		// Handle quit signals (Ctrl-C, Ctrl-D)
 		switch msg.String() {
