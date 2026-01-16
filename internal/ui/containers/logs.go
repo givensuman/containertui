@@ -131,6 +131,5 @@ func (cl *ContainerLogs) setDimensions(width, height int) {
 
 // View renders the log overlay with controls and instructions.
 func (cl *ContainerLogs) View() string {
-	title := "--- Container Logs (Press q or esc to close, ↑↓ to scroll) ---"
-	return title + "\n" + cl.viewport.View()
+	return cl.viewport.View()
 }
