@@ -21,10 +21,6 @@ install: ## install golang binary
 run: ## run the app
 	go run ./cmd
 
-.PHONY: test-container
-test-container: ## build a container for testing TUI
-	docker run -d alpine sh -c "while true; do date; sleep 1; done"
-
 .PHONY: test
 test: clean ## run tests with coverage
 	go test --cover -parallel=1 -v -coverprofile=coverage.out ./...
