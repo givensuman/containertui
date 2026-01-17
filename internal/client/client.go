@@ -496,3 +496,117 @@ func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (Conta
 func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
 	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
 }
+
+// RemoveImage removes a specific Docker image by its ID.
+func (cw *ClientWrapper) RemoveImage(id string) error {
+	options := types.ImageRemoveOptions{
+		Force:         false,
+		PruneChildren: true,
+	}
+
+	_, err := cw.client.ImageRemove(context.Background(), id, options)
+	return err
+}
+
+// RemoveVolume removes a specific Docker volume by its name.
+func (cw *ClientWrapper) RemoveVolume(name string) error {
+	return cw.client.VolumeRemove(context.Background(), name, false)
+}
+
+// RemoveNetwork removes a specific Docker network by its ID.
+func (cw *ClientWrapper) RemoveNetwork(id string) error {
+	return cw.client.NetworkRemove(context.Background(), id)
+}
+
+// PruneImages removes all unused images.
+func (cw *ClientWrapper) PruneImages() (uint64, error) {
+	report, err := cw.client.ImagesPrune(context.Background(), filters.Args{})
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+// PruneVolumes removes all unused volumes.
+func (cw *ClientWrapper) PruneVolumes() (uint64, error) {
+	report, err := cw.client.VolumesPrune(context.Background(), filters.Args{})
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+// PruneNetworks removes all unused networks.
+func (cw *ClientWrapper) PruneNetworks() error {
+	_, err := cw.client.NetworksPrune(context.Background(), filters.Args{})
+	return err
+}
+
+// GetContainersUsingImage returns a list of container names that are using the specified image ID.
+func (cw *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, error) {
+	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+
+	var usedBy []string
+	for _, c := range containers {
+		if c.ImageID == imageID {
+			// Name usually comes with a slash, e.g., "/my-container"
+			name := c.Names[0]
+			if len(name) > 0 && name[0] == '/' {
+				name = name[1:]
+			}
+			usedBy = append(usedBy, name)
+		}
+	}
+	return usedBy, nil
+}
+
+// GetContainersUsingVolume returns a list of container names that are using the specified volume name.
+func (cw *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, error) {
+	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+
+	var usedBy []string
+	for _, c := range containers {
+		for _, m := range c.Mounts {
+			if m.Name == volumeName || m.Source == volumeName {
+				name := c.Names[0]
+				if len(name) > 0 && name[0] == '/' {
+					name = name[1:]
+				}
+				usedBy = append(usedBy, name)
+				break // Found usage in this container, move to next container
+			}
+		}
+	}
+	return usedBy, nil
+}
+
+// GetContainersUsingNetwork returns a list of container names that are attached to the specified network ID.
+func (cw *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, error) {
+	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+
+	var usedBy []string
+	for _, c := range containers {
+		if c.NetworkSettings != nil {
+			for _, net := range c.NetworkSettings.Networks {
+				if net.NetworkID == networkID {
+					name := c.Names[0]
+					if len(name) > 0 && name[0] == '/' {
+						name = name[1:]
+					}
+					usedBy = append(usedBy, name)
+					break
+				}
+			}
+		}
+	}
+	return usedBy, nil
+}
