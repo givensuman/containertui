@@ -92,8 +92,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Calculate content height (subtract tabs height which is usually 1-2 lines)
 		// Tabs normally take up 3 lines (border + content + padding/margin potentially)
 		// We'll reserve 3 lines to be safe and ensure the content doesn't overflow
-		// Reserve 1 line for short help, so the bottom border isn't eaten by it.
-		// Content = Height - Tabs(1) - Help(1) - Borders(2) = Height - 4
+		// Reserve lines for help view based on expansion state.
+		// Standard short help is 1 line. Expanded help varies.
+		// Content = Height - Tabs(1) - Help(variable) - Borders(2)
+
+		// HACK: Hardcoding tabs height to 1 for now (based on View implementation).
+		// Help takes 1 line minimum.
+		// Borders usually take 2 lines.
+		// So safe reserve is at least 4.
+		// However, to fix the cutoff, we need to be more aggressive if help is expanded,
+		// OR we need to let the help overlay ON TOP of the content (which we do in View).
+		// But if we overlay, we obscure content. Ideally, we shrink content.
+		// Let's shrink content height by a fixed amount that accommodates the "short help" (1 line)
+		// plus tab bar (1 line) plus borders (2 lines) = 4 lines.
+		// If help is expanded, it overlays. If we shrink for expanded help, the UI jumps.
+		// Standard behavior is overlay.
+
 		contentHeight := msg.Height - 4
 		if contentHeight < 0 {
 			contentHeight = 0
@@ -249,48 +263,48 @@ func (m Model) View() string {
 
 	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentView)
 
-	if helpView != "" {
-		// Apply border to help view to distinguish it, ONLY if expanded
-		// We need to apply it to the help content
-		helpStyle := lipgloss.NewStyle().Width(m.width)
+	// If help is empty, just return full view
+	if helpView == "" {
+		return fullView
+	}
 
-		if m.help.ShowAll {
-			helpStyle = helpStyle.
-				Border(lipgloss.ASCIIBorder(), true, false, false, false).
-				BorderForeground(colors.Muted())
-		}
+	// Apply border to help view to distinguish it, ONLY if expanded
+	// We need to apply it to the help content
+	helpStyle := lipgloss.NewStyle().Width(m.width)
 
-		helpView = helpStyle.Render(helpView)
+	if m.help.ShowAll {
+		helpStyle = helpStyle.
+			Border(lipgloss.ASCIIBorder(), true, false, false, false).
+			BorderForeground(colors.Muted())
+	}
 
-		helpLines := strings.Split(helpView, "\n")
-		helpHeight := len(helpLines)
-		fullLines := strings.Split(fullView, "\n")
+	// Render the help view with style
+	renderedHelpView := helpStyle.Render(helpView)
+	// Recalculate lines after styling as border adds lines
+	renderedHelpLines := strings.Split(renderedHelpView, "\n")
+	renderedHelpHeight := len(renderedHelpLines)
 
-		// Ensure we don't go out of bounds
-		if len(fullLines) >= helpHeight {
-			// Replace last N lines
-			// We can't just replace because width might be different (transparent background?)
-			// Help component usually has transparent background.
-			// If we want a solid background for the help overlay so it hides content behind it:
-			// We need to apply a style to helpView.
+	// Combine tabs and content, but we need to ensure we don't exceed (Screen Height - Help Height)
+	// if we want to avoid overlaying (cutoff).
+	// However, the prompt says "overlay at the bottom".
+	// The issue reported is "bottom of info panel is cut off by top of help view".
+	// This implies the info panel is drawing into the space the help view occupies.
+	// We set contentHeight = msg.Height - 4 in Update.
+	// Tabs = 1 line.
+	// Info Panel = contentHeight.
+	// Total used = 1 + (H - 4) = H - 3.
+	// Remaining for help = 3 lines.
+	// Short help is 1 line.
+	// So normally: [Tabs 1][Content H-4][Empty 2][Help 1] -> Fits?
+	// Wait, if contentHeight includes borders, then actual text area is smaller.
+	// If help view is rendered "over" the bottom lines, it might be overwriting the border of the content view.
 
-			// Let's assume helpView is opaque or we make it opaque.
-			// Actually, just returning JoinVertical pushes content up because the total height exceeds terminal height.
-			// We need to ensure the `contentView` height + `tabsView` height + `helpView` height <= m.height.
-			// But we WANT it to overlay, meaning `contentView` uses full height, and help sits ON TOP.
+	fullLines := strings.Split(fullView, "\n")
 
-			// We can use shared.Layer or just manual line replacement.
-			// Let's stick to lines replacement for simplicity as it effectively "overlays" in a terminal.
-
-			// Truncate fullView to make room for help if we were stacking, but we are overlaying.
-			// So we take fullView (which is full screen), and overwrite the bottom lines.
-
-			topLines := fullLines[:len(fullLines)-helpHeight]
-			// We might need to pad help lines to full width to ensure they cover underlying text
-
-			// Join top lines and help lines
-			return strings.Join(append(topLines, helpLines...), "\n")
-		}
+	// Perform the overlay
+	if len(fullLines) >= renderedHelpHeight {
+		topLines := fullLines[:len(fullLines)-renderedHelpHeight]
+		return strings.Join(append(topLines, renderedHelpLines...), "\n")
 	}
 
 	return fullView
