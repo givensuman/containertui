@@ -110,13 +110,13 @@ func (m Model) View() string {
 
 	// Fill the rest of the line with the gap style
 	// We need to account for borders in width calculation
-	gapWidth := max(0, m.WindowWidth-lipgloss.Width(row)-2) // -2 for safety margin
+	gapWidth := maxInt(0, m.WindowWidth-lipgloss.Width(row)-2) // -2 for safety margin
 	gap := strings.Repeat(" ", gapWidth)
 
 	return lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
 }
 
-func max(a, b int) int {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}

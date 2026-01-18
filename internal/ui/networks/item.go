@@ -88,7 +88,7 @@ func (networkItem NetworkItem) Description() string {
 	if len(networkItem.Network.ID) > 12 {
 		shortID = networkItem.Network.ID[:12]
 	}
-	return fmt.Sprintf("   %s", shortID)
+	return "   " + shortID
 }
 
 func (networkItem NetworkItem) FilterValue() string {

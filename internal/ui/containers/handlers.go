@@ -172,7 +172,11 @@ func (containerList *ContainerList) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	command := exec.Command("sh", "-c", "docker logs \"$0\" 2>&1 | less", item.ID)
+	// G204: Subprocess launched with a potential tainted input or cmd arguments.
+	// This is a local CLI tool interacting with Docker. The item.ID is from the Docker API.
+	// We trust the Docker API and the user's intent to view logs.
+	// The shell is fixed to "sh".
+	command := exec.Command("sh", "-c", "docker logs \"$0\" 2>&1 | less", item.ID) //nolint:gosec // Trusted input from Docker API
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		if err != nil {
 			return notifications.AddNotificationMsg{
@@ -199,7 +203,10 @@ func (containerList *ContainerList) handleExecShell() tea.Cmd {
 	// This suspends the Bubbletea UI and lets the subprocess take over TTY.
 	// Note: We are using "sh" as a generic shell, but some containers might only have "bash" or "ash".
 	// Ideally we could probe or let user choose, but "sh" is safest default.
-	command := exec.Command("sh", "-c", "exec docker exec -it \"$0\" /bin/sh", item.ID)
+	// G204: Subprocess launched with a potential tainted input.
+	// We are executing `docker exec` which is the intended functionality.
+	// item.ID comes from Docker API.
+	command := exec.Command("sh", "-c", "exec docker exec -it \"$0\" /bin/sh", item.ID) //nolint:gosec // Trusted input from Docker API
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		if err != nil {
 			// tea.ExecProcess callback returns a Msg, not a Cmd.
@@ -326,6 +333,10 @@ func (containerList *ContainerList) handleContainerOperationResult(msg MessageCo
 		newState = "running"
 	case Stop:
 		newState = "exited"
+	case Remove:
+		// Remove is handled above, so this case is theoretically unreachable here,
+		// but we include it for exhaustiveness.
+		return nil
 	default:
 		return nil
 	}

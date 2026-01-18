@@ -142,5 +142,5 @@ func (containerItem ContainerItem) Description() string {
 	if len(containerItem.ID) > 12 {
 		shortID = containerItem.ID[:12]
 	}
-	return fmt.Sprintf("   %s", shortID)
+	return "   " + shortID
 }

@@ -1,3 +1,4 @@
+// Package notifications provides a component for displaying toast-like notifications.
 package notifications
 
 import (

@@ -414,9 +414,10 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	if model.focusedView == focusList {
+	switch model.focusedView {
+	case focusList:
 		return model.list.ShortHelp()
-	} else if model.focusedView == focusDetails {
+	case focusDetails:
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -427,9 +428,10 @@ func (model Model) ShortHelp() []key.Binding {
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	if model.focusedView == focusList {
+	switch model.focusedView {
+	case focusList:
 		return model.list.FullHelp()
-	} else if model.focusedView == focusDetails {
+	case focusDetails:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

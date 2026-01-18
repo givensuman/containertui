@@ -99,5 +99,5 @@ func (imageItem ImageItem) Description() string {
 	if len(shortID) > 12 {
 		shortID = shortID[7:19] // Remove "sha256:" prefix and take first 12 chars.
 	}
-	return fmt.Sprintf("   %s", shortID)
+	return "   " + shortID
 }

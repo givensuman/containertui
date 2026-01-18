@@ -84,7 +84,7 @@ func (volumeItem VolumeItem) Title() string {
 }
 
 func (volumeItem VolumeItem) Description() string {
-	return fmt.Sprintf("   %s", volumeItem.Volume.Driver)
+	return "   " + volumeItem.Volume.Driver
 }
 
 func (volumeItem VolumeItem) FilterValue() string {

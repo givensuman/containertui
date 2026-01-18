@@ -188,38 +188,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch model.sessionState {
 	case viewMain:
-		isKeyMessage := false
-		if _, ok := msg.(tea.KeyMsg); ok {
-			isKeyMessage = true
-		}
-
-		if !isKeyMessage || model.focusedView == focusList {
-			backgroundModel, backgroundCmd := model.background.Update(msg)
-			model.background = backgroundModel.(ContainerList)
-			cmds = append(cmds, backgroundCmd)
-		}
-
-		if !isKeyMessage || model.focusedView == focusDetails {
-			updatedViewport, viewportCmd := model.viewport.Update(msg)
-			model.viewport = updatedViewport
-			cmds = append(cmds, viewportCmd)
-		}
-
-		if containerList, ok := model.background.(ContainerList); ok {
-			selectedItem := containerList.list.SelectedItem()
-			if selectedItem != nil {
-				if containerItem, ok := selectedItem.(ContainerItem); ok {
-					if containerItem.ID != model.currentContainerID {
-						model.currentContainerID = containerItem.ID
-						model.cpuHistory = make([]float64, 0)
-						cmds = append(cmds, func() tea.Msg {
-							containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
-							return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
-						})
-					}
-				}
-			}
-		}
+		cmds = append(cmds, model.updateMainView(msg)...)
 
 	case viewOverlay:
 		foregroundModel, foregroundCmd := model.foreground.Update(msg)
@@ -240,21 +209,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, model.foreground.Init())
 
 	case MsgStatsTick:
-		cmds = append(cmds, tickCmd())
-
-		if model.sessionState == viewMain {
-			if containerList, ok := model.background.(ContainerList); ok {
-				selectedItem := containerList.list.SelectedItem()
-				if selectedItem != nil {
-					if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
-						cmds = append(cmds, func() tea.Msg {
-							containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
-							return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
-						})
-					}
-				}
-			}
-		}
+		cmds = append(cmds, model.handleStatsTick()...)
 
 	case MsgContainerInspection:
 		if msg.ID == model.currentContainerID && msg.Err == nil {
@@ -285,6 +240,63 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func (model *Model) updateMainView(msg tea.Msg) []tea.Cmd {
+	var cmds []tea.Cmd
+	isKeyMessage := false
+	if _, ok := msg.(tea.KeyMsg); ok {
+		isKeyMessage = true
+	}
+
+	if !isKeyMessage || model.focusedView == focusList {
+		backgroundModel, backgroundCmd := model.background.Update(msg)
+		model.background = backgroundModel.(ContainerList)
+		cmds = append(cmds, backgroundCmd)
+	}
+
+	if !isKeyMessage || model.focusedView == focusDetails {
+		updatedViewport, viewportCmd := model.viewport.Update(msg)
+		model.viewport = updatedViewport
+		cmds = append(cmds, viewportCmd)
+	}
+
+	if containerList, ok := model.background.(ContainerList); ok {
+		selectedItem := containerList.list.SelectedItem()
+		if selectedItem != nil {
+			if containerItem, ok := selectedItem.(ContainerItem); ok {
+				if containerItem.ID != model.currentContainerID {
+					model.currentContainerID = containerItem.ID
+					model.cpuHistory = make([]float64, 0)
+					cmds = append(cmds, func() tea.Msg {
+						containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
+						return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
+					})
+				}
+			}
+		}
+	}
+	return cmds
+}
+
+func (model *Model) handleStatsTick() []tea.Cmd {
+	var cmds []tea.Cmd
+	cmds = append(cmds, tickCmd())
+
+	if model.sessionState == viewMain {
+		if containerList, ok := model.background.(ContainerList); ok {
+			selectedItem := containerList.list.SelectedItem()
+			if selectedItem != nil {
+				if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
+					cmds = append(cmds, func() tea.Msg {
+						containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
+						return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
+					})
+				}
+			}
+		}
+	}
+	return cmds
 }
 
 func (model Model) View() string {
@@ -329,11 +341,12 @@ func (model Model) ShortHelp() []key.Binding {
 		return nil
 	}
 
-	if model.focusedView == focusList {
+	switch model.focusedView {
+	case focusList:
 		if containerList, ok := model.background.(ContainerList); ok {
 			return containerList.list.ShortHelp()
 		}
-	} else if model.focusedView == focusDetails {
+	case focusDetails:
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -348,11 +361,12 @@ func (model Model) FullHelp() [][]key.Binding {
 		return nil
 	}
 
-	if model.focusedView == focusList {
+	switch model.focusedView {
+	case focusList:
 		if containerList, ok := model.background.(ContainerList); ok {
 			return containerList.list.FullHelp()
 		}
-	} else if model.focusedView == focusDetails {
+	case focusDetails:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -377,7 +391,7 @@ func formatInspection(container types.ContainerJSON, containerStats client.Conta
 	}
 	stateString := lipgloss.NewStyle().Foreground(stateColor).Render(container.State.Status)
 
-	builder.WriteString(infoStyle.Render(fmt.Sprintf("Image: %s", container.Config.Image)) + "\n")
+	builder.WriteString(infoStyle.Render("Image: "+container.Config.Image) + "\n")
 	builder.WriteString(fmt.Sprintf("State: %s\n\n", stateString))
 
 	if container.State.Running && len(cpuHistory) > 0 {
@@ -426,7 +440,7 @@ func formatInspection(container types.ContainerJSON, containerStats client.Conta
 	if container.NetworkSettings != nil && len(container.NetworkSettings.Ports) > 0 {
 		builder.WriteString("\n" + sectionHeader.Render("Ports") + "\n")
 		for port, bindings := range container.NetworkSettings.Ports {
-			var portBindings []string
+			portBindings := make([]string, 0, len(bindings))
 			for _, portBinding := range bindings {
 				portBindings = append(portBindings, fmt.Sprintf("%s:%s", portBinding.HostIP, portBinding.HostPort))
 			}

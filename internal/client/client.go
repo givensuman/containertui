@@ -426,7 +426,9 @@ func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (Conta
 	if err != nil {
 		return ContainerStats{}, err
 	}
-	defer stats.Body.Close()
+	defer func() {
+		_ = stats.Body.Close()
+	}()
 
 	var statsJSON types.StatsJSON
 	if err := json.NewDecoder(stats.Body).Decode(&statsJSON); err != nil {

@@ -55,7 +55,7 @@ func TestLoadFromFile(t *testing.T) {
 
 	// Write a test config
 	testConfig := `no-nerd-fonts: true`
-	err = os.WriteFile(tempFile, []byte(testConfig), 0o644)
+	err = os.WriteFile(tempFile, []byte(testConfig), 0o600)
 	if err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestLoadFromFile(t *testing.T) {
 	}
 
 	// Test loading invalid YAML
-	err = os.WriteFile(tempFile, []byte("invalid: yaml: :"), 0o644)
+	err = os.WriteFile(tempFile, []byte("invalid: yaml: :"), 0o600)
 	if err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)
 	}
