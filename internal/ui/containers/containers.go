@@ -191,6 +191,13 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, model.updateMainView(msg)...)
 
 	case viewOverlay:
+		// When in overlay mode, we still want to update the background (main view)
+		// so that if the window resizes, the background is redrawn correctly.
+		// However, we don't want to process keys for the background.
+		if _, ok := msg.(tea.WindowSizeMsg); ok {
+			model.updateMainView(msg)
+		}
+
 		foregroundModel, foregroundCmd := model.foreground.Update(msg)
 		model.foreground = foregroundModel
 		cmds = append(cmds, foregroundCmd)
@@ -202,6 +209,18 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MessageCloseOverlay:
 		model.sessionState = viewMain
+		// Restore the original background model when closing overlay
+		if _, ok := model.background.(shared.SimpleViewModel); ok {
+			// This part is actually tricky because we need the original ContainerList model back.
+			// But we never lost it, we just wrapped its View() output.
+			// Wait, the overlay logic requires model.background to be a tea.Model.
+			// If we pass the actual ContainerList model, its View() will run.
+			// The issue described is "informational panel to disappear".
+			// The container list IS the background. The info panel is part of the main view composition.
+			// Ah, the overlay component takes a Background model.
+			// If we set model.background to just the list component, the info panel (which is part of the full view composition) isn't included.
+			// We need to pass the FULL main view as the background to the overlay.
+		}
 
 	case MessageOpenDeleteConfirmationDialog:
 		model.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
@@ -231,7 +250,9 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	model.overlayModel.Foreground = model.foreground
-	model.overlayModel.Background = model.background
+	// We don't set model.overlayModel.Background here because we want the
+	// full composed view (List + Details) to be the background, which we
+	// construct in the View() method.
 
 	updatedOverlayModel, overlayCmd := model.overlayModel.Update(msg)
 	if overlayModel, ok := updatedOverlayModel.(*overlay.Model); ok {
@@ -240,6 +261,45 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func (model Model) renderMainView() string {
+	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
+	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
+
+	listView := model.background.View()
+
+	borderColor := colors.Muted()
+	if model.focusedView == focusDetails {
+		borderColor = colors.Primary()
+	}
+
+	detailStyle := lipgloss.NewStyle().
+		Width(detailLayout.Width - 2).
+		Height(detailLayout.Height).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1)
+
+	var detailContent string
+	if model.currentContainerID != "" {
+		detailContent = model.viewport.View()
+	} else {
+		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No container selected.")
+	}
+
+	detailView := detailStyle.Render(detailContent)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
+}
+
+func (model Model) View() string {
+	if model.sessionState == viewOverlay && model.foreground != nil {
+		model.overlayModel.Background = shared.SimpleViewModel{Content: model.renderMainView()}
+		return model.overlayModel.View()
+	}
+
+	return model.renderMainView()
 }
 
 func (model *Model) updateMainView(msg tea.Msg) []tea.Cmd {
@@ -297,40 +357,6 @@ func (model *Model) handleStatsTick() []tea.Cmd {
 		}
 	}
 	return cmds
-}
-
-func (model Model) View() string {
-	if model.sessionState == viewOverlay && model.foreground != nil {
-		return model.overlayModel.View()
-	}
-
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	listView := model.background.View()
-
-	borderColor := colors.Muted()
-	if model.focusedView == focusDetails {
-		borderColor = colors.Primary()
-	}
-
-	detailStyle := lipgloss.NewStyle().
-		Width(detailLayout.Width - 2).
-		Height(detailLayout.Height).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1)
-
-	var detailContent string
-	if model.currentContainerID != "" {
-		detailContent = model.viewport.View()
-	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No container selected.")
-	}
-
-	detailView := detailStyle.Render(detailContent)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 }
 
 func (model Model) ShortHelp() []key.Binding {

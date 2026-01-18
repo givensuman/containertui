@@ -345,11 +345,7 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model Model) View() string {
-	if model.sessionState == viewOverlay && model.foreground != nil {
-		return model.overlayModel.View()
-	}
-
+func (model Model) renderMainView() string {
 	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
 	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
 
@@ -377,6 +373,15 @@ func (model Model) View() string {
 	detailView := detailStyle.Render(detailContent)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
+}
+
+func (model Model) View() string {
+	if model.sessionState == viewOverlay && model.foreground != nil {
+		model.overlayModel.Background = shared.SimpleViewModel{Content: model.renderMainView()}
+		return model.overlayModel.View()
+	}
+
+	return model.renderMainView()
 }
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
