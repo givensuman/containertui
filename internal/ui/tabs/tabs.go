@@ -2,6 +2,8 @@
 package tabs
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -124,8 +126,6 @@ func maxInt(a, b int) int {
 var (
 	// Active tab: Primary color background, distinct text
 	activeTabStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true, true, false, true).
-			BorderForeground(colors.Primary()).
 			Foreground(colors.Primary()).
 			Padding(0, 1).
 			Bold(true)
