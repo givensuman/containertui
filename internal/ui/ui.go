@@ -2,10 +2,15 @@
 package ui
 
 import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/containers"
 	"github.com/givensuman/containertui/internal/ui/images"
@@ -27,6 +32,7 @@ type Model struct {
 	networksModel      networks.Model      // networks view/model
 	notificationsModel notifications.Model // notifications view/model
 	overlayModel       *overlay.Model      // global overlay for notifications
+	help               help.Model          // global help model
 }
 
 func NewModel() Model {
@@ -40,6 +46,7 @@ func NewModel() Model {
 	notifs := notifications.New()
 
 	ov := overlay.New(notifs, conts, overlay.Right, overlay.Top, 0, 0)
+	helpM := help.New()
 
 	return Model{
 		width:              width,
@@ -51,6 +58,7 @@ func NewModel() Model {
 		networksModel:      nets,
 		notificationsModel: notifs,
 		overlayModel:       ov,
+		help:               helpM,
 	}
 }
 
@@ -84,7 +92,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Calculate content height (subtract tabs height which is usually 1-2 lines)
 		// Tabs normally take up 3 lines (border + content + padding/margin potentially)
 		// We'll reserve 3 lines to be safe and ensure the content doesn't overflow
-		contentHeight := msg.Height - 3
+		// Reserve 1 line for short help, so the bottom border isn't eaten by it.
+		// Content = Height - Tabs(1) - Help(1) - Borders(2) = Height - 4
+		contentHeight := msg.Height - 4
 		if contentHeight < 0 {
 			contentHeight = 0
 		}
@@ -108,6 +118,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newNets, _ := m.networksModel.Update(contentMsg)
 		m.networksModel = newNets.(networks.Model)
 
+		m.help.Width = msg.Width
+
 	case tea.KeyMsg:
 		// Handle quit signals (Ctrl-C, Ctrl-D)
 		switch msg.String() {
@@ -116,11 +128,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Delegate tab switching to tabs model
-		// This now handles tab/shift+tab and 1-4
+		// This now handles 1-4
 		newTabs, cmd := m.tabsModel.Update(msg)
 		m.tabsModel = newTabs.(tabs.Model)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+
+		// Update help model for expansion toggling
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 
@@ -136,6 +153,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		activeView = m.containersModel
 		// Forward non-window/non-quit messages to containers view model
 		// (WindowSizeMsg is handled specifically above to adjust for tab height)
+		// We forward everything to the containers model, including tab presses,
+		// because the containers model now handles tab to switch focus between panes.
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			containersModel, cmd := m.containersModel.Update(msg)
 			m.containersModel = containersModel.(containers.Model)
@@ -184,6 +203,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// Helper interface for components that provide help
+type helpProvider interface {
+	ShortHelp() []key.Binding
+	FullHelp() [][]key.Binding
+}
+
 // View renders the terminal as a string (delegated to containersModel).
 func (m Model) View() string {
 	// Render tabs at the top
@@ -192,7 +217,83 @@ func (m Model) View() string {
 	// Render content below
 	contentView := m.overlayModel.View()
 
-	return lipgloss.JoinVertical(lipgloss.Top, tabsView, contentView)
+	// Render help at the bottom
+	var helpView string
+	var currentHelp helpProvider
+
+	switch m.tabsModel.ActiveTab {
+	case tabs.Containers:
+		currentHelp = m.containersModel
+	case tabs.Images:
+		currentHelp = m.imagesModel
+	case tabs.Volumes:
+		currentHelp = m.volumesModel
+	case tabs.Networks:
+		currentHelp = m.networksModel
+	}
+
+	if currentHelp != nil {
+		helpView = m.help.View(currentHelp)
+	}
+
+	// If help is expanded, we need to handle the layout differently to overlay it.
+	// However, simple string joining pushes content up.
+	// To overlay, we can use lipgloss.Place or similar, but bubbletea doesn't support z-index natively for strings.
+	// The standard way to "overlay" at the bottom without shifting top content is to:
+	// 1. Render the main content (tabs + view) with full height.
+	// 2. Render the help view.
+	// 3. Subtract lines from the bottom of the main content equal to help height? No, that just clips it.
+
+	// If we want it to *overlay* (cover) the bottom content:
+	// We need to take the full view, split it by lines, replace the last N lines with the help view lines.
+
+	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentView)
+
+	if helpView != "" {
+		// Apply border to help view to distinguish it, ONLY if expanded
+		// We need to apply it to the help content
+		helpStyle := lipgloss.NewStyle().Width(m.width)
+
+		if m.help.ShowAll {
+			helpStyle = helpStyle.
+				Border(lipgloss.ASCIIBorder(), true, false, false, false).
+				BorderForeground(colors.Muted())
+		}
+
+		helpView = helpStyle.Render(helpView)
+
+		helpLines := strings.Split(helpView, "\n")
+		helpHeight := len(helpLines)
+		fullLines := strings.Split(fullView, "\n")
+
+		// Ensure we don't go out of bounds
+		if len(fullLines) >= helpHeight {
+			// Replace last N lines
+			// We can't just replace because width might be different (transparent background?)
+			// Help component usually has transparent background.
+			// If we want a solid background for the help overlay so it hides content behind it:
+			// We need to apply a style to helpView.
+
+			// Let's assume helpView is opaque or we make it opaque.
+			// Actually, just returning JoinVertical pushes content up because the total height exceeds terminal height.
+			// We need to ensure the `contentView` height + `tabsView` height + `helpView` height <= m.height.
+			// But we WANT it to overlay, meaning `contentView` uses full height, and help sits ON TOP.
+
+			// We can use shared.Layer or just manual line replacement.
+			// Let's stick to lines replacement for simplicity as it effectively "overlays" in a terminal.
+
+			// Truncate fullView to make room for help if we were stacking, but we are overlaying.
+			// So we take fullView (which is full screen), and overwrite the bottom lines.
+
+			topLines := fullLines[:len(fullLines)-helpHeight]
+			// We might need to pad help lines to full width to ensure they cover underlying text
+
+			// Join top lines and help lines
+			return strings.Join(append(topLines, helpLines...), "\n")
+		}
+	}
+
+	return fullView
 }
 
 // Start the Bubbletea UI main loop.
@@ -200,7 +301,7 @@ func (m Model) View() string {
 func Start() error {
 	model := NewModel()
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

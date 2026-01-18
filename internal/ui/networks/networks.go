@@ -339,3 +339,11 @@ func (m *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 		}
 	}
 }
+
+func (m Model) ShortHelp() []key.Binding {
+	return m.list.ShortHelp()
+}
+
+func (m Model) FullHelp() [][]key.Binding {
+	return m.list.FullHelp()
+}
