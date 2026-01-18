@@ -498,29 +498,29 @@ func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.
 }
 
 // RemoveImage removes a specific Docker image by its ID.
-func (cw *ClientWrapper) RemoveImage(id string) error {
+func (clientWrapper *ClientWrapper) RemoveImage(imageID string) error {
 	options := types.ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: true,
 	}
 
-	_, err := cw.client.ImageRemove(context.Background(), id, options)
+	_, err := clientWrapper.client.ImageRemove(context.Background(), imageID, options)
 	return err
 }
 
 // RemoveVolume removes a specific Docker volume by its name.
-func (cw *ClientWrapper) RemoveVolume(name string) error {
-	return cw.client.VolumeRemove(context.Background(), name, false)
+func (clientWrapper *ClientWrapper) RemoveVolume(volumeName string) error {
+	return clientWrapper.client.VolumeRemove(context.Background(), volumeName, false)
 }
 
 // RemoveNetwork removes a specific Docker network by its ID.
-func (cw *ClientWrapper) RemoveNetwork(id string) error {
-	return cw.client.NetworkRemove(context.Background(), id)
+func (clientWrapper *ClientWrapper) RemoveNetwork(networkID string) error {
+	return clientWrapper.client.NetworkRemove(context.Background(), networkID)
 }
 
 // PruneImages removes all unused images.
-func (cw *ClientWrapper) PruneImages() (uint64, error) {
-	report, err := cw.client.ImagesPrune(context.Background(), filters.Args{})
+func (clientWrapper *ClientWrapper) PruneImages() (uint64, error) {
+	report, err := clientWrapper.client.ImagesPrune(context.Background(), filters.Args{})
 	if err != nil {
 		return 0, err
 	}
@@ -528,8 +528,8 @@ func (cw *ClientWrapper) PruneImages() (uint64, error) {
 }
 
 // PruneVolumes removes all unused volumes.
-func (cw *ClientWrapper) PruneVolumes() (uint64, error) {
-	report, err := cw.client.VolumesPrune(context.Background(), filters.Args{})
+func (clientWrapper *ClientWrapper) PruneVolumes() (uint64, error) {
+	report, err := clientWrapper.client.VolumesPrune(context.Background(), filters.Args{})
 	if err != nil {
 		return 0, err
 	}
@@ -537,23 +537,23 @@ func (cw *ClientWrapper) PruneVolumes() (uint64, error) {
 }
 
 // PruneNetworks removes all unused networks.
-func (cw *ClientWrapper) PruneNetworks() error {
-	_, err := cw.client.NetworksPrune(context.Background(), filters.Args{})
+func (clientWrapper *ClientWrapper) PruneNetworks() error {
+	_, err := clientWrapper.client.NetworksPrune(context.Background(), filters.Args{})
 	return err
 }
 
 // GetContainersUsingImage returns a list of container names that are using the specified image ID.
-func (cw *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, error) {
-	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
 
 	var usedBy []string
-	for _, c := range containers {
-		if c.ImageID == imageID {
-			// Name usually comes with a slash, e.g., "/my-container"
-			name := c.Names[0]
+	for _, containerItem := range containers {
+		if containerItem.ImageID == imageID {
+			// Name usually comes with a slash, e.g., "/my-container".
+			name := containerItem.Names[0]
 			if len(name) > 0 && name[0] == '/' {
 				name = name[1:]
 			}
@@ -564,22 +564,22 @@ func (cw *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, erro
 }
 
 // GetContainersUsingVolume returns a list of container names that are using the specified volume name.
-func (cw *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, error) {
-	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
 
 	var usedBy []string
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Name == volumeName || m.Source == volumeName {
-				name := c.Names[0]
+	for _, containerItem := range containers {
+		for _, mount := range containerItem.Mounts {
+			if mount.Name == volumeName || mount.Source == volumeName {
+				name := containerItem.Names[0]
 				if len(name) > 0 && name[0] == '/' {
 					name = name[1:]
 				}
 				usedBy = append(usedBy, name)
-				break // Found usage in this container, move to next container
+				break // Found usage in this container, move to next container.
 			}
 		}
 	}
@@ -587,18 +587,18 @@ func (cw *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, 
 }
 
 // GetContainersUsingNetwork returns a list of container names that are attached to the specified network ID.
-func (cw *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, error) {
-	containers, err := cw.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
 
 	var usedBy []string
-	for _, c := range containers {
-		if c.NetworkSettings != nil {
-			for _, net := range c.NetworkSettings.Networks {
-				if net.NetworkID == networkID {
-					name := c.Names[0]
+	for _, containerItem := range containers {
+		if containerItem.NetworkSettings != nil {
+			for _, network := range containerItem.NetworkSettings.Networks {
+				if network.NetworkID == networkID {
+					name := containerItem.Names[0]
 					if len(name) > 0 && name[0] == '/' {
 						name = name[1:]
 					}
@@ -612,39 +612,39 @@ func (cw *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, 
 }
 
 // GetContainerStats retrieves the current CPU and memory usage of a container.
-func (cw *ClientWrapper) GetContainerStats(id string) (ContainerStats, error) {
-	stats, err := cw.client.ContainerStats(context.Background(), id, false)
+func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (ContainerStats, error) {
+	stats, err := clientWrapper.client.ContainerStats(context.Background(), containerID, false)
 	if err != nil {
 		return ContainerStats{}, err
 	}
 	defer stats.Body.Close()
 
-	var v types.StatsJSON
-	if err := json.NewDecoder(stats.Body).Decode(&v); err != nil {
+	var statsJSON types.StatsJSON
+	if err := json.NewDecoder(stats.Body).Decode(&statsJSON); err != nil {
 		return ContainerStats{}, err
 	}
 
 	var cpuPercent float64
-	cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(v.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(v.CPUStats.SystemUsage) - float64(v.PreCPUStats.SystemUsage)
+	cpuDelta := float64(statsJSON.CPUStats.CPUUsage.TotalUsage) - float64(statsJSON.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(statsJSON.CPUStats.SystemUsage) - float64(statsJSON.PreCPUStats.SystemUsage)
 
 	if systemDelta > 0 && cpuDelta > 0 {
-		cpuPercent = (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+		cpuPercent = (cpuDelta / systemDelta) * float64(len(statsJSON.CPUStats.CPUUsage.PercpuUsage)) * 100.0
 	}
 
-	// Calculate memory usage
-	// MemUsage is v.MemoryStats.Usage - v.MemoryStats.Stats["cache"]
+	// Calculate memory usage.
+	// MemUsage is statsJSON.MemoryStats.Usage - statsJSON.MemoryStats.Stats["cache"].
 	var memUsage float64
-	if v.MemoryStats.Usage > 0 {
-		memUsage = float64(v.MemoryStats.Usage)
-		if cache, ok := v.MemoryStats.Stats["cache"]; ok {
+	if statsJSON.MemoryStats.Usage > 0 {
+		memUsage = float64(statsJSON.MemoryStats.Usage)
+		if cache, ok := statsJSON.MemoryStats.Stats["cache"]; ok {
 			memUsage -= float64(cache)
 		}
 	}
 
-	// Calculate network I/O
+	// Calculate network I/O.
 	var rx, tx float64
-	for _, network := range v.Networks {
+	for _, network := range statsJSON.Networks {
 		rx += float64(network.RxBytes)
 		tx += float64(network.TxBytes)
 	}
@@ -652,13 +652,13 @@ func (cw *ClientWrapper) GetContainerStats(id string) (ContainerStats, error) {
 	return ContainerStats{
 		CPUPercent: cpuPercent,
 		MemUsage:   memUsage,
-		MemLimit:   float64(v.MemoryStats.Limit),
+		MemLimit:   float64(statsJSON.MemoryStats.Limit),
 		NetRx:      rx,
 		NetTx:      tx,
 	}, nil
 }
 
 // InspectContainer returns the detailed inspection information for a container.
-func (cw *ClientWrapper) InspectContainer(id string) (types.ContainerJSON, error) {
-	return cw.client.ContainerInspect(context.Background(), id)
+func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
+	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
 }

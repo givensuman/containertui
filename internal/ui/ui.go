@@ -104,19 +104,18 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		model.help.Width = msg.Width
 
-		newImgs, _ := m.imagesModel.Update(contentMsg)
-		m.imagesModel = newImgs.(images.Model)
+		updatedImages, _ := model.imagesModel.Update(contentMsg)
+		model.imagesModel = updatedImages.(images.Model)
 
-		newVols, _ := m.volumesModel.Update(contentMsg)
-		m.volumesModel = newVols.(volumes.Model)
+		updatedVolumes, _ := model.volumesModel.Update(contentMsg)
+		model.volumesModel = updatedVolumes.(volumes.Model)
 
-		newNets, _ := m.networksModel.Update(contentMsg)
-		m.networksModel = newNets.(networks.Model)
+		updatedNetworks, _ := model.networksModel.Update(contentMsg)
+		model.networksModel = updatedNetworks.(networks.Model)
 
-		m.help.Width = msg.Width
+		model.help.Width = msg.Width
 
 	case tea.KeyMsg:
-		// Handle quit signals (Ctrl-C, Ctrl-D)
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
 			return model, tea.Quit
@@ -132,17 +131,14 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.help.ShowAll = !model.help.ShowAll
 		}
 
-		// Delegate tab switching to tabs model
-		// This now handles 1-4
-		newTabs, cmd := m.tabsModel.Update(msg)
-		m.tabsModel = newTabs.(tabs.Model)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
+		updatedTabs, tabsCmd := model.tabsModel.Update(msg)
+		model.tabsModel = updatedTabs.(tabs.Model)
+		if tabsCmd != nil {
+			cmds = append(cmds, tabsCmd)
 		}
 
-		// Update help model for expansion toggling
 		if msg.String() == "?" {
-			m.help.ShowAll = !m.help.ShowAll
+			model.help.ShowAll = !model.help.ShowAll
 		}
 	}
 
