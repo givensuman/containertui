@@ -113,6 +113,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newNets, _ := m.networksModel.Update(contentMsg)
 		m.networksModel = newNets.(networks.Model)
 
+		m.help.Width = msg.Width
+
 	case tea.KeyMsg:
 		// Handle quit signals (Ctrl-C, Ctrl-D)
 		switch msg.String() {
@@ -131,11 +133,16 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Delegate tab switching to tabs model
-		// This now handles tab/shift+tab and 1-4
+		// This now handles 1-4
 		newTabs, cmd := m.tabsModel.Update(msg)
 		m.tabsModel = newTabs.(tabs.Model)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+
+		// Update help model for expansion toggling
+		if msg.String() == "?" {
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 
