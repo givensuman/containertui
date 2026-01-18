@@ -5,7 +5,10 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	client := NewClient()
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
 	if client == nil {
 		t.Fatal("NewClient returned nil")
 	}
@@ -15,7 +18,6 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestContainer(t *testing.T) {
-	// Test Container struct
 	c := Container{
 		ID:    "test-id",
 		Name:  "test-name",
@@ -40,10 +42,21 @@ func TestGetContainers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	client := NewClient()
-	defer client.CloseClient()
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("failed to initialize client: %v", err)
+	}
+	defer func() {
+		err := client.CloseClient()
+		if err != nil {
+			t.Fatalf("failed to close client: %v", err)
+		}
+	}()
 
-	containers := client.GetContainers()
+	containers, err := client.GetContainers()
+	if err != nil {
+		t.Fatalf("failed to get containers: %v", err)
+	}
 	_ = containers
 }
 
@@ -51,12 +64,19 @@ func TestGetContainerState(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	client := NewClient()
-	defer client.CloseClient()
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("failed to initialize client: %v", err)
+	}
+	defer func() {
+		err := client.CloseClient()
+		if err != nil {
+			t.Fatalf("failed to close client: %v", err)
+		}
+	}()
 
-	// Test with nonexistent container
-	state := client.GetContainerState("nonexistent")
-	if state != "unknown" {
+	state, err := client.GetContainerState("nonexistent")
+	if err == nil && state != "unknown" {
 		t.Errorf("expected 'unknown' for nonexistent container, got %s", state)
 	}
 }

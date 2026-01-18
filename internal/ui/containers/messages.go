@@ -5,8 +5,7 @@ import (
 	"github.com/givensuman/containertui/internal/context"
 )
 
-// MessageCloseOverlay indicates the overlay should display
-// its background
+// MessageCloseOverlay indicates the overlay should display its background.
 type MessageCloseOverlay struct{}
 
 func CloseOverlay() tea.Cmd {
@@ -15,29 +14,17 @@ func CloseOverlay() tea.Cmd {
 	}
 }
 
-// MessageOpenContainerLogs indicates the user
-// has requested to view the logs of the selected container
-type MessageOpenContainerLogs struct {
-	container *ContainerItem
-}
-
-func OpenContainerLogs(container *ContainerItem) tea.Cmd {
-	return func() tea.Msg {
-		return MessageOpenContainerLogs{container}
-	}
-}
-
 // MessageOpenDeleteConfirmationDialog indicates the user
-// has requested to delete an item in the ContainerList
+// has requested to delete an item in the ContainerList.
 type MessageOpenDeleteConfirmationDialog struct {
 	requestedContainersToDelete []*ContainerItem
 }
 
 // MessageConfirmDelete indicates the user confirmed
-// they wish to delete an item in the ContainerList
+// they wish to delete an item in the ContainerList.
 type MessageConfirmDelete struct{}
 
-// MessageContainerOperationResult indicates the result of a container operation
+// MessageContainerOperationResult indicates the result of a container operation.
 type MessageContainerOperationResult struct {
 	Operation Operation
 	IDs       []string
@@ -54,22 +41,22 @@ const (
 	Remove
 )
 
-// PerformContainerOperation performs the specified operation on the given container IDs asynchronously
-func PerformContainerOperation(operation Operation, ids []string) tea.Cmd {
+// PerformContainerOperation performs the specified operation on the given container IDs asynchronously.
+func PerformContainerOperation(operation Operation, containerIDs []string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch operation {
 		case Pause:
-			err = context.GetClient().PauseContainers(ids)
+			err = context.GetClient().PauseContainers(containerIDs)
 		case Unpause:
-			err = context.GetClient().UnpauseContainers(ids)
+			err = context.GetClient().UnpauseContainers(containerIDs)
 		case Start:
-			err = context.GetClient().StartContainers(ids)
+			err = context.GetClient().StartContainers(containerIDs)
 		case Stop:
-			err = context.GetClient().StopContainers(ids)
+			err = context.GetClient().StopContainers(containerIDs)
 		case Remove:
-			err = context.GetClient().RemoveContainers(ids)
+			err = context.GetClient().RemoveContainers(containerIDs)
 		}
-		return MessageContainerOperationResult{Operation: operation, IDs: ids, Error: err}
+		return MessageContainerOperationResult{Operation: operation, IDs: containerIDs, Error: err}
 	}
 }

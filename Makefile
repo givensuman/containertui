@@ -1,4 +1,4 @@
-projectname?=containertui
+name?=containertui
 # Adapted from:
 # https://github.com/FalcoSuessgott/golang-cli-template
 
@@ -11,7 +11,7 @@ help: ## list makefile targets
 .PHONY: build
 build: ## build golang binary
 	@mkdir -p bin
-	go build -ldflags="-s -w" -trimpath -o bin/$(projectname) ./cmd
+	go build -ldflags="-s -w" -trimpath -o bin/$(name) ./cmd
 
 .PHONY: install
 install: ## install golang binary
@@ -19,7 +19,6 @@ install: ## install golang binary
 
 .PHONY: run
 run: ## run the app
-	DEBUG=true
 	go run ./cmd
 
 .PHONY: test
@@ -31,8 +30,8 @@ test: clean ## run tests with coverage
 clean: ## clean up environment
 	@rm -rf coverage.out bin/
 
-.PHONY: cover
-cover: ## display test coverage
+.PHONY: coverage
+coverage: ## display test coverage
 	go test -v -race $(shell go list ./... | grep -v /vendor/) -v -coverprofile=coverage.out
 	go tool cover -func=coverage.out
 

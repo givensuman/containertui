@@ -1,0 +1,154 @@
+package shared
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/givensuman/containertui/internal/colors"
+	"github.com/givensuman/containertui/internal/context"
+)
+
+// DialogButton defines a button in the dialog
+type DialogButton struct {
+	Label  string
+	Action SmartDialogAction // Empty action means Cancel/Close
+	IsSafe bool              // True = Primary/Safe color, False = Danger/Red
+}
+
+type SmartDialog struct {
+	Component
+	style          lipgloss.Style
+	message        string
+	buttons        []DialogButton
+	selectedButton int
+	width          int
+	height         int
+}
+
+var (
+	_ tea.Model      = (*SmartDialog)(nil)
+	_ ComponentModel = (*SmartDialog)(nil)
+)
+
+// NewSmartDialog creates a generic confirmation or warning dialog.
+func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
+	width, height := context.GetWindowSize()
+
+	style := lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder(), true, true).
+		BorderForeground(colors.Primary()).
+		Align(lipgloss.Center)
+
+	layoutManager := NewLayoutManager(width, height)
+	modalDimensions := layoutManager.CalculateModal(style)
+	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
+
+	if len(buttons) == 0 {
+		buttons = []DialogButton{{Label: "Cancel", IsSafe: true}}
+	}
+
+	return SmartDialog{
+		style:          style,
+		message:        message,
+		buttons:        buttons,
+		selectedButton: 0,
+		width:          width,
+		height:         height,
+	}
+}
+
+func (dialog *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	dialog.width = msg.Width
+	dialog.height = msg.Height
+
+	layoutManager := NewLayoutManager(msg.Width, msg.Height)
+	modalDimensions := layoutManager.CalculateModal(dialog.style)
+	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
+}
+
+func (dialog SmartDialog) Init() tea.Cmd {
+	return nil
+}
+
+func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		dialog.UpdateWindowDimensions(msg)
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			return dialog, func() tea.Msg { return CloseDialogMessage{} }
+
+		case "tab", "right", "l":
+			dialog.selectedButton = (dialog.selectedButton + 1) % len(dialog.buttons)
+
+		case "shift+tab", "left", "h":
+			dialog.selectedButton = (dialog.selectedButton - 1 + len(dialog.buttons)) % len(dialog.buttons)
+
+		case "enter":
+			selectedButton := dialog.buttons[dialog.selectedButton]
+			if selectedButton.Action.Type == "" {
+				return dialog, func() tea.Msg { return CloseDialogMessage{} }
+			}
+			return dialog, func() tea.Msg { return ConfirmationMessage{Action: selectedButton.Action} }
+		}
+	}
+
+	return dialog, nil
+}
+
+func (dialog SmartDialog) View() string {
+	buttonViews := make([]string, 0, len(dialog.buttons))
+
+	defaultButtonStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Foreground(colors.Text()).
+		Background(colors.Muted())
+
+	activeSafeStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Bold(true).
+		Foreground(colors.Text()).
+		Background(colors.Primary())
+
+	activeDangerStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Bold(true).
+		Foreground(colors.Text()).
+		Background(colors.Error())
+
+	for index, button := range dialog.buttons {
+		var buttonStyle lipgloss.Style
+
+		if index == dialog.selectedButton {
+			if button.IsSafe {
+				buttonStyle = activeSafeStyle
+			} else {
+				buttonStyle = activeDangerStyle
+			}
+		} else {
+			buttonStyle = defaultButtonStyle
+		}
+
+		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
+	}
+
+	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+
+	currentButton := dialog.buttons[dialog.selectedButton]
+	renderStyle := dialog.style
+	if !currentButton.IsSafe {
+		renderStyle = renderStyle.BorderForeground(colors.Error())
+	}
+
+	return renderStyle.Render(lipgloss.JoinVertical(
+		lipgloss.Center,
+		dialog.message,
+		"",
+		buttonsView,
+	))
+}

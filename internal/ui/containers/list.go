@@ -1,3 +1,4 @@
+// Package containers defines the containers component.
 package containers
 
 import (
@@ -6,6 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/shared"
 )
@@ -17,8 +20,10 @@ type keybindings struct {
 	stopContainer        key.Binding
 	removeContainer      key.Binding
 	showLogs             key.Binding
+	execShell            key.Binding
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
+	switchTab            key.Binding
 }
 
 func newKeybindings() *keybindings {
@@ -44,8 +49,12 @@ func newKeybindings() *keybindings {
 			key.WithHelp("r", "remove container"),
 		),
 		showLogs: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "show container logs"),
+			key.WithKeys("L"),
+			key.WithHelp("L", "show container logs"),
+		),
+		execShell: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "exec shell"),
 		),
 		toggleSelection: key.NewBinding(
 			key.WithKeys(tea.KeySpace.String()),
@@ -55,11 +64,14 @@ func newKeybindings() *keybindings {
 			key.WithKeys(tea.KeyCtrlA.String()),
 			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
+		switchTab: key.NewBinding(
+			key.WithKeys("1", "2", "3", "4", "tab", "shift+tab"),
+			key.WithHelp("1-4/tab", "switch tab"),
+		),
 	}
 }
 
-// selectedContainers is map of a container's ID to
-// its index in the list
+// selectedContainers maps a container's ID to its index in the list.
 type selectedContainers struct {
 	selections map[string]int
 }
@@ -70,12 +82,12 @@ func newSelectedContainers() *selectedContainers {
 	}
 }
 
-func (sc *selectedContainers) selectContainerInList(id string, index int) {
-	sc.selections[id] = index
+func (selectedContainers *selectedContainers) selectContainerInList(id string, index int) {
+	selectedContainers.selections[id] = index
 }
 
-func (sc selectedContainers) unselectContainerInList(id string) {
-	delete(sc.selections, id)
+func (selectedContainers selectedContainers) unselectContainerInList(id string) {
+	delete(selectedContainers.selections, id)
 }
 
 type ContainerList struct {
@@ -92,7 +104,10 @@ var (
 )
 
 func newContainerList() ContainerList {
-	containers := context.GetClient().GetContainers()
+	containers, err := context.GetClient().GetContainers()
+	if err != nil {
+		containers = []client.Container{}
+	}
 	containerItems := make([]list.Item, 0, len(containers))
 	for _, container := range containers {
 		containerItems = append(
@@ -112,114 +127,122 @@ func newContainerList() ContainerList {
 		Height(height).
 		PaddingTop(1)
 
-	list := list.New(containerItems, newDefaultDelegate(), width, height)
+	delegate := newDefaultDelegate()
+	listModel := list.New(containerItems, delegate, width, height)
 
-	list.SetShowTitle(false)
-	list.SetShowStatusBar(false)
-	list.SetFilteringEnabled(false)
+	listModel.SetShowHelp(false)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
 
-	keybindings := newKeybindings()
-	list.AdditionalFullHelpKeys = func() []key.Binding {
+	containerKeybindings := newKeybindings()
+	listModel.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			keybindings.pauseContainer,
-			keybindings.unpauseContainer,
-			keybindings.startContainer,
-			keybindings.stopContainer,
-			keybindings.removeContainer,
-			keybindings.showLogs,
-			keybindings.toggleSelection,
-			keybindings.toggleSelectionOfAll,
+			containerKeybindings.pauseContainer,
+			containerKeybindings.unpauseContainer,
+			containerKeybindings.startContainer,
+			containerKeybindings.stopContainer,
+			containerKeybindings.removeContainer,
+			containerKeybindings.showLogs,
+			containerKeybindings.execShell,
+			containerKeybindings.toggleSelection,
+			containerKeybindings.toggleSelectionOfAll,
+			containerKeybindings.switchTab,
 		}
 	}
 
 	return ContainerList{
 		style:              style,
-		list:               list,
+		list:               listModel,
 		selectedContainers: newSelectedContainers(),
-		keybindings:        keybindings,
+		keybindings:        containerKeybindings,
 	}
 }
 
-func (cl *ContainerList) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	cl.WindowWidth = msg.Width
-	cl.WindowHeight = msg.Height
+func (containerList *ContainerList) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	containerList.WindowWidth = msg.Width
+	containerList.WindowHeight = msg.Height
 
-	lm := shared.NewLayoutManager(msg.Width, msg.Height)
-	dims := lm.CalculateFullscreen(cl.style)
+	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
+	masterLayout, _ := layoutManager.CalculateMasterDetail(containerList.style)
 
-	cl.style = cl.style.Width(dims.Width).Height(dims.Height)
-	cl.list.SetWidth(dims.ContentWidth)
-	cl.list.SetHeight(dims.ContentHeight)
+	containerList.style = containerList.style.Width(masterLayout.Width).Height(masterLayout.Height)
+	containerList.list.SetWidth(masterLayout.ContentWidth)
+	containerList.list.SetHeight(masterLayout.ContentHeight)
 }
 
-func (cl ContainerList) Init() tea.Cmd {
+func (containerList ContainerList) Init() tea.Cmd {
 	return nil
 }
 
-func (cl ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+func (containerList ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case MessageConfirmDelete:
-		cmd = cl.handleConfirmationOfRemoveContainers()
-		cmds = append(cmds, cmd)
+		cmds = append(cmds, containerList.handleConfirmationOfRemoveContainers())
 
 	case MessageContainerOperationResult:
-		cl.handleContainerOperationResult(msg)
+		if cmd := containerList.handleContainerOperationResult(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case tea.KeyMsg:
-		if cl.list.FilterState() == list.Filtering {
+		if containerList.list.FilterState() == list.Filtering {
 			break
 		}
 
-		switch msg.String() {
-		case "q":
-			return cl, tea.Quit
+		if msg.String() == "q" {
+			return containerList, tea.Quit
 		}
 
 		switch {
-		case key.Matches(msg, cl.keybindings.pauseContainer):
-			cmd = cl.handlePauseContainers()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.unpauseContainer):
-			cmd = cl.handleUnpauseContainers()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.startContainer):
-			cmd = cl.handleStartContainers()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.stopContainer):
-			cmd = cl.handleStopContainers()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.removeContainer):
-			cmd = cl.handleRemoveContainers()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.showLogs):
-			cmd = cl.handleShowLogs()
-			cmds = append(cmds, cmd)
-		case key.Matches(msg, cl.keybindings.toggleSelection):
-			cl.handleToggleSelection()
-		case key.Matches(msg, cl.keybindings.toggleSelectionOfAll):
-			cl.handleToggleSelectionOfAll()
+		case key.Matches(msg, containerList.keybindings.switchTab):
+			return containerList, nil
+		case key.Matches(msg, containerList.keybindings.pauseContainer):
+			cmds = append(cmds, containerList.handlePauseContainers())
+		case key.Matches(msg, containerList.keybindings.unpauseContainer):
+			cmds = append(cmds, containerList.handleUnpauseContainers())
+		case key.Matches(msg, containerList.keybindings.startContainer):
+			cmds = append(cmds, containerList.handleStartContainers())
+		case key.Matches(msg, containerList.keybindings.stopContainer):
+			cmds = append(cmds, containerList.handleStopContainers())
+		case key.Matches(msg, containerList.keybindings.removeContainer):
+			cmds = append(cmds, containerList.handleRemoveContainers())
+		case key.Matches(msg, containerList.keybindings.showLogs):
+			if cmd := containerList.handleShowLogs(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		case key.Matches(msg, containerList.keybindings.execShell):
+			if cmd := containerList.handleExecShell(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		case key.Matches(msg, containerList.keybindings.toggleSelection):
+			containerList.handleToggleSelection()
+		case key.Matches(msg, containerList.keybindings.toggleSelectionOfAll):
+			containerList.handleToggleSelectionOfAll()
 		}
 	}
 
-	listModel, cmd := cl.list.Update(msg)
-	cl.list = listModel
-	cmds = append(cmds, cmd)
+	updatedList, listCmd := containerList.list.Update(msg)
+	containerList.list = updatedList
+	cmds = append(cmds, listCmd)
 
 	if _, ok := msg.(spinner.TickMsg); !ok {
-		items := cl.list.Items()
-		for _, item := range items {
-			if c, ok := item.(ContainerItem); ok && c.isWorking {
-				cmds = append(cmds, c.spinner.Tick)
+		for _, item := range containerList.list.Items() {
+			if containerItem, ok := item.(ContainerItem); ok && containerItem.isWorking {
+				cmds = append(cmds, containerItem.spinner.Tick)
 			}
 		}
 	}
 
-	return cl, tea.Batch(cmds...)
+	return containerList, tea.Batch(cmds...)
 }
 
-func (cl ContainerList) View() string {
-	return cl.style.Render(cl.list.View())
+func (containerList ContainerList) View() string {
+	return containerList.style.Render(containerList.list.View())
 }

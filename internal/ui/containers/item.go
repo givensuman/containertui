@@ -7,11 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/moby/moby/api/types/container"
+	"github.com/givensuman/containertui/internal/ui/shared"
 )
 
 type ContainerItem struct {
@@ -26,17 +25,17 @@ var (
 	_ list.DefaultItem = (*ContainerItem)(nil)
 )
 
-func (ci ContainerItem) getIsSelectedIcon() string {
+func (containerItem ContainerItem) getIsSelectedIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch ci.isSelected {
+	case true: // Don't use nerd fonts.
+		switch containerItem.isSelected {
 		case true:
 			return "[x]"
 		case false:
 			return "[ ]"
 		}
-	case false: // Use nerd fonts
-		switch ci.isSelected {
+	case false: // Use nerd fonts.
+		switch containerItem.isSelected {
 		case true:
 			return " "
 		case false:
@@ -47,72 +46,30 @@ func (ci ContainerItem) getIsSelectedIcon() string {
 	return "[ ]"
 }
 
-func (ci ContainerItem) getTitleOrnament() string {
+func (containerItem ContainerItem) getTitleOrnament() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
+	case true: // Don't use nerd fonts.
 		return ""
-	case false: // Use nerd fonts
+	case false: // Use nerd fonts.
 		return " "
 	}
 
 	return ""
 }
 
-func (ci ContainerItem) getContainerStateIcon() string {
-	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch ci.State {
-		case container.StateRunning:
-			return ">"
-		case container.StatePaused:
-			return "="
-		case container.StateExited:
-			return "#"
-		default:
-			return ">"
-		}
-	case false: // Use nerd fonts
-		switch ci.State {
-		case container.StateRunning:
-			return " "
-		case container.StatePaused:
-			return " "
-		case container.StateExited:
-			return " "
-		default:
-			return " "
-		}
-	}
-
-	return ">"
-}
-
 func newDefaultDelegate() list.DefaultDelegate {
-	d := list.NewDefaultDelegate()
+	delegate := list.NewDefaultDelegate()
+	delegate = shared.ChangeDelegateStyles(delegate)
 
-	d.Styles.SelectedTitle = d.Styles.SelectedTitle.
-		BorderLeftForeground(colors.Primary())
-	d.Styles.SelectedDesc = d.Styles.SelectedDesc.
-		Foreground(colors.White()).
-		BorderLeftForeground(colors.Primary())
-
-	d.Styles.DimmedDesc = d.Styles.DimmedDesc.
-		Foreground(colors.Gray()).
-		Bold(false)
-
-	d.Styles.FilterMatch = d.Styles.FilterMatch.
-		Foreground(colors.Primary()).
-		Bold(true)
-
-	d.UpdateFunc = func(msg tea.Msg, m *list.Model) tea.Cmd {
+	delegate.UpdateFunc = func(msg tea.Msg, model *list.Model) tea.Cmd {
 		if _, ok := msg.(spinner.TickMsg); ok {
 			var cmds []tea.Cmd
-			items := m.Items()
-			for i, item := range items {
-				if c, ok := item.(ContainerItem); ok && c.isWorking {
+			items := model.Items()
+			for index, item := range items {
+				if container, ok := item.(ContainerItem); ok && container.isWorking {
 					var cmd tea.Cmd
-					c.spinner, cmd = c.spinner.Update(msg)
-					m.SetItem(i, c)
+					container.spinner, cmd = container.spinner.Update(msg)
+					model.SetItem(index, container)
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -121,7 +78,7 @@ func newDefaultDelegate() list.DefaultDelegate {
 		return nil
 	}
 
-	return d
+	return delegate
 }
 
 func newSpinner() spinner.Model {
@@ -132,50 +89,45 @@ func newSpinner() spinner.Model {
 	return spinnerModel
 }
 
-func (ci ContainerItem) FilterValue() string {
-	return ci.Name
+func (containerItem ContainerItem) FilterValue() string {
+	return containerItem.Title()
 }
 
-func (ci ContainerItem) Title() string {
+func (containerItem ContainerItem) Title() string {
 	var statusIcon string
-	if ci.isWorking {
-		statusIcon = ci.spinner.View()
+	if containerItem.isWorking {
+		statusIcon = containerItem.spinner.View()
 	} else {
-		statusIcon = ci.getIsSelectedIcon()
+		statusIcon = containerItem.getIsSelectedIcon()
 	}
-	titleOrnament := ci.getTitleOrnament()
-	containerStateIcon := ci.getContainerStateIcon()
-	shortID := ci.ID[len(ci.ID)-12:]
-
-	title := fmt.Sprintf("%s %s %s (%s)",
+	titleOrnament := containerItem.getTitleOrnament()
+	title := fmt.Sprintf("%s %s",
 		titleOrnament,
-		containerStateIcon,
-		ci.Name,
-		shortID,
+		containerItem.Name,
 	)
 
 	var titleColor lipgloss.Color
-	switch ci.State {
-	case container.StateRunning:
-		titleColor = colors.Green()
-	case container.StatePaused:
-		titleColor = colors.Yellow()
-	case container.StateExited:
-		titleColor = colors.Gray()
+	switch containerItem.State {
+	case "running":
+		titleColor = colors.Success()
+	case "paused":
+		titleColor = colors.Warning()
+	case "exited":
+		titleColor = colors.Muted()
 	default:
-		titleColor = colors.Gray()
+		titleColor = colors.Muted()
 	}
 	title = lipgloss.NewStyle().
 		Foreground(titleColor).
 		Render(title)
 
-	if !ci.isWorking {
+	if !containerItem.isWorking {
 		var isSelectedColor lipgloss.Color
-		switch ci.isSelected {
+		switch containerItem.isSelected {
 		case true:
-			isSelectedColor = colors.Blue()
+			isSelectedColor = colors.Selected()
 		case false:
-			isSelectedColor = colors.White()
+			isSelectedColor = colors.Text()
 		}
 		statusIcon = lipgloss.NewStyle().
 			Foreground(isSelectedColor).
@@ -185,6 +137,10 @@ func (ci ContainerItem) Title() string {
 	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
-func (ci ContainerItem) Description() string {
-	return fmt.Sprintf("   %s", ansi.Truncate(ci.Image, 24, "..."))
+func (containerItem ContainerItem) Description() string {
+	shortID := containerItem.ID
+	if len(containerItem.ID) > 12 {
+		shortID = containerItem.ID[:12]
+	}
+	return "   " + shortID
 }
