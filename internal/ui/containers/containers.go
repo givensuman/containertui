@@ -32,17 +32,17 @@ const (
 	focusDetails
 )
 
-// MsgStatsTick is sent to trigger a stats refresh
+// MsgStatsTick is sent to trigger a stats refresh.
 type MsgStatsTick time.Time
 
-// MsgContainerStats contains the stats for a container
+// MsgContainerStats contains the stats for a container.
 type MsgContainerStats struct {
 	ID    string
 	Stats client.ContainerStats
 	Err   error
 }
 
-// MsgContainerInspection contains the inspection data for a container
+// MsgContainerInspection contains the inspection data for a container.
 type MsgContainerInspection struct {
 	ID        string
 	Container types.ContainerJSON
@@ -72,28 +72,20 @@ func newDetailsKeybindings() detailsKeybindings {
 	}
 }
 
-// Model is the main containers screen for the TUI.
-// Manages two views: either normal container list or overlay (logs, delete dialog).
+// Model represents the containers component state.
 type Model struct {
 	shared.Component
-	// sessionState governs whether we're in main or overlay view
 	sessionState sessionState
-	// focusedView governs which panel is active (0: List, 1: Details)
-	focusedView int
+	focusedView  int
 
-	// foreground is the currently active overlay model (logs, confirmation, etc)
-	foreground tea.Model
-	// background is the container list model
-	background tea.Model
-	// overlayModel manages overlay transitions and rendering
+	foreground   tea.Model
+	background   tea.Model
 	overlayModel *overlay.Model
 
-	// Stats related fields
 	currentContainerID string
 	cpuHistory         []float64
 	lastStats          client.ContainerStats
 
-	// Details view
 	viewport           viewport.Model
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
@@ -108,9 +100,9 @@ func New() Model {
 	deleteConfirmation := newDeleteConfirmation(nil)
 	containerList := newContainerList()
 
-	vp := viewport.New(0, 0)
+	detailViewport := viewport.New(0, 0)
 
-	return Model{
+	model := Model{
 		sessionState: viewMain,
 		focusedView:  focusList,
 		foreground:   deleteConfirmation,
@@ -124,121 +116,105 @@ func New() Model {
 			0,
 		),
 		cpuHistory:         make([]float64, 0),
-		viewport:           vp,
+		viewport:           detailViewport,
 		detailsKeybindings: newDetailsKeybindings(),
 	}
+
+	return model
 }
 
-// tickCmd generates a command to tick the stats loop
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
 		return MsgStatsTick(t)
 	})
 }
 
-// UpdateWindowDimensions updates all sub-models with latest terminal size.
-// Called during resize events or window size changes.
-func (m *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	m.WindowWidth = msg.Width
-	m.WindowHeight = msg.Height
+func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	model.WindowWidth = msg.Width
+	model.WindowHeight = msg.Height
 
-	// Calculate detail width/height for viewport
-	lm := shared.NewLayoutManager(m.WindowWidth, m.WindowHeight)
-	_, detail := lm.CalculateMasterDetail(lipgloss.NewStyle())
+	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
+	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
 
-	// Update viewport size
-	// We need to account for borders (2) and padding (2)
-	width := detail.Width - 4
-	height := detail.Height - 2
-	if width < 0 {
-		width = 0
+	viewportWidth := detailLayout.Width - 4
+	viewportHeight := detailLayout.Height - 2
+	if viewportWidth < 0 {
+		viewportWidth = 0
 	}
-	if height < 0 {
-		height = 0
+	if viewportHeight < 0 {
+		viewportHeight = 0
 	}
 
-	m.viewport.Width = width
-	m.viewport.Height = height
+	model.viewport.Width = viewportWidth
+	model.viewport.Height = viewportHeight
 
-	switch m.sessionState {
+	switch model.sessionState {
 	case viewMain:
-		if cl, ok := m.background.(ContainerList); ok {
-			cl.UpdateWindowDimensions(msg)
-			m.background = cl
+		if containerList, ok := model.background.(ContainerList); ok {
+			containerList.UpdateWindowDimensions(msg)
+			model.background = containerList
 		}
 	case viewOverlay:
-		// Forward dimension updates to correct overlay model
-		switch fg := m.foreground.(type) {
+		switch foregroundModel := model.foreground.(type) {
 		case *ContainerLogs:
-			fg.setDimensions(msg.Width, msg.Height)
-			m.foreground = fg
+			foregroundModel.setDimensions(msg.Width, msg.Height)
+			model.foreground = foregroundModel
 		case DeleteConfirmation:
-			fg.UpdateWindowDimensions(msg)
-			m.foreground = fg
+			foregroundModel.UpdateWindowDimensions(msg)
+			model.foreground = foregroundModel
 		}
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (model Model) Init() tea.Cmd {
 	return tickCmd()
 }
 
-// Update handles all Bubbletea messages relevant to this containers screen.
-// Manages both main view logic and overlay/dialog/confirmation sub-models.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// Handle focus switching
-	if m.sessionState == viewMain {
-		if msg, ok := msg.(tea.KeyMsg); ok {
-			if msg.String() == "tab" {
-				if m.focusedView == focusList {
-					m.focusedView = focusDetails
+	if model.sessionState == viewMain {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if keyMsg.String() == "tab" {
+				if model.focusedView == focusList {
+					model.focusedView = focusDetails
 				} else {
-					m.focusedView = focusList
+					model.focusedView = focusList
 				}
-				return m, nil
+				return model, nil
 			}
 		}
 	}
 
-	// Update foreground/background model based on session mode.
-	switch m.sessionState {
+	switch model.sessionState {
 	case viewMain:
-		// Only update the focused model to prevent key stealing,
-		// but always update background if it's not a key msg or if it's the focused one.
-		// Actually, we usually want background to handle list updates even if not focused?
-		// No, if we want to scroll details with j/k, list must NOT receive j/k.
-
-		isKeyMsg := false
+		isKeyMessage := false
 		if _, ok := msg.(tea.KeyMsg); ok {
-			isKeyMsg = true
+			isKeyMessage = true
 		}
 
-		if !isKeyMsg || m.focusedView == focusList {
-			bg, cmd := m.background.Update(msg)
-			m.background = bg.(ContainerList)
-			cmds = append(cmds, cmd)
+		if !isKeyMessage || model.focusedView == focusList {
+			backgroundModel, backgroundCmd := model.background.Update(msg)
+			model.background = backgroundModel.(ContainerList)
+			cmds = append(cmds, backgroundCmd)
 		}
 
-		if !isKeyMsg || m.focusedView == focusDetails {
-			m.viewport, cmd = m.viewport.Update(msg)
-			cmds = append(cmds, cmd)
+		if !isKeyMessage || model.focusedView == focusDetails {
+			updatedViewport, viewportCmd := model.viewport.Update(msg)
+			model.viewport = updatedViewport
+			cmds = append(cmds, viewportCmd)
 		}
 
-		// Check for selection change (if list updated)
-		if cl, ok := m.background.(ContainerList); ok {
-			item := cl.list.SelectedItem()
-			if item != nil {
-				if c, ok := item.(ContainerItem); ok {
-					if c.ID != m.currentContainerID {
-						m.currentContainerID = c.ID
-						m.cpuHistory = make([]float64, 0)
-						// Trigger inspection
+		if containerList, ok := model.background.(ContainerList); ok {
+			selectedItem := containerList.list.SelectedItem()
+			if selectedItem != nil {
+				if containerItem, ok := selectedItem.(ContainerItem); ok {
+					if containerItem.ID != model.currentContainerID {
+						model.currentContainerID = containerItem.ID
+						model.cpuHistory = make([]float64, 0)
 						cmds = append(cmds, func() tea.Msg {
-							info, err := context.GetClient().InspectContainer(c.ID)
-							return MsgContainerInspection{ID: c.ID, Container: info, Err: err}
+							containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
+							return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
 						})
 					}
 				}
@@ -246,37 +222,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case viewOverlay:
-		fg, cmd := m.foreground.Update(msg)
-		m.foreground = fg
-		cmds = append(cmds, cmd)
+		foregroundModel, foregroundCmd := model.foreground.Update(msg)
+		model.foreground = foregroundModel
+		cmds = append(cmds, foregroundCmd)
 	}
 
-	// Handle special message types (resize, open/close dialogs, etc)
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.UpdateWindowDimensions(msg)
+		model.UpdateWindowDimensions(msg)
 
 	case MessageCloseOverlay:
-		m.sessionState = viewMain
+		model.sessionState = viewMain
 
 	case MessageOpenDeleteConfirmationDialog:
-		m.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
-		m.sessionState = viewOverlay
-		cmds = append(cmds, m.foreground.Init())
+		model.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
+		model.sessionState = viewOverlay
+		cmds = append(cmds, model.foreground.Init())
 
 	case MsgStatsTick:
 		cmds = append(cmds, tickCmd())
 
-		// Only fetch stats if we are in main view and have a selected container
-		if m.sessionState == viewMain {
-			if cl, ok := m.background.(ContainerList); ok {
-				item := cl.list.SelectedItem()
-				if item != nil {
-					if c, ok := item.(ContainerItem); ok && c.State == "running" {
-						// Fetch stats
+		if model.sessionState == viewMain {
+			if containerList, ok := model.background.(ContainerList); ok {
+				selectedItem := containerList.list.SelectedItem()
+				if selectedItem != nil {
+					if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
 						cmds = append(cmds, func() tea.Msg {
-							stats, err := context.GetClient().GetContainerStats(c.ID)
-							return MsgContainerStats{ID: c.ID, Stats: stats, Err: err}
+							containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
+							return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
 						})
 					}
 				}
@@ -284,71 +257,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case MsgContainerInspection:
-		if msg.ID == m.currentContainerID && msg.Err == nil {
-			m.inspection = msg.Container
-			content := formatInspection(m.inspection, m.lastStats, m.cpuHistory, m.viewport.Width)
-			m.viewport.SetContent(content)
+		if msg.ID == model.currentContainerID && msg.Err == nil {
+			model.inspection = msg.Container
+			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.viewport.Width)
+			model.viewport.SetContent(inspectionContent)
 		}
 
 	case MsgContainerStats:
-		if msg.ID == m.currentContainerID && msg.Err == nil {
-			m.lastStats = msg.Stats
-			m.cpuHistory = append(m.cpuHistory, msg.Stats.CPUPercent)
-			if len(m.cpuHistory) > 30 {
-				m.cpuHistory = m.cpuHistory[1:]
+		if msg.ID == model.currentContainerID && msg.Err == nil {
+			model.lastStats = msg.Stats
+			model.cpuHistory = append(model.cpuHistory, msg.Stats.CPUPercent)
+			if len(model.cpuHistory) > 30 {
+				model.cpuHistory = model.cpuHistory[1:]
 			}
-			// Update content to reflect stats
-			content := formatInspection(m.inspection, m.lastStats, m.cpuHistory, m.viewport.Width)
-			m.viewport.SetContent(content)
+			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.viewport.Width)
+			model.viewport.SetContent(inspectionContent)
 		}
 	}
 
-	// Always update the overlay model and sync submodels
-	m.overlayModel.Foreground = m.foreground
-	m.overlayModel.Background = m.background
+	model.overlayModel.Foreground = model.foreground
+	model.overlayModel.Background = model.background
 
-	updatedOverlayModel, cmd := m.overlayModel.Update(msg)
-	overlayModel, ok := updatedOverlayModel.(*overlay.Model)
-	if ok {
-		m.overlayModel = overlayModel
-		cmds = append(cmds, cmd)
+	updatedOverlayModel, overlayCmd := model.overlayModel.Update(msg)
+	if overlayModel, ok := updatedOverlayModel.(*overlay.Model); ok {
+		model.overlayModel = overlayModel
+		cmds = append(cmds, overlayCmd)
 	}
 
-	return m, tea.Batch(cmds...)
+	return model, tea.Batch(cmds...)
 }
 
-// View renders the TUI for containers.
-// If an overlay is open, delegates to overlay model’s view,
-// Otherwise renders the main container background view.
-func (m Model) View() string {
-	if m.sessionState == viewOverlay && m.foreground != nil {
-		return m.overlayModel.View()
+func (model Model) View() string {
+	if model.sessionState == viewOverlay && model.foreground != nil {
+		return model.overlayModel.View()
 	}
 
-	// Get dimensions for master (list) and detail (inspect)
-	lm := shared.NewLayoutManager(m.WindowWidth, m.WindowHeight)
-	_, detail := lm.CalculateMasterDetail(lipgloss.NewStyle())
+	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
+	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
 
-	// Render the list (background)
-	listView := m.background.View()
+	listView := model.background.View()
 
 	borderColor := colors.Muted()
-	if m.focusedView == focusDetails {
+	if model.focusedView == focusDetails {
 		borderColor = colors.Primary()
 	}
 
 	detailStyle := lipgloss.NewStyle().
-		Width(detail.Width - 2). // Subtract 2 for border width compensation
-		Height(detail.Height).   // Ensure height matches master list
+		Width(detailLayout.Width - 2).
+		Height(detailLayout.Height).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(1)
 
 	var detailContent string
-	if m.currentContainerID != "" {
-		detailContent = m.viewport.View()
+	if model.currentContainerID != "" {
+		detailContent = model.viewport.View()
 	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No container selected")
+		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No container selected.")
 	}
 
 	detailView := detailStyle.Render(detailContent)
@@ -356,85 +321,70 @@ func (m Model) View() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 }
 
-// Helper to expose keys for help menu
-func (m Model) ShortHelp() []key.Binding {
-	// If in overlay mode, delegate to overlay if possible, or just return empty
-	if m.sessionState == viewOverlay {
-		if h, ok := m.foreground.(help.KeyMap); ok {
-			return h.ShortHelp()
+func (model Model) ShortHelp() []key.Binding {
+	if model.sessionState == viewOverlay {
+		if helpKeyMap, ok := model.foreground.(help.KeyMap); ok {
+			return helpKeyMap.ShortHelp()
 		}
-		// Special case for delete confirmation if it implements something custom,
-		// but currently DeleteConfirmation uses standard bubbletea, we might need to cast.
-		// For now, let's focus on main view.
 		return nil
 	}
 
-	if m.focusedView == focusList {
-		if cl, ok := m.background.(ContainerList); ok {
-			return cl.list.ShortHelp()
+	if model.focusedView == focusList {
+		if containerList, ok := model.background.(ContainerList); ok {
+			return containerList.list.ShortHelp()
 		}
-	} else if m.focusedView == focusDetails {
-		// Details view keybindings (scroll)
+	} else if model.focusedView == focusDetails {
 		return []key.Binding{
-			m.detailsKeybindings.Up,
-			m.detailsKeybindings.Down,
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
 		}
 	}
 
 	return nil
 }
 
-// FullHelp returns keybindings for the expanded help view.
-// It uses pointer receiver *Model because in the future we might want to cache or mutate state,
-// but for interface satisfaction it needs to match. Since ShortHelp uses value receiver (because Model is often passed by value in bubbletea updates),
-// we should check how it is called. ui/ui.go converts to interface helpProvider.
-// If Model is large, passing by value is expensive.
-// However, the current signature in UI is func (m Model) View().
-func (m Model) FullHelp() [][]key.Binding {
-	if m.sessionState == viewOverlay {
-		return nil // Or implement overlay specific help
+func (model Model) FullHelp() [][]key.Binding {
+	if model.sessionState == viewOverlay {
+		return nil
 	}
 
-	if m.focusedView == focusList {
-		if cl, ok := m.background.(ContainerList); ok {
-			return cl.list.FullHelp()
+	if model.focusedView == focusList {
+		if containerList, ok := model.background.(ContainerList); ok {
+			return containerList.list.FullHelp()
 		}
-	} else if m.focusedView == focusDetails {
+	} else if model.focusedView == focusDetails {
 		return [][]key.Binding{
 			{
-				m.detailsKeybindings.Up,
-				m.detailsKeybindings.Down,
-				m.detailsKeybindings.Switch,
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
 			},
 		}
 	}
 	return nil
 }
 
-func formatInspection(c types.ContainerJSON, stats client.ContainerStats, cpuHistory []float64, width int) string {
-	var b strings.Builder
+func formatInspection(container types.ContainerJSON, containerStats client.ContainerStats, cpuHistory []float64, viewportWidth int) string {
+	var builder strings.Builder
 
-	// Header
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).MarginBottom(1)
-	b.WriteString(headerStyle.Render(fmt.Sprintf("%s (%s)", c.Name, c.ID[:12])) + "\n")
+	builder.WriteString(headerStyle.Render(fmt.Sprintf("%s (%s)", container.Name, container.ID[:12])) + "\n")
 
-	// Basic Info
 	infoStyle := lipgloss.NewStyle().Foreground(colors.Text()).MarginBottom(1)
 	stateColor := colors.Success()
-	if !c.State.Running {
+	if !container.State.Running {
 		stateColor = colors.Muted()
 	}
-	stateStr := lipgloss.NewStyle().Foreground(stateColor).Render(c.State.Status)
+	stateString := lipgloss.NewStyle().Foreground(stateColor).Render(container.State.Status)
 
-	b.WriteString(infoStyle.Render(fmt.Sprintf("Image: %s", c.Config.Image)) + "\n")
-	b.WriteString(fmt.Sprintf("State: %s\n\n", stateStr))
+	builder.WriteString(infoStyle.Render(fmt.Sprintf("Image: %s", container.Config.Image)) + "\n")
+	builder.WriteString(fmt.Sprintf("State: %s\n\n", stateString))
 
-	// Stats Graph (if running)
-	if c.State.Running && len(cpuHistory) > 0 {
+	if container.State.Running && len(cpuHistory) > 0 {
 		graphHeight := 8
-		graphWidth := width - 10
+		graphWidth := viewportWidth - 10
 		if graphWidth > 10 {
-			graph := asciigraph.Plot(cpuHistory,
+			usageGraph := asciigraph.Plot(cpuHistory,
 				asciigraph.Height(graphHeight),
 				asciigraph.Width(graphWidth),
 				asciigraph.Caption("CPU Usage (%)"),
@@ -442,53 +392,47 @@ func formatInspection(c types.ContainerJSON, stats client.ContainerStats, cpuHis
 					asciigraph.Blue,
 				),
 			)
-			b.WriteString(graph + "\n\n")
+			builder.WriteString(usageGraph + "\n\n")
 
-			// Additional Stats
 			statsStyle := lipgloss.NewStyle().Foreground(colors.Primary())
-			memUsageMB := stats.MemUsage / 1024 / 1024
-			memLimitMB := stats.MemLimit / 1024 / 1024
-			b.WriteString(statsStyle.Render(fmt.Sprintf("CPU: %.2f%% | Mem: %.0fMB / %.0fMB",
-				stats.CPUPercent, memUsageMB, memLimitMB)) + "\n\n")
+			memUsageMB := containerStats.MemUsage / 1024 / 1024
+			memLimitMB := containerStats.MemLimit / 1024 / 1024
+			builder.WriteString(statsStyle.Render(fmt.Sprintf("CPU: %.2f%% | Mem: %.0fMB / %.0fMB",
+				containerStats.CPUPercent, memUsageMB, memLimitMB)) + "\n\n")
 		}
 	}
 
-	// Helper for sections
 	sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).Underline(true).MarginTop(1).MarginBottom(0)
 
-	// Config
-	b.WriteString(sectionHeader.Render("Configuration") + "\n")
-	b.WriteString(fmt.Sprintf("Cmd: %v\n", c.Config.Cmd))
-	b.WriteString(fmt.Sprintf("Entrypoint: %v\n", c.Config.Entrypoint))
-	b.WriteString(fmt.Sprintf("WorkingDir: %s\n", c.Config.WorkingDir))
+	builder.WriteString(sectionHeader.Render("Configuration") + "\n")
+	builder.WriteString(fmt.Sprintf("Cmd: %v\n", container.Config.Cmd))
+	builder.WriteString(fmt.Sprintf("Entrypoint: %v\n", container.Config.Entrypoint))
+	builder.WriteString(fmt.Sprintf("WorkingDir: %s\n", container.Config.WorkingDir))
 
-	// Environment
-	if len(c.Config.Env) > 0 {
-		b.WriteString("\n" + sectionHeader.Render("Environment Variables") + "\n")
-		for _, e := range c.Config.Env {
-			b.WriteString(e + "\n")
+	if len(container.Config.Env) > 0 {
+		builder.WriteString("\n" + sectionHeader.Render("Environment Variables") + "\n")
+		for _, envVar := range container.Config.Env {
+			builder.WriteString(envVar + "\n")
 		}
 	}
 
-	// Mounts
-	if len(c.Mounts) > 0 {
-		b.WriteString("\n" + sectionHeader.Render("Mounts") + "\n")
-		for _, m := range c.Mounts {
-			b.WriteString(fmt.Sprintf("%s -> %s (%s)\n", m.Source, m.Destination, m.Type))
+	if len(container.Mounts) > 0 {
+		builder.WriteString("\n" + sectionHeader.Render("Mounts") + "\n")
+		for _, mount := range container.Mounts {
+			builder.WriteString(fmt.Sprintf("%s -> %s (%s)\n", mount.Source, mount.Destination, mount.Type))
 		}
 	}
 
-	// Ports
-	if c.NetworkSettings != nil && len(c.NetworkSettings.Ports) > 0 {
-		b.WriteString("\n" + sectionHeader.Render("Ports") + "\n")
-		for port, bindings := range c.NetworkSettings.Ports {
-			var binds []string
-			for _, b := range bindings {
-				binds = append(binds, fmt.Sprintf("%s:%s", b.HostIP, b.HostPort))
+	if container.NetworkSettings != nil && len(container.NetworkSettings.Ports) > 0 {
+		builder.WriteString("\n" + sectionHeader.Render("Ports") + "\n")
+		for port, bindings := range container.NetworkSettings.Ports {
+			var portBindings []string
+			for _, portBinding := range bindings {
+				portBindings = append(portBindings, fmt.Sprintf("%s:%s", portBinding.HostIP, portBinding.HostPort))
 			}
-			b.WriteString(fmt.Sprintf("%s -> %v\n", port, binds))
+			builder.WriteString(fmt.Sprintf("%s -> %v\n", port, portBindings))
 		}
 	}
 
-	return b.String()
+	return builder.String()
 }

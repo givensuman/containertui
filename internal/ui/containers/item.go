@@ -25,17 +25,17 @@ var (
 	_ list.DefaultItem = (*ContainerItem)(nil)
 )
 
-func (ci ContainerItem) getIsSelectedIcon() string {
+func (containerItem ContainerItem) getIsSelectedIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch ci.isSelected {
+	case true: // Don't use nerd fonts.
+		switch containerItem.isSelected {
 		case true:
 			return "[x]"
 		case false:
 			return "[ ]"
 		}
-	case false: // Use nerd fonts
-		switch ci.isSelected {
+	case false: // Use nerd fonts.
+		switch containerItem.isSelected {
 		case true:
 			return " "
 		case false:
@@ -46,21 +46,21 @@ func (ci ContainerItem) getIsSelectedIcon() string {
 	return "[ ]"
 }
 
-func (ci ContainerItem) getTitleOrnament() string {
+func (containerItem ContainerItem) getTitleOrnament() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
+	case true: // Don't use nerd fonts.
 		return ""
-	case false: // Use nerd fonts
+	case false: // Use nerd fonts.
 		return " "
 	}
 
 	return ""
 }
 
-func (ci ContainerItem) getContainerStateIcon() string {
+func (containerItem ContainerItem) getContainerStateIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch ci.State {
+	case true: // Don't use nerd fonts.
+		switch containerItem.State {
 		case "running":
 			return ">"
 		case "paused":
@@ -70,8 +70,8 @@ func (ci ContainerItem) getContainerStateIcon() string {
 		default:
 			return ">"
 		}
-	case false: // Use nerd fonts
-		switch ci.State {
+	case false: // Use nerd fonts.
+		switch containerItem.State {
 		case "running":
 			return " "
 		case "paused":
@@ -90,15 +90,15 @@ func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
 	delegate = shared.ChangeDelegateStyles(delegate)
 
-	delegate.UpdateFunc = func(msg tea.Msg, m *list.Model) tea.Cmd {
+	delegate.UpdateFunc = func(msg tea.Msg, model *list.Model) tea.Cmd {
 		if _, ok := msg.(spinner.TickMsg); ok {
 			var cmds []tea.Cmd
-			items := m.Items()
-			for i, item := range items {
-				if c, ok := item.(ContainerItem); ok && c.isWorking {
+			items := model.Items()
+			for index, item := range items {
+				if container, ok := item.(ContainerItem); ok && container.isWorking {
 					var cmd tea.Cmd
-					c.spinner, cmd = c.spinner.Update(msg)
-					m.SetItem(i, c)
+					container.spinner, cmd = container.spinner.Update(msg)
+					model.SetItem(index, container)
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -118,26 +118,25 @@ func newSpinner() spinner.Model {
 	return spinnerModel
 }
 
-func (ci ContainerItem) FilterValue() string {
-	return ci.Title()
+func (containerItem ContainerItem) FilterValue() string {
+	return containerItem.Title()
 }
 
-func (ci ContainerItem) Title() string {
+func (containerItem ContainerItem) Title() string {
 	var statusIcon string
-	if ci.isWorking {
-		statusIcon = ci.spinner.View()
+	if containerItem.isWorking {
+		statusIcon = containerItem.spinner.View()
 	} else {
-		statusIcon = ci.getIsSelectedIcon()
+		statusIcon = containerItem.getIsSelectedIcon()
 	}
-	titleOrnament := ci.getTitleOrnament()
-	// containerStateIcon := ci.getContainerStateIcon()
+	titleOrnament := containerItem.getTitleOrnament()
 	title := fmt.Sprintf("%s %s",
 		titleOrnament,
-		ci.Name,
+		containerItem.Name,
 	)
 
 	var titleColor lipgloss.Color
-	switch ci.State {
+	switch containerItem.State {
 	case "running":
 		titleColor = colors.Success()
 	case "paused":
@@ -151,9 +150,9 @@ func (ci ContainerItem) Title() string {
 		Foreground(titleColor).
 		Render(title)
 
-	if !ci.isWorking {
+	if !containerItem.isWorking {
 		var isSelectedColor lipgloss.Color
-		switch ci.isSelected {
+		switch containerItem.isSelected {
 		case true:
 			isSelectedColor = colors.Selected()
 		case false:
@@ -167,10 +166,10 @@ func (ci ContainerItem) Title() string {
 	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
-func (ci ContainerItem) Description() string {
-	shortID := ci.ID
-	if len(ci.ID) > 12 {
-		shortID = ci.ID[:12]
+func (containerItem ContainerItem) Description() string {
+	shortID := containerItem.ID
+	if len(containerItem.ID) > 12 {
+		shortID = containerItem.ID[:12]
 	}
 	return fmt.Sprintf("   %s", shortID)
 }

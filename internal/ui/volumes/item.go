@@ -22,23 +22,23 @@ var (
 )
 
 func newDefaultDelegate() list.DefaultDelegate {
-	d := list.NewDefaultDelegate()
-	d = shared.ChangeDelegateStyles(d)
+	delegate := list.NewDefaultDelegate()
+	delegate = shared.ChangeDelegateStyles(delegate)
 
-	return d
+	return delegate
 }
 
-func (v VolumeItem) getIsSelectedIcon() string {
+func (volumeItem VolumeItem) getIsSelectedIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch v.isSelected {
+	case true: // Don't use nerd fonts.
+		switch volumeItem.isSelected {
 		case true:
 			return "[x]"
 		case false:
 			return "[ ]"
 		}
-	case false: // Use nerd fonts
-		switch v.isSelected {
+	case false: // Use nerd fonts.
+		switch volumeItem.isSelected {
 		case true:
 			return " "
 		case false:
@@ -49,28 +49,28 @@ func (v VolumeItem) getIsSelectedIcon() string {
 	return "[ ]"
 }
 
-func (v VolumeItem) getTitleOrnament() string {
+func (volumeItem VolumeItem) getTitleOrnament() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
+	case true: // Don't use nerd fonts.
 		return ""
-	case false: // Use nerd fonts
+	case false: // Use nerd fonts.
 		return " "
 	}
 
 	return ""
 }
 
-func (v VolumeItem) Title() string {
-	titleOrnament := v.getTitleOrnament()
+func (volumeItem VolumeItem) Title() string {
+	titleOrnament := volumeItem.getTitleOrnament()
 
-	title := fmt.Sprintf("%s %s", titleOrnament, v.Volume.Name)
+	title := fmt.Sprintf("%s %s", titleOrnament, volumeItem.Volume.Name)
 	title = lipgloss.NewStyle().
 		Foreground(colors.Muted()).
 		Render(title)
 
-	statusIcon := v.getIsSelectedIcon()
+	statusIcon := volumeItem.getIsSelectedIcon()
 	var isSelectedColor lipgloss.Color
-	switch v.isSelected {
+	switch volumeItem.isSelected {
 	case true:
 		isSelectedColor = colors.Selected()
 	case false:
@@ -83,10 +83,10 @@ func (v VolumeItem) Title() string {
 	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
-func (v VolumeItem) Description() string {
-	return fmt.Sprintf("   %s", v.Volume.Driver)
+func (volumeItem VolumeItem) Description() string {
+	return fmt.Sprintf("   %s", volumeItem.Volume.Driver)
 }
 
-func (v VolumeItem) FilterValue() string {
-	return v.Title()
+func (volumeItem VolumeItem) FilterValue() string {
+	return volumeItem.Title()
 }

@@ -29,7 +29,7 @@ var (
 	_ ComponentModel = (*SmartDialog)(nil)
 )
 
-// NewSmartDialog creates a generic confirmation/warning dialog
+// NewSmartDialog creates a generic confirmation or warning dialog.
 func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 	width, height := context.GetWindowSize()
 
@@ -39,11 +39,10 @@ func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 		BorderForeground(colors.Primary()).
 		Align(lipgloss.Center)
 
-	lm := NewLayoutManager(width, height)
-	dims := lm.CalculateModal(style)
-	style = style.Width(dims.Width).Height(dims.Height)
+	layoutManager := NewLayoutManager(width, height)
+	modalDimensions := layoutManager.CalculateModal(style)
+	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
-	// Ensure there is at least one button (Cancel)
 	if len(buttons) == 0 {
 		buttons = []DialogButton{{Label: "Cancel", IsSafe: true}}
 	}
@@ -52,56 +51,54 @@ func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 		style:          style,
 		message:        message,
 		buttons:        buttons,
-		selectedButton: 0, // Default to first button (usually Cancel/Safe)
+		selectedButton: 0,
 		width:          width,
 		height:         height,
 	}
 }
 
-func (d *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	d.width = msg.Width
-	d.height = msg.Height
+func (dialog *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	dialog.width = msg.Width
+	dialog.height = msg.Height
 
-	lm := NewLayoutManager(msg.Width, msg.Height)
-	dims := lm.CalculateModal(d.style)
-	d.style = d.style.Width(dims.Width).Height(dims.Height)
+	layoutManager := NewLayoutManager(msg.Width, msg.Height)
+	modalDimensions := layoutManager.CalculateModal(dialog.style)
+	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 }
 
-func (d SmartDialog) Init() tea.Cmd {
+func (dialog SmartDialog) Init() tea.Cmd {
 	return nil
 }
 
-func (d SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
+func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		d.UpdateWindowDimensions(msg)
+		dialog.UpdateWindowDimensions(msg)
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return d, func() tea.Msg { return CloseDialogMessage{} }
+			return dialog, func() tea.Msg { return CloseDialogMessage{} }
 
 		case "tab", "right", "l":
-			d.selectedButton = (d.selectedButton + 1) % len(d.buttons)
+			dialog.selectedButton = (dialog.selectedButton + 1) % len(dialog.buttons)
 
 		case "shift+tab", "left", "h":
-			d.selectedButton = (d.selectedButton - 1 + len(d.buttons)) % len(d.buttons)
+			dialog.selectedButton = (dialog.selectedButton - 1 + len(dialog.buttons)) % len(dialog.buttons)
 
 		case "enter":
-			btn := d.buttons[d.selectedButton]
-			if btn.Action.Type == "" {
-				return d, func() tea.Msg { return CloseDialogMessage{} }
+			selectedButton := dialog.buttons[dialog.selectedButton]
+			if selectedButton.Action.Type == "" {
+				return dialog, func() tea.Msg { return CloseDialogMessage{} }
 			}
-			return d, func() tea.Msg { return ConfirmationMessage{Action: btn.Action} }
+			return dialog, func() tea.Msg { return ConfirmationMessage{Action: selectedButton.Action} }
 		}
 	}
 
-	return d, tea.Batch(cmds...)
+	return dialog, nil
 }
 
-func (d SmartDialog) View() string {
+func (dialog SmartDialog) View() string {
 	var buttonViews []string
 
 	defaultButtonStyle := lipgloss.NewStyle().
@@ -124,35 +121,34 @@ func (d SmartDialog) View() string {
 		Foreground(colors.Text()).
 		Background(colors.Error())
 
-	for i, btn := range d.buttons {
-		var btnStyle lipgloss.Style
+	for index, button := range dialog.buttons {
+		var buttonStyle lipgloss.Style
 
-		if i == d.selectedButton {
-			if btn.IsSafe {
-				btnStyle = activeSafeStyle
+		if index == dialog.selectedButton {
+			if button.IsSafe {
+				buttonStyle = activeSafeStyle
 			} else {
-				btnStyle = activeDangerStyle
+				buttonStyle = activeDangerStyle
 			}
 		} else {
-			btnStyle = defaultButtonStyle
+			buttonStyle = defaultButtonStyle
 		}
 
-		buttonViews = append(buttonViews, btnStyle.Render(btn.Label))
+		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
 	}
 
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
 
-	// Change border color if danger button is selected
-	currentBtn := d.buttons[d.selectedButton]
-	renderStyle := d.style
-	if !currentBtn.IsSafe {
+	currentButton := dialog.buttons[dialog.selectedButton]
+	renderStyle := dialog.style
+	if !currentButton.IsSafe {
 		renderStyle = renderStyle.BorderForeground(colors.Error())
 	}
 
 	return renderStyle.Render(lipgloss.JoinVertical(
 		lipgloss.Center,
-		d.message,
-		"", // Spacer
-		buttons,
+		dialog.message,
+		"",
+		buttonsView,
 	))
 }

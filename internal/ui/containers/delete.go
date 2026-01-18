@@ -61,26 +61,26 @@ func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirma
 	}
 }
 
-func (dc *DeleteConfirmation) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	dc.WindowWidth = msg.Width
-	dc.WindowHeight = msg.Height
+func (model *DeleteConfirmation) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	model.WindowWidth = msg.Width
+	model.WindowHeight = msg.Height
 
-	lm := shared.NewLayoutManager(msg.Width, msg.Height)
-	dims := lm.CalculateModal(dc.style)
+	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
+	dimensions := layoutManager.CalculateModal(model.style)
 
-	dc.style = dc.style.Width(dims.Width).Height(dims.Height)
+	model.style = model.style.Width(dimensions.Width).Height(dimensions.Height)
 }
 
-func (dc DeleteConfirmation) Init() tea.Cmd {
+func (model DeleteConfirmation) Init() tea.Cmd {
 	return nil
 }
 
-func (dc DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		dc.UpdateWindowDimensions(msg)
+		model.UpdateWindowDimensions(msg)
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -88,25 +88,25 @@ func (dc DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, CloseOverlay())
 
 		case tea.KeyTab.String(), tea.KeyShiftTab.String():
-			switch dc.hoveredButtonOption {
+			switch model.hoveredButtonOption {
 			case confirm:
-				dc.hoveredButtonOption = decline
+				model.hoveredButtonOption = decline
 			case decline:
-				dc.hoveredButtonOption = confirm
+				model.hoveredButtonOption = confirm
 			}
 
 		case "l", tea.KeyRight.String():
-			if dc.hoveredButtonOption == decline {
-				dc.hoveredButtonOption = confirm
+			if model.hoveredButtonOption == decline {
+				model.hoveredButtonOption = confirm
 			}
 
 		case "h", tea.KeyLeft.String():
-			if dc.hoveredButtonOption == confirm {
-				dc.hoveredButtonOption = decline
+			if model.hoveredButtonOption == confirm {
+				model.hoveredButtonOption = decline
 			}
 
 		case tea.KeyEnter.String():
-			if dc.hoveredButtonOption == confirm {
+			if model.hoveredButtonOption == confirm {
 				cmds = append(cmds, func() tea.Msg { return MessageConfirmDelete{} })
 			}
 
@@ -114,10 +114,10 @@ func (dc DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return dc, tea.Batch(cmds...)
+	return model, tea.Batch(cmds...)
 }
 
-func (dc DeleteConfirmation) View() string {
+func (model DeleteConfirmation) View() string {
 	hoveredButtonStyle := lipgloss.NewStyle().
 		Background(colors.Primary()).
 		Bold(true).
@@ -132,7 +132,7 @@ func (dc DeleteConfirmation) View() string {
 	confirmButton := confirm.String()
 	declineButton := decline.String()
 
-	if dc.hoveredButtonOption == confirm {
+	if model.hoveredButtonOption == confirm {
 		confirmButton = hoveredButtonStyle.Background(colors.Error()).Render(confirmButton)
 		declineButton = defaultButtonStyle.Render(declineButton)
 	} else {
@@ -148,17 +148,17 @@ func (dc DeleteConfirmation) View() string {
 	)
 
 	var message string
-	if len(dc.requestedContainers) == 1 {
-		message = fmt.Sprintf("Are you sure you want to delete %s?", dc.requestedContainers[0].Name)
+	if len(model.requestedContainers) == 1 {
+		message = fmt.Sprintf("Are you sure you want to delete %s?", model.requestedContainers[0].Name)
 	} else {
-		message = fmt.Sprintf("Are you sure you want to delete the %d selected containers?", len(dc.requestedContainers))
+		message = fmt.Sprintf("Are you sure you want to delete the %d selected containers?", len(model.requestedContainers))
 	}
 
-	if dc.hoveredButtonOption == confirm {
-		dc.style = dc.style.BorderForeground(colors.Error())
+	if model.hoveredButtonOption == confirm {
+		model.style = model.style.BorderForeground(colors.Error())
 	}
 
-	return dc.style.Render(lipgloss.JoinVertical(
+	return model.style.Render(lipgloss.JoinVertical(
 		lipgloss.Center,
 		message,
 		"",

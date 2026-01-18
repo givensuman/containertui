@@ -5,25 +5,25 @@ import (
 	"github.com/givensuman/containertui/internal/colors"
 )
 
-func ChangeDelegateStyles(d list.DefaultDelegate) list.DefaultDelegate {
-	d.Styles.SelectedTitle = d.Styles.SelectedTitle.
+func ChangeDelegateStyles(delegate list.DefaultDelegate) list.DefaultDelegate {
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
 		BorderLeftForeground(colors.Primary()).
 		Foreground(colors.Primary())
 
-	d.Styles.DimmedTitle = d.Styles.DimmedTitle.
+	delegate.Styles.DimmedTitle = delegate.Styles.DimmedTitle.
 		Foreground(colors.Error())
 
-	d.Styles.SelectedDesc = d.Styles.SelectedDesc.
+	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.
 		BorderLeftForeground(colors.Primary()).
 		Foreground(colors.Primary())
 
-	d.Styles.DimmedDesc = d.Styles.DimmedDesc.
+	delegate.Styles.DimmedDesc = delegate.Styles.DimmedDesc.
 		Foreground(colors.Muted()).
 		Bold(false)
 
-	d.Styles.FilterMatch = d.Styles.FilterMatch.
+	delegate.Styles.FilterMatch = delegate.Styles.FilterMatch.
 		Foreground(colors.Primary()).
 		Bold(true)
 
-	return d
+	return delegate
 }

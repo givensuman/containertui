@@ -67,8 +67,7 @@ func newKeybindings() *keybindings {
 	}
 }
 
-// selectedNetworks is map of a network's ID to
-// its index in the list
+// selectedNetworks maps a network's ID to its index in the list.
 type selectedNetworks struct {
 	selections map[string]int
 }
@@ -79,12 +78,12 @@ func newSelectedNetworks() *selectedNetworks {
 	}
 }
 
-func (sn *selectedNetworks) selectNetworkInList(id string, index int) {
-	sn.selections[id] = index
+func (selectedNetworks *selectedNetworks) selectNetworkInList(id string, index int) {
+	selectedNetworks.selections[id] = index
 }
 
-func (sn selectedNetworks) unselectNetworkInList(id string) {
-	delete(sn.selections, id)
+func (selectedNetworks selectedNetworks) unselectNetworkInList(id string) {
+	delete(selectedNetworks.selections, id)
 }
 
 type sessionState int
@@ -99,6 +98,7 @@ const (
 	focusDetails
 )
 
+// Model represents the networks component state.
 type Model struct {
 	shared.Component
 	style            lipgloss.Style
@@ -107,9 +107,7 @@ type Model struct {
 	selectedNetworks *selectedNetworks
 	keybindings      *keybindings
 
-	// Overlay support
-	sessionState sessionState
-	// focusedView governs which panel is active (0: List, 1: Details)
+	sessionState       sessionState
 	focusedView        int
 	detailsKeybindings detailsKeybindings
 	foreground         tea.Model
@@ -122,13 +120,13 @@ var (
 )
 
 func New() Model {
-	networks, err := context.GetClient().GetNetworks()
+	networkList, err := context.GetClient().GetNetworks()
 	if err != nil {
-		networks = []client.Network{}
+		networkList = []client.Network{}
 	}
-	items := make([]list.Item, 0, len(networks))
-	for _, net := range networks {
-		items = append(items, NetworkItem{Network: net})
+	items := make([]list.Item, 0, len(networkList))
+	for _, network := range networkList {
+		items = append(items, NetworkItem{Network: network})
 	}
 
 	width, height := context.GetWindowSize()
@@ -138,265 +136,242 @@ func New() Model {
 		PaddingTop(1)
 
 	delegate := newDefaultDelegate()
-	l := list.New(items, delegate, width, height)
-	l.SetShowHelp(false)
-	l.SetShowTitle(false)
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(true)
-	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
-	l.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	l.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel := list.New(items, delegate, width, height)
+	listModel.SetShowHelp(false)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
 
-	keybindings := newKeybindings()
-	l.AdditionalFullHelpKeys = func() []key.Binding {
+	networkKeybindings := newKeybindings()
+	listModel.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			keybindings.toggleSelection,
-			keybindings.toggleSelectionOfAll,
-			keybindings.remove,
-			keybindings.switchTab,
+			networkKeybindings.toggleSelection,
+			networkKeybindings.toggleSelectionOfAll,
+			networkKeybindings.remove,
+			networkKeybindings.switchTab,
 		}
 	}
 
-	vp := viewport.New(0, 0)
+	detailViewport := viewport.New(0, 0)
 
-	m := Model{
+	model := Model{
 		style:              style,
-		list:               l,
-		viewport:           vp,
+		list:               listModel,
+		viewport:           detailViewport,
 		selectedNetworks:   newSelectedNetworks(),
-		keybindings:        keybindings,
+		keybindings:        networkKeybindings,
 		sessionState:       viewMain,
 		focusedView:        focusList,
 		detailsKeybindings: newDetailsKeybindings(),
 	}
 
-	// Initialize overlay with nil content initially
-	m.overlayModel = overlay.New(nil, m.list, overlay.Center, overlay.Center, 0, 0)
-	return m
+	model.overlayModel = overlay.New(nil, model.list, overlay.Center, overlay.Center, 0, 0)
+	return model
 }
 
-func (m Model) Init() tea.Cmd {
+func (model Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	switch m.sessionState {
+	switch model.sessionState {
 	case viewOverlay:
-		// If overlay is active, route messages there
-		fg, cmd := m.foreground.Update(msg)
-		m.foreground = fg
-		cmds = append(cmds, cmd)
+		foregroundModel, foregroundCmd := model.foreground.Update(msg)
+		model.foreground = foregroundModel
+		cmds = append(cmds, foregroundCmd)
 
-		// Check if overlay wants to close or confirm
 		if _, ok := msg.(shared.CloseDialogMessage); ok {
-			m.sessionState = viewMain
-			m.foreground = nil
-		} else if confirm, ok := msg.(shared.ConfirmationMessage); ok {
-			// Handle confirmation
-			if confirm.Action.Type == "DeleteNetwork" {
-				id := confirm.Action.Payload.(string)
-				// Perform deletion
-				err := context.GetClient().RemoveNetwork(id)
+			model.sessionState = viewMain
+			model.foreground = nil
+		} else if confirmMsg, ok := msg.(shared.ConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "DeleteNetwork" {
+				networkID := confirmMsg.Action.Payload.(string)
+				err := context.GetClient().RemoveNetwork(networkID)
 				if err != nil {
-					// TODO: Show error
-				} else {
-					// Remove from list or refresh
+					// Error handling could be added here.
 				}
 			}
-			m.sessionState = viewMain
-			m.foreground = nil
+			model.sessionState = viewMain
+			model.foreground = nil
 		}
 	case viewMain:
-		// Main loop handling
-
-		// Handle focus switching
-		if msg, ok := msg.(tea.KeyMsg); ok {
-			if msg.String() == "tab" && m.list.FilterState() != list.Filtering {
-				if m.focusedView == focusList {
-					m.focusedView = focusDetails
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if keyMsg.String() == "tab" && model.list.FilterState() != list.Filtering {
+				if model.focusedView == focusList {
+					model.focusedView = focusDetails
 				} else {
-					m.focusedView = focusList
+					model.focusedView = focusList
 				}
-				return m, nil
+				return model, nil
 			}
 		}
 
-		isKeyMsg := false
+		isKeyMessage := false
 		if _, ok := msg.(tea.KeyMsg); ok {
-			isKeyMsg = true
+			isKeyMessage = true
 		}
 
-		// Update list if focused or not a key message
-		if !isKeyMsg || m.focusedView == focusList {
+		if !isKeyMessage || model.focusedView == focusList {
 			switch msg := msg.(type) {
 			case tea.WindowSizeMsg:
-				m.UpdateWindowDimensions(msg)
+				model.UpdateWindowDimensions(msg)
 			case tea.KeyMsg:
-				if m.list.FilterState() == list.Filtering {
+				if model.list.FilterState() == list.Filtering {
 					break
 				}
 
 				switch {
-				// allow passing through of tab switching keys
-				case key.Matches(msg, m.keybindings.switchTab):
-					return m, nil
-				case key.Matches(msg, m.keybindings.toggleSelection):
-					m.handleToggleSelection()
-				case key.Matches(msg, m.keybindings.toggleSelectionOfAll):
-					m.handleToggleSelectionOfAll()
-				case key.Matches(msg, m.keybindings.remove):
-					// Trigger remove dialog
-					item := m.list.SelectedItem()
-					if item != nil {
-						if n, ok := item.(NetworkItem); ok {
-							// Check usage
-							usedBy, _ := context.GetClient().GetContainersUsingNetwork(n.Network.ID)
-							if len(usedBy) > 0 {
-								// Show warning dialog with navigation option
-								dialog := shared.NewSmartDialog(
-									fmt.Sprintf("Network %s is used by %d containers (%v).\nCannot delete.", n.Network.Name, len(usedBy), usedBy),
+				case key.Matches(msg, model.keybindings.switchTab):
+					return model, nil
+				case key.Matches(msg, model.keybindings.toggleSelection):
+					model.handleToggleSelection()
+				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
+					model.handleToggleSelectionOfAll()
+				case key.Matches(msg, model.keybindings.remove):
+					selectedItem := model.list.SelectedItem()
+					if selectedItem != nil {
+						if networkItem, ok := selectedItem.(NetworkItem); ok {
+							containersUsingNetwork, _ := context.GetClient().GetContainersUsingNetwork(networkItem.Network.ID)
+							if len(containersUsingNetwork) > 0 {
+								warningDialog := shared.NewSmartDialog(
+									fmt.Sprintf("Network %s is used by %d containers (%v).\nCannot delete.", networkItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
 									[]shared.DialogButton{
 										{Label: "OK", IsSafe: true},
 									},
 								)
-								m.foreground = dialog
-								m.sessionState = viewOverlay
+								model.foreground = warningDialog
+								model.sessionState = viewOverlay
 							} else {
-								// Show confirmation
-								dialog := shared.NewSmartDialog(
-									fmt.Sprintf("Are you sure you want to delete network %s?", n.Network.Name),
+								confirmationDialog := shared.NewSmartDialog(
+									fmt.Sprintf("Are you sure you want to delete network %s?", networkItem.Network.Name),
 									[]shared.DialogButton{
 										{Label: "Cancel", IsSafe: true},
-										{Label: "Delete", IsSafe: false, Action: shared.SmartDialogAction{Type: "DeleteNetwork", Payload: n.Network.ID}},
+										{Label: "Delete", IsSafe: false, Action: shared.SmartDialogAction{Type: "DeleteNetwork", Payload: networkItem.Network.ID}},
 									},
 								)
-								m.foreground = dialog
-								m.sessionState = viewOverlay
+								model.foreground = confirmationDialog
+								model.sessionState = viewOverlay
 							}
 						}
 					}
 				}
 			}
-			m.list, cmd = m.list.Update(msg)
-			cmds = append(cmds, cmd)
+			updatedList, listCmd := model.list.Update(msg)
+			model.list = updatedList
+			cmds = append(cmds, listCmd)
 		}
 
-		// Check for selection change (if list updated)
-		item := m.list.SelectedItem()
-		if item != nil {
-			if n, ok := item.(NetworkItem); ok {
-				content := fmt.Sprintf(
+		selectedItem := model.list.SelectedItem()
+		if selectedItem != nil {
+			if networkItem, ok := selectedItem.(NetworkItem); ok {
+				detailsContent := fmt.Sprintf(
 					"ID: %s\nName: %s\nDriver: %s\nScope: %s",
-					n.Network.ID, n.Network.Name, n.Network.Driver, n.Network.Scope,
+					networkItem.Network.ID, networkItem.Network.Name, networkItem.Network.Driver, networkItem.Network.Scope,
 				)
-				m.viewport.SetContent(content)
+				model.viewport.SetContent(detailsContent)
 			}
 		}
 
-		// Update viewport if focused or not a key message
-		if !isKeyMsg || m.focusedView == focusDetails {
-			m.viewport, cmd = m.viewport.Update(msg)
-			cmds = append(cmds, cmd)
+		if !isKeyMessage || model.focusedView == focusDetails {
+			updatedViewport, viewportCmd := model.viewport.Update(msg)
+			model.viewport = updatedViewport
+			cmds = append(cmds, viewportCmd)
 		}
 	}
 
-	// Always update overlay model to sync state
-	m.overlayModel.Foreground = m.foreground
-	m.overlayModel.Background = m.list
+	model.overlayModel.Foreground = model.foreground
+	model.overlayModel.Background = model.list
 
-	return m, tea.Batch(cmds...)
+	return model, tea.Batch(cmds...)
 }
 
-func (m *Model) handleToggleSelection() {
-	index := m.list.Index()
-	selectedItem, ok := m.list.SelectedItem().(NetworkItem)
+func (model *Model) handleToggleSelection() {
+	currentIndex := model.list.Index()
+	selectedItem, ok := model.list.SelectedItem().(NetworkItem)
 	if ok {
 		isSelected := selectedItem.isSelected
 
 		if isSelected {
-			m.selectedNetworks.unselectNetworkInList(selectedItem.Network.ID)
+			model.selectedNetworks.unselectNetworkInList(selectedItem.Network.ID)
 		} else {
-			m.selectedNetworks.selectNetworkInList(selectedItem.Network.ID, index)
+			model.selectedNetworks.selectNetworkInList(selectedItem.Network.ID, currentIndex)
 		}
 
 		selectedItem.isSelected = !isSelected
-		m.list.SetItem(index, selectedItem)
+		model.list.SetItem(currentIndex, selectedItem)
 	}
 }
 
-func (m *Model) handleToggleSelectionOfAll() {
-	allAlreadySelected := true
-	items := m.list.Items()
+func (model *Model) handleToggleSelectionOfAll() {
+	allNetworksSelected := true
+	items := model.list.Items()
 
 	for _, item := range items {
-		if c, ok := item.(NetworkItem); ok {
-			if _, selected := m.selectedNetworks.selections[c.Network.ID]; !selected {
-				allAlreadySelected = false
+		if networkItem, ok := item.(NetworkItem); ok {
+			if _, isSelected := model.selectedNetworks.selections[networkItem.Network.ID]; !isSelected {
+				allNetworksSelected = false
 				break
 			}
 		}
 	}
 
-	if allAlreadySelected {
-		// Unselect all items
-		m.selectedNetworks = newSelectedNetworks()
+	if allNetworksSelected {
+		// Unselect all items.
+		model.selectedNetworks = newSelectedNetworks()
 
-		for index, item := range m.list.Items() {
-			item, ok := item.(NetworkItem)
-			if ok {
-				item.isSelected = false
-				m.list.SetItem(index, item)
+		for index, item := range model.list.Items() {
+			if networkItem, ok := item.(NetworkItem); ok {
+				networkItem.isSelected = false
+				model.list.SetItem(index, networkItem)
 			}
 		}
 	} else {
-		// Select all items
-		m.selectedNetworks = newSelectedNetworks()
+		// Select all items.
+		model.selectedNetworks = newSelectedNetworks()
 
-		for index, item := range m.list.Items() {
-			item, ok := item.(NetworkItem)
-			if ok {
-				item.isSelected = true
-				m.list.SetItem(index, item)
-				m.selectedNetworks.selectNetworkInList(item.Network.ID, index)
+		for index, item := range model.list.Items() {
+			if networkItem, ok := item.(NetworkItem); ok {
+				networkItem.isSelected = true
+				model.list.SetItem(index, networkItem)
+				model.selectedNetworks.selectNetworkInList(networkItem.Network.ID, index)
 			}
 		}
 	}
 }
 
-func (m Model) View() string {
-	if m.sessionState == viewOverlay && m.foreground != nil {
-		return m.overlayModel.View()
+func (model Model) View() string {
+	if model.sessionState == viewOverlay && model.foreground != nil {
+		return model.overlayModel.View()
 	}
 
-	// Get dimensions for master (list) and detail (inspect)
-	lm := shared.NewLayoutManager(m.WindowWidth, m.WindowHeight)
-	_, detail := lm.CalculateMasterDetail(lipgloss.NewStyle())
+	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
+	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
 
-	// Render the list (background)
-	listView := m.style.Render(m.list.View())
+	listView := model.style.Render(model.list.View())
 
 	borderColor := colors.Muted()
-	if m.focusedView == focusDetails {
+	if model.focusedView == focusDetails {
 		borderColor = colors.Primary()
 	}
 
-	// Render the detail view (side pane)
 	detailStyle := lipgloss.NewStyle().
-		Width(detail.Width - 2). // Subtract 2 for border width compensation
-		Height(detail.Height).
+		Width(detailLayout.Width - 2).
+		Height(detailLayout.Height).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(1)
 
 	var detailContent string
-	if m.list.SelectedItem() != nil {
-		detailContent = m.viewport.View()
+	if model.list.SelectedItem() != nil {
+		detailContent = model.viewport.View()
 	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected")
+		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected.")
 	}
 
 	detailView := detailStyle.Render(detailContent)
@@ -404,64 +379,62 @@ func (m Model) View() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 }
 
-func (m *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	m.WindowWidth = msg.Width
-	m.WindowHeight = msg.Height
+func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+	model.WindowWidth = msg.Width
+	model.WindowHeight = msg.Height
 
-	lm := shared.NewLayoutManager(msg.Width, msg.Height)
-	master, _ := lm.CalculateMasterDetail(m.style)
+	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
+	masterLayout, detailLayout := layoutManager.CalculateMasterDetail(model.style)
 
-	m.style = m.style.Width(master.Width).Height(master.Height) // Update style dimensions
+	model.style = model.style.Width(masterLayout.Width).Height(masterLayout.Height)
 
-	// Update viewport size
-	_, detail := lm.CalculateMasterDetail(lipgloss.NewStyle())
-	width := detail.Width - 4
-	height := detail.Height - 2
-	if width < 0 {
-		width = 0
+	viewportWidth := detailLayout.Width - 4
+	viewportHeight := detailLayout.Height - 2
+	if viewportWidth < 0 {
+		viewportWidth = 0
 	}
-	if height < 0 {
-		height = 0
+	if viewportHeight < 0 {
+		viewportHeight = 0
 	}
-	m.viewport.Width = width
-	m.viewport.Height = height
+	model.viewport.Width = viewportWidth
+	model.viewport.Height = viewportHeight
 
-	switch m.sessionState {
+	switch model.sessionState {
 	case viewMain:
-		if m.list.Width() != master.ContentWidth || m.list.Height() != master.ContentHeight {
-			m.list.SetWidth(master.ContentWidth)
-			m.list.SetHeight(master.ContentHeight)
+		if model.list.Width() != masterLayout.ContentWidth || model.list.Height() != masterLayout.ContentHeight {
+			model.list.SetWidth(masterLayout.ContentWidth)
+			model.list.SetHeight(masterLayout.ContentHeight)
 		}
 	case viewOverlay:
-		if d, ok := m.foreground.(shared.SmartDialog); ok {
-			d.UpdateWindowDimensions(msg)
-			m.foreground = d
+		if smartDialog, ok := model.foreground.(shared.SmartDialog); ok {
+			smartDialog.UpdateWindowDimensions(msg)
+			model.foreground = smartDialog
 		}
 	}
 }
 
-func (m Model) ShortHelp() []key.Binding {
-	if m.focusedView == focusList {
-		return m.list.ShortHelp()
-	} else if m.focusedView == focusDetails {
+func (model Model) ShortHelp() []key.Binding {
+	if model.focusedView == focusList {
+		return model.list.ShortHelp()
+	} else if model.focusedView == focusDetails {
 		return []key.Binding{
-			m.detailsKeybindings.Up,
-			m.detailsKeybindings.Down,
-			m.detailsKeybindings.Switch,
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
+			model.detailsKeybindings.Switch,
 		}
 	}
 	return nil
 }
 
-func (m Model) FullHelp() [][]key.Binding {
-	if m.focusedView == focusList {
-		return m.list.FullHelp()
-	} else if m.focusedView == focusDetails {
+func (model Model) FullHelp() [][]key.Binding {
+	if model.focusedView == focusList {
+		return model.list.FullHelp()
+	} else if model.focusedView == focusDetails {
 		return [][]key.Binding{
 			{
-				m.detailsKeybindings.Up,
-				m.detailsKeybindings.Down,
-				m.detailsKeybindings.Switch,
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
 			},
 		}
 	}

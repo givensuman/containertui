@@ -12,25 +12,25 @@ import (
 
 // ContainerLogs displays and scrolls logs for a specific container.
 type ContainerLogs struct {
-	viewport  viewport.Model // log viewport
-	container *ContainerItem // reference to container for fetching logs
-	lines     []string       // current log lines
-	loaded    bool           // Marks if log stream goroutine running
-	error     error          // holds error from log fetching
-	width     int
-	height    int
-	atBottom  bool          // If true, auto-scroll when new lines appear
-	cancelCh  chan struct{} // To stop log streaming goroutine
+	viewport      viewport.Model // Log viewport.
+	containerItem *ContainerItem // Reference to container for fetching logs.
+	lines         []string       // Current log lines.
+	isLoaded      bool           // Marks if log stream goroutine running.
+	err           error          // Holds error from log fetching.
+	width         int
+	height        int
+	isAtBottom    bool          // If true, auto-scroll when new lines appear.
+	cancelChannel chan struct{} // To stop log streaming goroutine.
 }
 
-func (cl *ContainerLogs) Init() tea.Cmd {
-	return cl.streamLogsCmd()
+func (model *ContainerLogs) Init() tea.Cmd {
+	return model.streamLogsCmd()
 }
 
 // streamLogsCmd streams logs live and sends new lines as they arrive, until cancelled.
-func (cl *ContainerLogs) streamLogsCmd() tea.Cmd {
-	containerID := cl.container.ID
-	cancelCh := cl.cancelCh
+func (model *ContainerLogs) streamLogsCmd() tea.Cmd {
+	containerID := model.containerItem.ID
+	cancelChannel := model.cancelChannel
 	return func() tea.Msg {
 		reader, err := contxt.GetClient().OpenLogs(containerID)
 		if err != nil {
@@ -39,11 +39,11 @@ func (cl *ContainerLogs) streamLogsCmd() tea.Cmd {
 		scanner := bufio.NewScanner(reader)
 		for {
 			select {
-			case <-cancelCh:
-				return nil // Overlay closed, stop streaming
+			case <-cancelChannel:
+				return nil // Overlay closed, stop streaming.
 			default:
 				if !scanner.Scan() {
-					return nil // end of stream
+					return nil // End of stream.
 				}
 				line := scanner.Text()
 				return newLogLineMsg{line: line}
@@ -53,7 +53,7 @@ func (cl *ContainerLogs) streamLogsCmd() tea.Cmd {
 }
 
 // logsLoadedMsg used internally to dispatch logs from async fetch to UI
-// or signal error
+// or signal error.
 type logsLoadedMsg struct {
 	lines []string
 	err   error
@@ -64,72 +64,72 @@ type newLogLineMsg struct {
 }
 
 // Update implements the Bubbletea update loop for the logs overlay.
-func (cl *ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model *ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case logsLoadedMsg:
-		cl.loaded = true
-		cl.error = msg.err
+		model.isLoaded = true
+		model.err = msg.err
 		if msg.err == nil {
-			cl.lines = msg.lines
-			cl.viewport.SetContent(strings.Join(msg.lines, "\n"))
-			cl.atBottom = true
+			model.lines = msg.lines
+			model.viewport.SetContent(strings.Join(msg.lines, "\n"))
+			model.isAtBottom = true
 		} else {
-			cl.viewport.SetContent("Error loading logs: " + msg.err.Error())
+			model.viewport.SetContent("Error loading logs: " + msg.err.Error())
 		}
-		return cl, nil
+		return model, nil
 
 	case newLogLineMsg:
-		cl.lines = append(cl.lines, msg.line)
-		cl.viewport.SetContent(strings.Join(cl.lines, "\n"))
-		// If at the bottom or the log buffer size <= height, scroll to end
-		if cl.atBottom || len(cl.lines) <= cl.viewport.Height {
-			cl.viewport.GotoBottom()
+		model.lines = append(model.lines, msg.line)
+		model.viewport.SetContent(strings.Join(model.lines, "\n"))
+		// If at the bottom or the log buffer size <= height, scroll to end.
+		if model.isAtBottom || len(model.lines) <= model.viewport.Height {
+			model.viewport.GotoBottom()
 		}
-		return cl, cl.streamLogsCmd()
+		return model, model.streamLogsCmd()
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
-			// Cancel streaming goroutine
-			if cl.cancelCh != nil {
-				close(cl.cancelCh)
+			// Cancel streaming goroutine.
+			if model.cancelChannel != nil {
+				close(model.cancelChannel)
 			}
-			return cl, CloseOverlay()
+			return model, CloseOverlay()
 		case "up", "down", "pgup", "pgdown", "mouse wheel up", "mouse wheel down":
-			// Let viewport handle
-			vp, _ := cl.viewport.Update(msg)
-			cl.viewport = vp
-			newScroll := cl.viewport.ScrollPercent()
+			// Let viewport handle.
+			viewportModel, _ := model.viewport.Update(msg)
+			model.viewport = viewportModel
+			newScroll := model.viewport.ScrollPercent()
 			if newScroll < 0.99 {
-				cl.atBottom = false
+				model.isAtBottom = false
 			} else {
-				cl.atBottom = true
+				model.isAtBottom = true
 			}
-			return cl, nil
+			return model, nil
 		}
-		return cl, nil
+		return model, nil
 	case tea.WindowSizeMsg:
-		cl.setDimensions(msg.Width, msg.Height)
-		return cl, nil
+		model.setDimensions(msg.Width, msg.Height)
+		return model, nil
 	}
-	// Pass through viewport and mouse messages
-	vp, cmd := cl.viewport.Update(msg)
-	cl.viewport = vp
-	return cl, cmd
+	// Pass through viewport and mouse messages.
+	viewportModel, cmd := model.viewport.Update(msg)
+	model.viewport = viewportModel
+	return model, cmd
 }
 
 // setDimensions resizes the viewport and overlay on terminal window change.
-func (cl *ContainerLogs) setDimensions(width, height int) {
-	cl.width = width
-	cl.height = height
-	cl.viewport.Width = width - 4   // leave padding for overlay border
-	cl.viewport.Height = height - 6 // leave padding for title/controls
-	if cl.loaded && len(cl.lines) > 0 {
-		cl.viewport.SetContent(strings.Join(cl.lines, "\n"))
+func (model *ContainerLogs) setDimensions(width, height int) {
+	model.width = width
+	model.height = height
+	model.viewport.Width = width - 4   // Leave padding for overlay border.
+	model.viewport.Height = height - 6 // Leave padding for title/controls.
+	if model.isLoaded && len(model.lines) > 0 {
+		model.viewport.SetContent(strings.Join(model.lines, "\n"))
 	}
 }
 
 // View renders the log overlay with controls and instructions.
-func (cl *ContainerLogs) View() string {
-	return cl.viewport.View()
+func (model *ContainerLogs) View() string {
+	return model.viewport.View()
 }

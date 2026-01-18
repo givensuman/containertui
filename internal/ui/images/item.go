@@ -28,17 +28,17 @@ func newDefaultDelegate() list.DefaultDelegate {
 	return delegate
 }
 
-func (i ImageItem) getIsSelectedIcon() string {
+func (imageItem ImageItem) getIsSelectedIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch i.isSelected {
+	case true: // Don't use nerd fonts.
+		switch imageItem.isSelected {
 		case true:
 			return "[x]"
 		case false:
 			return "[ ]"
 		}
-	case false: // Use nerd fonts
-		switch i.isSelected {
+	case false: // Use nerd fonts.
+		switch imageItem.isSelected {
 		case true:
 			return " "
 		case false:
@@ -49,39 +49,39 @@ func (i ImageItem) getIsSelectedIcon() string {
 	return "[ ]"
 }
 
-func (i ImageItem) getTitleOrnament() string {
+func (imageItem ImageItem) getTitleOrnament() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
+	case true: // Don't use nerd fonts.
 		return ""
-	case false: // Use nerd fonts
+	case false: // Use nerd fonts.
 		return " "
 	}
 
 	return ""
 }
 
-func (i ImageItem) FilterValue() string {
-	return i.Title()
+func (imageItem ImageItem) FilterValue() string {
+	return imageItem.Title()
 }
 
-func (i ImageItem) Title() string {
+func (imageItem ImageItem) Title() string {
 	var repoTag string
-	if len(i.Image.RepoTags) > 0 {
-		repoTag = i.Image.RepoTags[0]
+	if len(imageItem.Image.RepoTags) > 0 {
+		repoTag = imageItem.Image.RepoTags[0]
 	} else {
 		repoTag = "<none>"
 	}
 
-	titleOrnament := i.getTitleOrnament()
+	titleOrnament := imageItem.getTitleOrnament()
 
 	title := fmt.Sprintf("%s %s", titleOrnament, repoTag)
 	title = lipgloss.NewStyle().
 		Foreground(colors.Muted()).
 		Render(title)
 
-	statusIcon := i.getIsSelectedIcon()
+	statusIcon := imageItem.getIsSelectedIcon()
 	var isSelectedColor lipgloss.Color
-	switch i.isSelected {
+	switch imageItem.isSelected {
 	case true:
 		isSelectedColor = colors.Selected()
 	case false:
@@ -94,10 +94,10 @@ func (i ImageItem) Title() string {
 	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
-func (i ImageItem) Description() string {
-	shortID := i.Image.ID
+func (imageItem ImageItem) Description() string {
+	shortID := imageItem.Image.ID
 	if len(shortID) > 12 {
-		shortID = shortID[7:19] // Remove "sha256:" prefix and take first 12 chars
+		shortID = shortID[7:19] // Remove "sha256:" prefix and take first 12 chars.
 	}
 	return fmt.Sprintf("   %s", shortID)
 }

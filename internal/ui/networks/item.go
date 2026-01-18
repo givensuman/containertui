@@ -22,23 +22,23 @@ var (
 )
 
 func newDefaultDelegate() list.DefaultDelegate {
-	d := list.NewDefaultDelegate()
-	d = shared.ChangeDelegateStyles(d)
+	delegate := list.NewDefaultDelegate()
+	delegate = shared.ChangeDelegateStyles(delegate)
 
-	return d
+	return delegate
 }
 
-func (n NetworkItem) getIsSelectedIcon() string {
+func (networkItem NetworkItem) getIsSelectedIcon() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
-		switch n.isSelected {
+	case true: // Don't use nerd fonts.
+		switch networkItem.isSelected {
 		case true:
 			return "[x]"
 		case false:
 			return "[ ]"
 		}
-	case false: // Use nerd fonts
-		switch n.isSelected {
+	case false: // Use nerd fonts.
+		switch networkItem.isSelected {
 		case true:
 			return " "
 		case false:
@@ -49,28 +49,28 @@ func (n NetworkItem) getIsSelectedIcon() string {
 	return "[ ]"
 }
 
-func (n NetworkItem) getTitleOrnament() string {
+func (networkItem NetworkItem) getTitleOrnament() string {
 	switch context.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts
+	case true: // Don't use nerd fonts.
 		return ""
-	case false: // Use nerd fonts
+	case false: // Use nerd fonts.
 		return " "
 	}
 
 	return ""
 }
 
-func (n NetworkItem) Title() string {
-	titleOrnament := n.getTitleOrnament()
+func (networkItem NetworkItem) Title() string {
+	titleOrnament := networkItem.getTitleOrnament()
 
-	title := fmt.Sprintf("%s %s", titleOrnament, n.Network.Name)
+	title := fmt.Sprintf("%s %s", titleOrnament, networkItem.Network.Name)
 	title = lipgloss.NewStyle().
 		Foreground(colors.Muted()).
 		Render(title)
 
-	statusIcon := n.getIsSelectedIcon()
+	statusIcon := networkItem.getIsSelectedIcon()
 	var isSelectedColor lipgloss.Color
-	switch n.isSelected {
+	switch networkItem.isSelected {
 	case true:
 		isSelectedColor = colors.Selected()
 	case false:
@@ -83,14 +83,14 @@ func (n NetworkItem) Title() string {
 	return fmt.Sprintf("%s %s", statusIcon, title)
 }
 
-func (n NetworkItem) Description() string {
-	shortID := n.Network.ID
-	if len(n.Network.ID) > 12 {
-		shortID = n.Network.ID[:12]
+func (networkItem NetworkItem) Description() string {
+	shortID := networkItem.Network.ID
+	if len(networkItem.Network.ID) > 12 {
+		shortID = networkItem.Network.ID[:12]
 	}
 	return fmt.Sprintf("   %s", shortID)
 }
 
-func (n NetworkItem) FilterValue() string {
-	return n.Title()
+func (networkItem NetworkItem) FilterValue() string {
+	return networkItem.Title()
 }

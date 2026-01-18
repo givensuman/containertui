@@ -1,3 +1,4 @@
+// Package containers defines the containers component.
 package containers
 
 import (
@@ -70,8 +71,7 @@ func newKeybindings() *keybindings {
 	}
 }
 
-// selectedContainers is map of a container's ID to
-// its index in the list
+// selectedContainers maps a container's ID to its index in the list.
 type selectedContainers struct {
 	selections map[string]int
 }
@@ -82,12 +82,12 @@ func newSelectedContainers() *selectedContainers {
 	}
 }
 
-func (sc *selectedContainers) selectContainerInList(id string, index int) {
-	sc.selections[id] = index
+func (selectedContainers *selectedContainers) selectContainerInList(id string, index int) {
+	selectedContainers.selections[id] = index
 }
 
-func (sc selectedContainers) unselectContainerInList(id string) {
-	delete(sc.selections, id)
+func (selectedContainers selectedContainers) unselectContainerInList(id string) {
+	delete(selectedContainers.selections, id)
 }
 
 type ContainerList struct {
@@ -127,38 +127,39 @@ func newContainerList() ContainerList {
 		Height(height).
 		PaddingTop(1)
 
-	list := list.New(containerItems, newDefaultDelegate(), width, height)
+	delegate := newDefaultDelegate()
+	listModel := list.New(containerItems, delegate, width, height)
 
-	list.SetShowHelp(false)
-	list.SetShowTitle(false)
-	list.SetShowStatusBar(false)
-	list.SetFilteringEnabled(true)
-	list.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	list.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
-	list.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	list.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.SetShowHelp(false)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
 
-	keybindings := newKeybindings()
-	list.AdditionalFullHelpKeys = func() []key.Binding {
+	containerKeybindings := newKeybindings()
+	listModel.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			keybindings.pauseContainer,
-			keybindings.unpauseContainer,
-			keybindings.startContainer,
-			keybindings.stopContainer,
-			keybindings.removeContainer,
-			keybindings.showLogs,
-			keybindings.execShell,
-			keybindings.toggleSelection,
-			keybindings.toggleSelectionOfAll,
-			keybindings.switchTab,
+			containerKeybindings.pauseContainer,
+			containerKeybindings.unpauseContainer,
+			containerKeybindings.startContainer,
+			containerKeybindings.stopContainer,
+			containerKeybindings.removeContainer,
+			containerKeybindings.showLogs,
+			containerKeybindings.execShell,
+			containerKeybindings.toggleSelection,
+			containerKeybindings.toggleSelectionOfAll,
+			containerKeybindings.switchTab,
 		}
 	}
 
 	return ContainerList{
 		style:              style,
-		list:               list,
+		list:               listModel,
 		selectedContainers: newSelectedContainers(),
-		keybindings:        keybindings,
+		keybindings:        containerKeybindings,
 	}
 }
 
@@ -166,12 +167,12 @@ func (cl *ContainerList) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	cl.WindowWidth = msg.Width
 	cl.WindowHeight = msg.Height
 
-	lm := shared.NewLayoutManager(msg.Width, msg.Height)
-	master, _ := lm.CalculateMasterDetail(cl.style)
+	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
+	masterLayout, _ := layoutManager.CalculateMasterDetail(cl.style)
 
-	cl.style = cl.style.Width(master.Width).Height(master.Height)
-	cl.list.SetWidth(master.ContentWidth)
-	cl.list.SetHeight(master.ContentHeight)
+	cl.style = cl.style.Width(masterLayout.Width).Height(masterLayout.Height)
+	cl.list.SetWidth(masterLayout.ContentWidth)
+	cl.list.SetHeight(masterLayout.ContentHeight)
 }
 
 func (cl ContainerList) Init() tea.Cmd {
@@ -179,17 +180,14 @@ func (cl ContainerList) Init() tea.Cmd {
 }
 
 func (cl ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case MessageConfirmDelete:
-		cmd = cl.handleConfirmationOfRemoveContainers()
-		cmds = append(cmds, cmd)
+		cmds = append(cmds, cl.handleConfirmationOfRemoveContainers())
 
 	case MessageContainerOperationResult:
-		cmd = cl.handleContainerOperationResult(msg)
-		if cmd != nil {
+		if cmd := cl.handleContainerOperationResult(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 
@@ -198,38 +196,29 @@ func (cl ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "q":
+		if msg.String() == "q" {
 			return cl, tea.Quit
 		}
 
 		switch {
-		// allow passing through of tab switching keys
 		case key.Matches(msg, cl.keybindings.switchTab):
 			return cl, nil
 		case key.Matches(msg, cl.keybindings.pauseContainer):
-			cmd = cl.handlePauseContainers()
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, cl.handlePauseContainers())
 		case key.Matches(msg, cl.keybindings.unpauseContainer):
-			cmd = cl.handleUnpauseContainers()
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, cl.handleUnpauseContainers())
 		case key.Matches(msg, cl.keybindings.startContainer):
-			cmd = cl.handleStartContainers()
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, cl.handleStartContainers())
 		case key.Matches(msg, cl.keybindings.stopContainer):
-			cmd = cl.handleStopContainers()
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, cl.handleStopContainers())
 		case key.Matches(msg, cl.keybindings.removeContainer):
-			cmd = cl.handleRemoveContainers()
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, cl.handleRemoveContainers())
 		case key.Matches(msg, cl.keybindings.showLogs):
-			cmd = cl.handleShowLogs()
-			if cmd != nil {
+			if cmd := cl.handleShowLogs(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		case key.Matches(msg, cl.keybindings.execShell):
-			cmd = cl.handleExecShell()
-			if cmd != nil {
+			if cmd := cl.handleExecShell(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		case key.Matches(msg, cl.keybindings.toggleSelection):
@@ -239,15 +228,14 @@ func (cl ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	listModel, cmd := cl.list.Update(msg)
-	cl.list = listModel
-	cmds = append(cmds, cmd)
+	updatedList, listCmd := cl.list.Update(msg)
+	cl.list = updatedList
+	cmds = append(cmds, listCmd)
 
 	if _, ok := msg.(spinner.TickMsg); !ok {
-		items := cl.list.Items()
-		for _, item := range items {
-			if c, ok := item.(ContainerItem); ok && c.isWorking {
-				cmds = append(cmds, c.spinner.Tick)
+		for _, item := range cl.list.Items() {
+			if containerItem, ok := item.(ContainerItem); ok && containerItem.isWorking {
+				cmds = append(cmds, containerItem.spinner.Tick)
 			}
 		}
 	}
