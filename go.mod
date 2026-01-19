@@ -15,15 +15,21 @@ require (
 )
 
 require (
+	charm.land/bubbles/v2 v2.0.0-rc.1 // indirect
+	charm.land/bubbletea/v2 v2.0.0-rc.2 // indirect
+	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251205162909-7869489d8971 // indirect
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.3.3 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20251205161215-1948445e3318 // indirect
 	github.com/charmbracelet/x/ansi v0.11.3 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
-	github.com/charmbracelet/x/exp/golden v0.0.0-20241212170349-ad4b7ae0f25f // indirect
+	github.com/charmbracelet/x/exp/golden v0.0.0-20250806222409-83e3a29d542f // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/charmbracelet/x/termios v0.1.1 // indirect
+	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.6.1 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
@@ -59,6 +65,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.39.0 // indirect
 	go.opentelemetry.io/otel/metric v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

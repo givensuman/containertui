@@ -76,6 +76,7 @@ type keybindings struct {
 	unpauseContainer     key.Binding
 	startContainer       key.Binding
 	stopContainer        key.Binding
+	restartContainer     key.Binding
 	removeContainer      key.Binding
 	showLogs             key.Binding
 	execShell            key.Binding
@@ -101,6 +102,10 @@ func newKeybindings() *keybindings {
 		stopContainer: key.NewBinding(
 			key.WithKeys("S"),
 			key.WithHelp("S", "stop container"),
+		),
+		restartContainer: key.NewBinding(
+			key.WithKeys("R"),
+			key.WithHelp("R", "restart container"),
 		),
 		removeContainer: key.NewBinding(
 			key.WithKeys("r"),
@@ -211,6 +216,7 @@ func New() Model {
 			containerKeybindings.unpauseContainer,
 			containerKeybindings.startContainer,
 			containerKeybindings.stopContainer,
+			containerKeybindings.restartContainer,
 			containerKeybindings.removeContainer,
 			containerKeybindings.showLogs,
 			containerKeybindings.execShell,
@@ -306,6 +312,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, model.handleStartContainers())
 				case key.Matches(msg, model.keybindings.stopContainer):
 					cmds = append(cmds, model.handleStopContainers())
+				case key.Matches(msg, model.keybindings.restartContainer):
+					cmds = append(cmds, model.handleRestartContainers())
 				case key.Matches(msg, model.keybindings.removeContainer):
 					cmds = append(cmds, model.handleRemoveContainers())
 				case key.Matches(msg, model.keybindings.showLogs):
@@ -610,6 +618,24 @@ func (model *Model) handleStopContainers() tea.Cmd {
 		if ok && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Stop, []string{selectedItem.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleRestartContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		if model.anySelectedWorking() {
+			return nil
+		}
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Restart, selectedContainerIDs)
+	} else {
+		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !selectedItem.isWorking {
+			model.setWorkingState([]string{selectedItem.ID}, true)
+			return PerformContainerOperation(Restart, []string{selectedItem.ID})
 		}
 	}
 	return nil

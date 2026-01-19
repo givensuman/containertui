@@ -3,6 +3,7 @@ package images
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -14,6 +15,26 @@ import (
 	"github.com/givensuman/containertui/internal/ui/shared"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
+
+// MsgPullProgress contains progress information from image pull.
+type MsgPullProgress struct {
+	Message string
+}
+
+// MsgPullComplete indicates the image pull has finished.
+type MsgPullComplete struct {
+	ImageName string
+	Err       error
+}
+
+// MsgRefreshImages triggers a refresh of the images list.
+type MsgRefreshImages struct{}
+
+// MsgCreateContainerComplete indicates container creation has finished.
+type MsgCreateContainerComplete struct {
+	ContainerID string
+	Err         error
+}
 
 type detailsKeybindings struct {
 	Up     key.Binding
@@ -42,6 +63,8 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
+	pullImage            key.Binding
+	createContainer      key.Binding
 	switchTab            key.Binding
 }
 
@@ -58,6 +81,14 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
+		),
+		pullImage: key.NewBinding(
+			key.WithKeys("i"),
+			key.WithHelp("i", "pull image"),
+		),
+		createContainer: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "create container"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "tab", "shift+tab"),
@@ -83,6 +114,124 @@ func (selectedImages *selectedImages) selectImageInList(id string, index int) {
 
 func (selectedImages selectedImages) unselectImageInList(id string) {
 	delete(selectedImages.selections, id)
+}
+
+// validateImageName validates that an image name is not empty.
+func validateImageName(input string) error {
+	if input == "" {
+		return fmt.Errorf("image name cannot be empty")
+	}
+	return nil
+}
+
+// validatePorts validates port mapping format (e.g., "8080:80,443:443").
+func validatePorts(input string) error {
+	if input == "" {
+		return nil // Optional field
+	}
+	pairs := strings.Split(input, ",")
+	for _, pair := range pairs {
+		parts := strings.Split(strings.TrimSpace(pair), ":")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid format, expected hostPort:containerPort")
+		}
+	}
+	return nil
+}
+
+// validateVolumes validates volume mapping format (e.g., "/host:/container,vol:/data").
+func validateVolumes(input string) error {
+	if input == "" {
+		return nil // Optional field
+	}
+	pairs := strings.Split(input, ",")
+	for _, pair := range pairs {
+		parts := strings.Split(strings.TrimSpace(pair), ":")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid format, expected hostPath:containerPath")
+		}
+	}
+	return nil
+}
+
+// validateEnv validates environment variable format (e.g., "KEY=value,FOO=bar").
+func validateEnv(input string) error {
+	if input == "" {
+		return nil // Optional field
+	}
+	pairs := strings.Split(input, ",")
+	for _, pair := range pairs {
+		if !strings.Contains(pair, "=") {
+			return fmt.Errorf("invalid format, expected KEY=value")
+		}
+	}
+	return nil
+}
+
+// validateBool validates yes/no input.
+func validateBool(input string) error {
+	if input == "" {
+		return nil // Optional, defaults to no
+	}
+	lower := strings.ToLower(strings.TrimSpace(input))
+	if lower != "yes" && lower != "no" {
+		return fmt.Errorf("expected 'yes' or 'no'")
+	}
+	return nil
+}
+
+// parsePorts parses port string into map.
+func parsePorts(input string) map[string]string {
+	result := make(map[string]string)
+	if input == "" {
+		return result
+	}
+	pairs := strings.Split(input, ",")
+	for _, pair := range pairs {
+		parts := strings.Split(strings.TrimSpace(pair), ":")
+		if len(parts) == 2 {
+			result[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	return result
+}
+
+// parseVolumes parses volume string into slice.
+func parseVolumes(input string) []string {
+	if input == "" {
+		return []string{}
+	}
+	pairs := strings.Split(input, ",")
+	result := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		trimmed := strings.TrimSpace(pair)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// parseEnv parses environment variable string into slice.
+func parseEnv(input string) []string {
+	if input == "" {
+		return []string{}
+	}
+	pairs := strings.Split(input, ",")
+	result := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		trimmed := strings.TrimSpace(pair)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// parseBool parses yes/no into boolean.
+func parseBool(input string) bool {
+	lower := strings.ToLower(strings.TrimSpace(input))
+	return lower == "yes"
 }
 
 type sessionState int
@@ -139,6 +288,8 @@ func New() Model {
 			imageKeybindings.toggleSelection,
 			imageKeybindings.toggleSelectionOfAll,
 			imageKeybindings.remove,
+			imageKeybindings.pullImage,
+			imageKeybindings.createContainer,
 			imageKeybindings.switchTab,
 		}
 	}
@@ -164,6 +315,60 @@ func (model Model) Init() tea.Cmd {
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Handle global messages first
+	switch msg := msg.(type) {
+	case MsgPullComplete:
+		if msg.Err != nil {
+			// Show error dialog
+			errorDialog := shared.NewSmartDialog(
+				fmt.Sprintf("Failed to pull image:\n\n%v", msg.Err),
+				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+			)
+			model.foreground = errorDialog
+			model.sessionState = viewOverlay
+		} else {
+			// Success - close dialog and refresh list
+			model.sessionState = viewMain
+			model.foreground = nil
+
+			// Trigger images refresh
+			return model, func() tea.Msg {
+				return MsgRefreshImages{}
+			}
+		}
+		return model, nil
+	case MsgRefreshImages:
+		// Refresh the images list
+		imageList, err := context.GetClient().GetImages()
+		if err == nil {
+			items := make([]list.Item, 0, len(imageList))
+			for _, image := range imageList {
+				items = append(items, ImageItem{Image: image})
+			}
+			model.splitView.List.SetItems(items)
+		}
+		return model, nil
+	case MsgCreateContainerComplete:
+		if msg.Err != nil {
+			// Show error dialog
+			errorDialog := shared.NewSmartDialog(
+				fmt.Sprintf("Failed to create container:\n\n%v", msg.Err),
+				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+			)
+			model.foreground = errorDialog
+			model.sessionState = viewOverlay
+		} else {
+			// Success - show success message
+			successDialog := shared.NewSmartDialog(
+				fmt.Sprintf("Container created successfully!\n\nContainer ID: %s", msg.ContainerID[:12]),
+				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+			)
+			model.foreground = successDialog
+			model.sessionState = viewOverlay
+		}
+		return model, nil
+	}
+
 	switch model.sessionState {
 	case viewOverlay:
 		foregroundModel, foregroundCmd := model.foreground.Update(msg)
@@ -179,6 +384,62 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err := context.GetClient().RemoveImage(imageID)
 				if err != nil {
 					break
+				}
+			} else if confirmMsg.Action.Type == "PullImageAction" {
+				// Extract image name from form values
+				payload := confirmMsg.Action.Payload.(map[string]interface{})
+				formValues := payload["values"].(map[string]string)
+				imageName := formValues["Image"]
+
+				// Show progress dialog
+				progressDialog := shared.NewSmartDialog(
+					fmt.Sprintf("Pulling image: %s\n\nThis may take a few moments...", imageName),
+					[]shared.DialogButton{}, // No buttons while pulling
+				)
+				model.foreground = progressDialog
+
+				// Start pull in goroutine
+				return model, func() tea.Msg {
+					err := context.GetClient().PullImage(imageName, nil)
+					return MsgPullComplete{ImageName: imageName, Err: err}
+				}
+			} else if confirmMsg.Action.Type == "CreateContainerAction" {
+				// Extract form values and image ID
+				payload := confirmMsg.Action.Payload.(map[string]interface{})
+				imageID := payload["imageID"].(string)
+				formValues := payload["values"].(map[string]string)
+
+				// Parse form values
+				ports := parsePorts(formValues["Ports"])
+				volumes := parseVolumes(formValues["Volumes"])
+				env := parseEnv(formValues["Environment"])
+				autoStart := parseBool(formValues["Auto-start"])
+
+				// Create container config
+				config := client.CreateContainerConfig{
+					Name:      formValues["Name"],
+					ImageID:   imageID,
+					Ports:     ports,
+					Volumes:   volumes,
+					Env:       env,
+					AutoStart: autoStart,
+					Network:   "bridge",
+				}
+
+				// Show progress dialog
+				progressDialog := shared.NewSmartDialog(
+					"Creating container...",
+					[]shared.DialogButton{}, // No buttons while creating
+				)
+				model.foreground = progressDialog
+
+				// Create container
+				return model, func() tea.Msg {
+					containerID, err := context.GetClient().CreateContainer(config)
+					if err != nil {
+						return MsgCreateContainerComplete{Err: err}
+					}
+					return MsgCreateContainerComplete{ContainerID: containerID, Err: nil}
 				}
 			}
 			model.sessionState = viewMain
@@ -210,6 +471,68 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					model.handleToggleSelection()
 				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
 					model.handleToggleSelectionOfAll()
+				case key.Matches(msg, model.keybindings.pullImage):
+					// Show form dialog to get image name
+					formDialog := shared.NewFormDialog(
+						"Pull Image",
+						[]shared.FormField{
+							{
+								Label:       "Image",
+								Placeholder: "nginx:latest",
+								Required:    true,
+								Validator:   validateImageName,
+							},
+						},
+						"PullImageAction",
+						nil,
+					)
+					model.foreground = formDialog
+					model.sessionState = viewOverlay
+				case key.Matches(msg, model.keybindings.createContainer):
+					selectedItem := model.splitView.List.SelectedItem()
+					if selectedItem != nil {
+						if imageItem, ok := selectedItem.(ImageItem); ok {
+							// Show form dialog to create container
+							formDialog := shared.NewFormDialog(
+								"Create Container from Image",
+								[]shared.FormField{
+									{
+										Label:       "Name",
+										Placeholder: "my-container (optional)",
+										Required:    false,
+									},
+									{
+										Label:       "Ports",
+										Placeholder: "8080:80,443:443",
+										Required:    false,
+										Validator:   validatePorts,
+									},
+									{
+										Label:       "Volumes",
+										Placeholder: "/host:/container",
+										Required:    false,
+										Validator:   validateVolumes,
+									},
+									{
+										Label:       "Environment",
+										Placeholder: "KEY=value,FOO=bar",
+										Required:    false,
+										Validator:   validateEnv,
+									},
+									{
+										Label:       "Auto-start",
+										Placeholder: "yes/no",
+										Required:    false,
+										Validator:   validateBool,
+									},
+								},
+								"CreateContainerAction",
+								map[string]interface{}{"imageID": imageItem.Image.ID},
+							)
+							model.foreground = formDialog
+							model.sessionState = viewOverlay
+						}
+					}
 				case key.Matches(msg, model.keybindings.remove):
 					selectedItem := model.splitView.List.SelectedItem()
 					if selectedItem != nil {
