@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/client"
@@ -23,11 +22,6 @@ type sessionState int
 const (
 	viewMain sessionState = iota
 	viewOverlay
-)
-
-const (
-	focusList = iota
-	focusDetails
 )
 
 type MsgRefreshServices time.Time
@@ -55,38 +49,76 @@ func newDetailsKeybindings() detailsKeybindings {
 	}
 }
 
+type keybindings struct {
+	switchTab key.Binding
+}
+
+func newKeybindings() *keybindings {
+	return &keybindings{
+		switchTab: key.NewBinding(
+			key.WithKeys("1", "2", "3", "4", "5", "tab", "shift+tab"),
+			key.WithHelp("1-5/tab", "switch tab"),
+		),
+	}
+}
+
 type Model struct {
 	shared.Component
-	sessionState sessionState
-	focusedView  int
-
-	background   tea.Model
-	overlayModel *overlay.Model
-
+	splitView          shared.SplitView
+	keybindings        *keybindings
+	sessionState       sessionState
+	overlayModel       *overlay.Model
 	currentServiceName string
-	viewport           viewport.Model
 	detailsKeybindings detailsKeybindings
 }
 
+var (
+	_ tea.Model             = (*Model)(nil)
+	_ shared.ComponentModel = (*Model)(nil)
+)
+
 func New() Model {
-	serviceList := newServiceList()
-	detailViewport := viewport.New(0, 0)
+	services, err := context.GetClient().GetServices()
+	if err != nil {
+		services = []client.Service{}
+	}
+	serviceItems := make([]list.Item, 0, len(services))
+	for _, service := range services {
+		serviceItems = append(serviceItems, ServiceItem{Service: service})
+	}
+
+	width, height := context.GetWindowSize()
+
+	delegate := list.NewDefaultDelegate()
+	delegate = shared.ChangeDelegateStyles(delegate)
+	listModel := list.New(serviceItems, delegate, width, height)
+
+	listModel.SetShowHelp(false)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+
+	serviceKeybindings := newKeybindings()
+	listModel.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			serviceKeybindings.switchTab,
+		}
+	}
+
+	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
 
 	model := Model{
-		sessionState: viewMain,
-		focusedView:  focusList,
-		background:   serviceList,
-		overlayModel: overlay.New(
-			nil, // No foreground initially
-			serviceList,
-			overlay.Center,
-			overlay.Center,
-			0,
-			0,
-		),
-		viewport:           detailViewport,
+		splitView:          splitView,
+		keybindings:        serviceKeybindings,
+		sessionState:       viewMain,
 		detailsKeybindings: newDetailsKeybindings(),
 	}
+
+	model.overlayModel = overlay.New(nil, model.splitView.List, overlay.Center, overlay.Center, 0, 0)
 	return model
 }
 
@@ -99,26 +131,7 @@ func tickCmd() tea.Cmd {
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
-
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	viewportWidth := detailLayout.Width - 4
-	viewportHeight := detailLayout.Height - 2
-	if viewportWidth < 0 {
-		viewportWidth = 0
-	}
-	if viewportHeight < 0 {
-		viewportHeight = 0
-	}
-
-	model.viewport.Width = viewportWidth
-	model.viewport.Height = viewportHeight
-
-	if serviceList, ok := model.background.(ServiceList); ok {
-		serviceList.UpdateWindowDimensions(msg)
-		model.background = serviceList
-	}
+	model.splitView.SetSize(msg.Width, msg.Height)
 }
 
 func (model Model) Init() tea.Cmd {
@@ -132,63 +145,54 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		model.UpdateWindowDimensions(msg)
 
-	case tea.KeyMsg:
-		if msg.String() == "tab" {
-			if model.focusedView == focusList {
-				model.focusedView = focusDetails
-				cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: true} })
-			} else {
-				model.focusedView = focusList
-				cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: false} })
+	case MsgRefreshServices:
+		cmds = append(cmds, tickCmd())
+		// Refresh services data
+		services, err := context.GetClient().GetServices()
+		if err == nil {
+			items := make([]list.Item, 0, len(services))
+			for _, s := range services {
+				items = append(items, ServiceItem{Service: s})
 			}
-			return model, tea.Batch(cmds...)
+			cmd := model.splitView.List.SetItems(items)
+			cmds = append(cmds, cmd)
 		}
 	}
 
-	if model.focusedView == focusList {
-		updatedBackground, cmd := model.background.Update(msg)
-		model.background = updatedBackground
-		cmds = append(cmds, cmd)
-	} else if model.focusedView == focusDetails {
-		updatedViewport, cmd := model.viewport.Update(msg)
-		model.viewport = updatedViewport
-		cmds = append(cmds, cmd)
+	// Forward messages to SplitView
+	updatedSplitView, splitCmd := model.splitView.Update(msg)
+	model.splitView = updatedSplitView
+	cmds = append(cmds, splitCmd)
+
+	// Handle keybindings when list is focused
+	if model.splitView.Focus == shared.FocusList {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if model.splitView.List.FilterState() != list.Filtering {
+				if keyMsg.String() == "q" {
+					return model, tea.Quit
+				}
+				if key.Matches(keyMsg, model.keybindings.switchTab) {
+					return model, nil
+				}
+			}
+		}
 	}
 
 	// Check if selection changed to update details
-	if serviceList, ok := model.background.(ServiceList); ok {
-		selectedItem := serviceList.list.SelectedItem()
-		if selectedItem != nil {
-			if serviceItem, ok := selectedItem.(ServiceItem); ok {
-				if serviceItem.Service.Name != model.currentServiceName {
-					model.currentServiceName = serviceItem.Service.Name
-					model.updateDetails(serviceItem.Service)
-				}
+	selectedItem := model.splitView.List.SelectedItem()
+	if selectedItem != nil {
+		if serviceItem, ok := selectedItem.(ServiceItem); ok {
+			if serviceItem.Service.Name != model.currentServiceName {
+				model.currentServiceName = serviceItem.Service.Name
+				model.updateDetails(serviceItem.Service)
 			}
 		}
-	}
-
-	// Handle refresh
-	if _, ok := msg.(MsgRefreshServices); ok {
-		cmds = append(cmds, tickCmd())
-		// Trigger a refresh of the list data here if needed,
-		// but typically we'd send a msg to the list component or reload data.
-		// For simplicity, we can reload in the list component or passing a command.
-		// Let's implement reloading in the background list component if we had more time.
-		// For now we just refresh the loop.
-
-		// To truly refresh, we should re-fetch services:
-		services, err := context.GetClient().GetServices()
-		if err == nil {
-			// Update the list items
-			if serviceList, ok := model.background.(ServiceList); ok {
-				items := make([]list.Item, 0, len(services))
-				for _, s := range services {
-					items = append(items, ServiceItem{Service: s})
-				}
-				cmd := serviceList.list.SetItems(items)
-				cmds = append(cmds, cmd)
-				model.background = serviceList
+	} else {
+		// No selection
+		if model.currentServiceName != "" {
+			model.currentServiceName = ""
+			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+				pane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
 			}
 		}
 	}
@@ -226,56 +230,34 @@ func (model *Model) updateDetails(service client.Service) {
 	builder.WriteString(sectionHeader.Render("Compose Configuration") + "\n")
 	builder.WriteString(content)
 
-	model.viewport.SetContent(builder.String())
-}
-
-func (model Model) renderMainView() string {
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	listView := model.background.View()
-
-	borderColor := colors.Muted()
-	if model.focusedView == focusDetails {
-		borderColor = colors.Primary()
+	if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+		pane.SetContent(builder.String())
 	}
-
-	detailStyle := lipgloss.NewStyle().
-		Width(detailLayout.Width - 2).
-		Height(detailLayout.Height).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1)
-
-	var detailContent string
-	if model.currentServiceName != "" {
-		detailContent = model.viewport.View()
-	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected.")
-	}
-
-	detailView := detailStyle.Render(detailContent)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 }
 
 func (model Model) View() string {
-	return model.renderMainView()
+	return model.splitView.View()
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	if serviceList, ok := model.background.(ServiceList); ok {
-		return serviceList.list.ShortHelp()
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.ShortHelp()
+	case shared.FocusDetail:
+		return []key.Binding{
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
+			model.detailsKeybindings.Switch,
+		}
 	}
 	return nil
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	if model.focusedView == focusList {
-		if serviceList, ok := model.background.(ServiceList); ok {
-			return serviceList.list.FullHelp()
-		}
-	} else {
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.FullHelp()
+	case shared.FocusDetail:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

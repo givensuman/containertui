@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/givensuman/containertui/internal/client"
@@ -93,22 +92,14 @@ const (
 	viewOverlay
 )
 
-const (
-	focusList = iota
-	focusDetails
-)
-
 // Model represents the networks component state.
 type Model struct {
 	shared.Component
-	style            lipgloss.Style
-	list             list.Model
-	viewport         viewport.Model
+	splitView        shared.SplitView
 	selectedNetworks *selectedNetworks
 	keybindings      *keybindings
 
 	sessionState       sessionState
-	focusedView        int
 	detailsKeybindings detailsKeybindings
 	foreground         tea.Model
 	overlayModel       *overlay.Model
@@ -130,10 +121,6 @@ func New() Model {
 	}
 
 	width, height := context.GetWindowSize()
-	style := lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		PaddingTop(1)
 
 	delegate := newDefaultDelegate()
 	listModel := list.New(items, delegate, width, height)
@@ -156,20 +143,17 @@ func New() Model {
 		}
 	}
 
-	detailViewport := viewport.New(0, 0)
+	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
 
 	model := Model{
-		style:              style,
-		list:               listModel,
-		viewport:           detailViewport,
+		splitView:          splitView,
 		selectedNetworks:   newSelectedNetworks(),
 		keybindings:        networkKeybindings,
 		sessionState:       viewMain,
-		focusedView:        focusList,
 		detailsKeybindings: newDetailsKeybindings(),
 	}
 
-	model.overlayModel = overlay.New(nil, model.list, overlay.Center, overlay.Center, 0, 0)
+	model.overlayModel = overlay.New(nil, model.splitView.List, overlay.Center, overlay.Center, 0, 0)
 	return model
 }
 
@@ -182,6 +166,13 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch model.sessionState {
 	case viewOverlay:
+		// Update SplitView for background resize but don't process keys
+		if _, ok := msg.(tea.WindowSizeMsg); ok {
+			updatedSplitView, splitCmd := model.splitView.Update(msg)
+			model.splitView = updatedSplitView
+			cmds = append(cmds, splitCmd)
+		}
+
 		foregroundModel, foregroundCmd := model.foreground.Update(msg)
 		model.foreground = foregroundModel
 		cmds = append(cmds, foregroundCmd)
@@ -201,36 +192,16 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.foreground = nil
 		}
 	case viewMain:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if keyMsg.String() == "tab" && model.list.FilterState() != list.Filtering {
-				if model.focusedView == focusList {
-					model.focusedView = focusDetails
-					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: true} })
-				} else {
-					model.focusedView = focusList
-					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: false} })
-				}
-				return model, tea.Batch(cmds...)
-			}
-		}
+		updatedSplitView, splitCmd := model.splitView.Update(msg)
+		model.splitView = updatedSplitView
+		cmds = append(cmds, splitCmd)
 
-		isKeyMessage := false
-		if _, ok := msg.(tea.KeyMsg); ok {
-			isKeyMessage = true
-		}
-
-		if !isKeyMessage || model.focusedView == focusList {
+		if model.splitView.Focus == shared.FocusList {
 			switch msg := msg.(type) {
-			case shared.MsgFocusChanged:
-				if msg.IsDetailsFocused {
-					model.list.SetDelegate(shared.UnfocusDelegateStyles(newDefaultDelegate()))
-				} else {
-					model.list.SetDelegate(newDefaultDelegate())
-				}
 			case tea.WindowSizeMsg:
 				model.UpdateWindowDimensions(msg)
 			case tea.KeyMsg:
-				if model.list.FilterState() == list.Filtering {
+				if model.splitView.List.FilterState() == list.Filtering {
 					break
 				}
 
@@ -242,7 +213,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
 					model.handleToggleSelectionOfAll()
 				case key.Matches(msg, model.keybindings.remove):
-					selectedItem := model.list.SelectedItem()
+					selectedItem := model.splitView.List.SelectedItem()
 					if selectedItem != nil {
 						if networkItem, ok := selectedItem.(NetworkItem); ok {
 							containersUsingNetwork, _ := context.GetClient().GetContainersUsingNetwork(networkItem.Network.ID)
@@ -270,38 +241,36 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			updatedList, listCmd := model.list.Update(msg)
-			model.list = updatedList
-			cmds = append(cmds, listCmd)
 		}
 
-		selectedItem := model.list.SelectedItem()
+		// Update Detail Content
+		selectedItem := model.splitView.List.SelectedItem()
 		if selectedItem != nil {
 			if networkItem, ok := selectedItem.(NetworkItem); ok {
 				detailsContent := fmt.Sprintf(
 					"ID: %s\nName: %s\nDriver: %s\nScope: %s",
 					networkItem.Network.ID, networkItem.Network.Name, networkItem.Network.Driver, networkItem.Network.Scope,
 				)
-				model.viewport.SetContent(detailsContent)
+				if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+					pane.SetContent(detailsContent)
+				}
 			}
-		}
-
-		if !isKeyMessage || model.focusedView == focusDetails {
-			updatedViewport, viewportCmd := model.viewport.Update(msg)
-			model.viewport = updatedViewport
-			cmds = append(cmds, viewportCmd)
+		} else {
+			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+				pane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
+			}
 		}
 	}
 
 	model.overlayModel.Foreground = model.foreground
-	model.overlayModel.Background = model.list
+	model.overlayModel.Background = model.splitView
 
 	return model, tea.Batch(cmds...)
 }
 
 func (model *Model) handleToggleSelection() {
-	currentIndex := model.list.Index()
-	selectedItem, ok := model.list.SelectedItem().(NetworkItem)
+	currentIndex := model.splitView.List.Index()
+	selectedItem, ok := model.splitView.List.SelectedItem().(NetworkItem)
 	if ok {
 		isSelected := selectedItem.isSelected
 
@@ -312,13 +281,13 @@ func (model *Model) handleToggleSelection() {
 		}
 
 		selectedItem.isSelected = !isSelected
-		model.list.SetItem(currentIndex, selectedItem)
+		model.splitView.List.SetItem(currentIndex, selectedItem)
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
 	allNetworksSelected := true
-	items := model.list.Items()
+	items := model.splitView.List.Items()
 
 	for _, item := range items {
 		if networkItem, ok := item.(NetworkItem); ok {
@@ -330,94 +299,40 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 
 	if allNetworksSelected {
-		// Unselect all items.
 		model.selectedNetworks = newSelectedNetworks()
-
-		for index, item := range model.list.Items() {
+		for index, item := range model.splitView.List.Items() {
 			if networkItem, ok := item.(NetworkItem); ok {
 				networkItem.isSelected = false
-				model.list.SetItem(index, networkItem)
+				model.splitView.List.SetItem(index, networkItem)
 			}
 		}
 	} else {
-		// Select all items.
 		model.selectedNetworks = newSelectedNetworks()
-
-		for index, item := range model.list.Items() {
+		for index, item := range model.splitView.List.Items() {
 			if networkItem, ok := item.(NetworkItem); ok {
 				networkItem.isSelected = true
-				model.list.SetItem(index, networkItem)
+				model.splitView.List.SetItem(index, networkItem)
 				model.selectedNetworks.selectNetworkInList(networkItem.Network.ID, index)
 			}
 		}
 	}
 }
 
-func (model Model) renderMainView() string {
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	listView := model.style.Render(model.list.View())
-
-	borderColor := colors.Muted()
-	if model.focusedView == focusDetails {
-		borderColor = colors.Primary()
-	}
-
-	detailStyle := lipgloss.NewStyle().
-		Width(detailLayout.Width - 2).
-		Height(detailLayout.Height).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1)
-
-	var detailContent string
-	if model.list.SelectedItem() != nil {
-		detailContent = model.viewport.View()
-	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected.")
-	}
-
-	detailView := detailStyle.Render(detailContent)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
-}
-
 func (model Model) View() string {
 	if model.sessionState == viewOverlay && model.foreground != nil {
-		model.overlayModel.Background = shared.SimpleViewModel{Content: model.renderMainView()}
+		model.overlayModel.Background = shared.SimpleViewModel{Content: model.splitView.View()}
 		return model.overlayModel.View()
 	}
 
-	return model.renderMainView()
+	return model.splitView.View()
 }
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
-
-	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
-	masterLayout, detailLayout := layoutManager.CalculateMasterDetail(model.style)
-
-	model.style = model.style.Width(masterLayout.Width).Height(masterLayout.Height)
-
-	viewportWidth := detailLayout.Width - 4
-	viewportHeight := detailLayout.Height - 2
-	if viewportWidth < 0 {
-		viewportWidth = 0
-	}
-	if viewportHeight < 0 {
-		viewportHeight = 0
-	}
-	model.viewport.Width = viewportWidth
-	model.viewport.Height = viewportHeight
+	model.splitView.SetSize(msg.Width, msg.Height)
 
 	switch model.sessionState {
-	case viewMain:
-		if model.list.Width() != masterLayout.ContentWidth || model.list.Height() != masterLayout.ContentHeight {
-			model.list.SetWidth(masterLayout.ContentWidth)
-			model.list.SetHeight(masterLayout.ContentHeight)
-		}
 	case viewOverlay:
 		if smartDialog, ok := model.foreground.(shared.SmartDialog); ok {
 			smartDialog.UpdateWindowDimensions(msg)
@@ -427,10 +342,10 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	switch model.focusedView {
-	case focusList:
-		return model.list.ShortHelp()
-	case focusDetails:
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.ShortHelp()
+	case shared.FocusDetail:
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -441,10 +356,10 @@ func (model Model) ShortHelp() []key.Binding {
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	switch model.focusedView {
-	case focusList:
-		return model.list.FullHelp()
-	case focusDetails:
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.FullHelp()
+	case shared.FocusDetail:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

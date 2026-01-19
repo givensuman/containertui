@@ -3,18 +3,22 @@ package containers
 
 import (
 	"fmt"
+	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/notifications"
 	"github.com/givensuman/containertui/internal/ui/shared"
 	"github.com/guptarohit/asciigraph"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
@@ -25,11 +29,6 @@ type sessionState int
 const (
 	viewMain sessionState = iota
 	viewOverlay
-)
-
-const (
-	focusList = iota
-	focusDetails
 )
 
 // MsgStatsTick is sent to trigger a stats refresh.
@@ -72,21 +71,98 @@ func newDetailsKeybindings() detailsKeybindings {
 	}
 }
 
+type keybindings struct {
+	pauseContainer       key.Binding
+	unpauseContainer     key.Binding
+	startContainer       key.Binding
+	stopContainer        key.Binding
+	removeContainer      key.Binding
+	showLogs             key.Binding
+	execShell            key.Binding
+	toggleSelection      key.Binding
+	toggleSelectionOfAll key.Binding
+	switchTab            key.Binding
+}
+
+func newKeybindings() *keybindings {
+	return &keybindings{
+		pauseContainer: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "pause container"),
+		),
+		unpauseContainer: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "unpause container"),
+		),
+		startContainer: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "start container"),
+		),
+		stopContainer: key.NewBinding(
+			key.WithKeys("S"),
+			key.WithHelp("S", "stop container"),
+		),
+		removeContainer: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "remove container"),
+		),
+		showLogs: key.NewBinding(
+			key.WithKeys("L"),
+			key.WithHelp("L", "show container logs"),
+		),
+		execShell: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "exec shell"),
+		),
+		toggleSelection: key.NewBinding(
+			key.WithKeys(tea.KeySpace.String()),
+			key.WithHelp("space", "toggle selection"),
+		),
+		toggleSelectionOfAll: key.NewBinding(
+			key.WithKeys(tea.KeyCtrlA.String()),
+			key.WithHelp("ctrl+a", "toggle selection of all"),
+		),
+		switchTab: key.NewBinding(
+			key.WithKeys("1", "2", "3", "4", "tab", "shift+tab"),
+			key.WithHelp("1-4/tab", "switch tab"),
+		),
+	}
+}
+
+// selectedContainers maps a container's ID to its index in the list.
+type selectedContainers struct {
+	selections map[string]int
+}
+
+func newSelectedContainers() *selectedContainers {
+	return &selectedContainers{
+		selections: make(map[string]int),
+	}
+}
+
+func (selectedContainers *selectedContainers) selectContainerInList(id string, index int) {
+	selectedContainers.selections[id] = index
+}
+
+func (selectedContainers selectedContainers) unselectContainerInList(id string) {
+	delete(selectedContainers.selections, id)
+}
+
 // Model represents the containers component state.
 type Model struct {
 	shared.Component
-	sessionState sessionState
-	focusedView  int
+	splitView          shared.SplitView
+	selectedContainers *selectedContainers
+	keybindings        *keybindings
+	sessionState       sessionState
 
 	foreground   tea.Model
-	background   tea.Model
 	overlayModel *overlay.Model
 
 	currentContainerID string
 	cpuHistory         []float64
 	lastStats          client.ContainerStats
 
-	viewport           viewport.Model
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
 }
@@ -97,28 +173,73 @@ var (
 )
 
 func New() Model {
-	deleteConfirmation := newDeleteConfirmation(nil)
-	containerList := newContainerList()
+	containers, err := context.GetClient().GetContainers()
+	if err != nil {
+		containers = []client.Container{}
+	}
+	containerItems := make([]list.Item, 0, len(containers))
+	for _, container := range containers {
+		containerItems = append(
+			containerItems,
+			ContainerItem{
+				Container:  container,
+				isSelected: false,
+				isWorking:  false,
+				spinner:    newSpinner(),
+			},
+		)
+	}
 
-	detailViewport := viewport.New(0, 0)
+	width, height := context.GetWindowSize()
+
+	delegate := newDefaultDelegate()
+	listModel := list.New(containerItems, delegate, width, height)
+
+	listModel.SetShowHelp(false)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetFilteringEnabled(true)
+	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+
+	containerKeybindings := newKeybindings()
+	listModel.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			containerKeybindings.pauseContainer,
+			containerKeybindings.unpauseContainer,
+			containerKeybindings.startContainer,
+			containerKeybindings.stopContainer,
+			containerKeybindings.removeContainer,
+			containerKeybindings.showLogs,
+			containerKeybindings.execShell,
+			containerKeybindings.toggleSelection,
+			containerKeybindings.toggleSelectionOfAll,
+			containerKeybindings.switchTab,
+		}
+	}
+
+	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
 
 	model := Model{
-		sessionState: viewMain,
-		focusedView:  focusList,
-		foreground:   deleteConfirmation,
-		background:   containerList,
-		overlayModel: overlay.New(
-			deleteConfirmation,
-			containerList,
-			overlay.Center,
-			overlay.Center,
-			0,
-			0,
-		),
+		splitView:          splitView,
+		selectedContainers: newSelectedContainers(),
+		keybindings:        containerKeybindings,
+		sessionState:       viewMain,
 		cpuHistory:         make([]float64, 0),
-		viewport:           detailViewport,
 		detailsKeybindings: newDetailsKeybindings(),
 	}
+
+	deleteConfirmation := newDeleteConfirmation(nil)
+	model.overlayModel = overlay.New(
+		deleteConfirmation,
+		model.splitView.List, // Initial placeholder
+		overlay.Center,
+		overlay.Center,
+		0,
+		0,
+	)
 
 	return model
 }
@@ -132,28 +253,9 @@ func tickCmd() tea.Cmd {
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
-
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	viewportWidth := detailLayout.Width - 4
-	viewportHeight := detailLayout.Height - 2
-	if viewportWidth < 0 {
-		viewportWidth = 0
-	}
-	if viewportHeight < 0 {
-		viewportHeight = 0
-	}
-
-	model.viewport.Width = viewportWidth
-	model.viewport.Height = viewportHeight
+	model.splitView.SetSize(msg.Width, msg.Height)
 
 	switch model.sessionState {
-	case viewMain:
-		if containerList, ok := model.background.(ContainerList); ok {
-			containerList.UpdateWindowDimensions(msg)
-			model.background = containerList
-		}
 	case viewOverlay:
 		switch foregroundModel := model.foreground.(type) {
 		case *ContainerLogs:
@@ -173,31 +275,76 @@ func (model Model) Init() tea.Cmd {
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	if model.sessionState == viewMain {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if keyMsg.String() == "tab" {
-				if model.focusedView == focusList {
-					model.focusedView = focusDetails
-					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: true} })
-				} else {
-					model.focusedView = focusList
-					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: false} })
-				}
-				return model, tea.Batch(cmds...)
-			}
-		}
-	}
-
 	switch model.sessionState {
 	case viewMain:
-		cmds = append(cmds, model.updateMainView(msg)...)
+		// Forward messages to SplitView first
+		updatedSplitView, splitCmd := model.splitView.Update(msg)
+		model.splitView = updatedSplitView
+		cmds = append(cmds, splitCmd)
+
+		// Handle keybindings when list is focused
+		if model.splitView.Focus == shared.FocusList {
+			switch msg := msg.(type) {
+			case tea.KeyMsg:
+				if model.splitView.List.FilterState() == list.Filtering {
+					break
+				}
+
+				if msg.String() == "q" {
+					return model, tea.Quit
+				}
+
+				switch {
+				case key.Matches(msg, model.keybindings.switchTab):
+					// Handled by parent
+					return model, nil
+				case key.Matches(msg, model.keybindings.pauseContainer):
+					cmds = append(cmds, model.handlePauseContainers())
+				case key.Matches(msg, model.keybindings.unpauseContainer):
+					cmds = append(cmds, model.handleUnpauseContainers())
+				case key.Matches(msg, model.keybindings.startContainer):
+					cmds = append(cmds, model.handleStartContainers())
+				case key.Matches(msg, model.keybindings.stopContainer):
+					cmds = append(cmds, model.handleStopContainers())
+				case key.Matches(msg, model.keybindings.removeContainer):
+					cmds = append(cmds, model.handleRemoveContainers())
+				case key.Matches(msg, model.keybindings.showLogs):
+					if cmd := model.handleShowLogs(); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				case key.Matches(msg, model.keybindings.execShell):
+					if cmd := model.handleExecShell(); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				case key.Matches(msg, model.keybindings.toggleSelection):
+					model.handleToggleSelection()
+				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
+					model.handleToggleSelectionOfAll()
+				}
+			}
+		}
+
+		// Update Detail Content if selection changes
+		selectedItem := model.splitView.List.SelectedItem()
+		if selectedItem != nil {
+			if containerItem, ok := selectedItem.(ContainerItem); ok {
+				if containerItem.ID != model.currentContainerID {
+					model.currentContainerID = containerItem.ID
+					model.cpuHistory = make([]float64, 0)
+					cmds = append(cmds, func() tea.Msg {
+						containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
+						return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
+					})
+				}
+			}
+		}
 
 	case viewOverlay:
-		// When in overlay mode, we still want to update the background (main view)
-		// so that if the window resizes, the background is redrawn correctly.
-		// However, we don't want to process keys for the background.
+		// Update SplitView for background resize but don't process keys
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
-			model.updateMainView(msg)
+			updatedSplitView, splitCmd := model.splitView.Update(msg)
+			model.splitView = updatedSplitView
+			cmds = append(cmds, splitCmd)
 		}
 
 		foregroundModel, foregroundCmd := model.foreground.Update(msg)
@@ -211,23 +358,19 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MessageCloseOverlay:
 		model.sessionState = viewMain
-		// Restore the original background model when closing overlay
-		if _, ok := model.background.(shared.SimpleViewModel); ok {
-			// This part is actually tricky because we need the original ContainerList model back.
-			// But we never lost it, we just wrapped its View() output.
-			// Wait, the overlay logic requires model.background to be a tea.Model.
-			// If we pass the actual ContainerList model, its View() will run.
-			// The issue described is "informational panel to disappear".
-			// The container list IS the background. The info panel is part of the main view composition.
-			// Ah, the overlay component takes a Background model.
-			// If we set model.background to just the list component, the info panel (which is part of the full view composition) isn't included.
-			// We need to pass the FULL main view as the background to the overlay.
-		}
 
 	case MessageOpenDeleteConfirmationDialog:
 		model.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
 		model.sessionState = viewOverlay
 		cmds = append(cmds, model.foreground.Init())
+
+	case MessageConfirmDelete:
+		cmds = append(cmds, model.handleConfirmationOfRemoveContainers())
+
+	case MessageContainerOperationResult:
+		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case MsgStatsTick:
 		cmds = append(cmds, model.handleStatsTick()...)
@@ -235,8 +378,10 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MsgContainerInspection:
 		if msg.ID == model.currentContainerID && msg.Err == nil {
 			model.inspection = msg.Container
-			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.viewport.Width)
-			model.viewport.SetContent(inspectionContent)
+			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width)
+				pane.SetContent(inspectionContent)
+			}
 		}
 
 	case MsgContainerStats:
@@ -246,15 +391,30 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(model.cpuHistory) > 30 {
 				model.cpuHistory = model.cpuHistory[1:]
 			}
-			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.viewport.Width)
-			model.viewport.SetContent(inspectionContent)
+			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width)
+				pane.SetContent(inspectionContent)
+			}
+		}
+
+	// Forward spinner ticks to list items
+	case spinner.TickMsg:
+		var batchCmds []tea.Cmd
+		for index, item := range model.splitView.List.Items() {
+			if container, ok := item.(ContainerItem); ok && container.isWorking {
+				var cmd tea.Cmd
+				container.spinner, cmd = container.spinner.Update(msg)
+				model.splitView.List.SetItem(index, container)
+				batchCmds = append(batchCmds, cmd)
+			}
+		}
+		if len(batchCmds) > 0 {
+			cmds = append(cmds, tea.Batch(batchCmds...))
 		}
 	}
 
 	model.overlayModel.Foreground = model.foreground
-	// We don't set model.overlayModel.Background here because we want the
-	// full composed view (List + Details) to be the background, which we
-	// construct in the View() method.
+	model.overlayModel.Background = model.splitView
 
 	updatedOverlayModel, overlayCmd := model.overlayModel.Update(msg)
 	if overlayModel, ok := updatedOverlayModel.(*overlay.Model); ok {
@@ -265,80 +425,13 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func (model Model) renderMainView() string {
-	layoutManager := shared.NewLayoutManager(model.WindowWidth, model.WindowHeight)
-	_, detailLayout := layoutManager.CalculateMasterDetail(lipgloss.NewStyle())
-
-	listView := model.background.View()
-
-	borderColor := colors.Muted()
-	if model.focusedView == focusDetails {
-		borderColor = colors.Primary()
-	}
-
-	detailStyle := lipgloss.NewStyle().
-		Width(detailLayout.Width - 2).
-		Height(detailLayout.Height).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1)
-
-	var detailContent string
-	if model.currentContainerID != "" {
-		detailContent = model.viewport.View()
-	} else {
-		detailContent = lipgloss.NewStyle().Foreground(colors.Muted()).Render("No container selected.")
-	}
-
-	detailView := detailStyle.Render(detailContent)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
-}
-
 func (model Model) View() string {
 	if model.sessionState == viewOverlay && model.foreground != nil {
-		model.overlayModel.Background = shared.SimpleViewModel{Content: model.renderMainView()}
+		model.overlayModel.Background = shared.SimpleViewModel{Content: model.splitView.View()}
 		return model.overlayModel.View()
 	}
 
-	return model.renderMainView()
-}
-
-func (model *Model) updateMainView(msg tea.Msg) []tea.Cmd {
-	var cmds []tea.Cmd
-	isKeyMessage := false
-	if _, ok := msg.(tea.KeyMsg); ok {
-		isKeyMessage = true
-	}
-
-	if !isKeyMessage || model.focusedView == focusList {
-		backgroundModel, backgroundCmd := model.background.Update(msg)
-		model.background = backgroundModel.(ContainerList)
-		cmds = append(cmds, backgroundCmd)
-	}
-
-	if !isKeyMessage || model.focusedView == focusDetails {
-		updatedViewport, viewportCmd := model.viewport.Update(msg)
-		model.viewport = updatedViewport
-		cmds = append(cmds, viewportCmd)
-	}
-
-	if containerList, ok := model.background.(ContainerList); ok {
-		selectedItem := containerList.list.SelectedItem()
-		if selectedItem != nil {
-			if containerItem, ok := selectedItem.(ContainerItem); ok {
-				if containerItem.ID != model.currentContainerID {
-					model.currentContainerID = containerItem.ID
-					model.cpuHistory = make([]float64, 0)
-					cmds = append(cmds, func() tea.Msg {
-						containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
-						return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
-					})
-				}
-			}
-		}
-	}
-	return cmds
+	return model.splitView.View()
 }
 
 func (model *Model) handleStatsTick() []tea.Cmd {
@@ -346,15 +439,13 @@ func (model *Model) handleStatsTick() []tea.Cmd {
 	cmds = append(cmds, tickCmd())
 
 	if model.sessionState == viewMain {
-		if containerList, ok := model.background.(ContainerList); ok {
-			selectedItem := containerList.list.SelectedItem()
-			if selectedItem != nil {
-				if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
-					cmds = append(cmds, func() tea.Msg {
-						containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
-						return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
-					})
-				}
+		selectedItem := model.splitView.List.SelectedItem()
+		if selectedItem != nil {
+			if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
+				cmds = append(cmds, func() tea.Msg {
+					containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
+					return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
+				})
 			}
 		}
 	}
@@ -369,12 +460,10 @@ func (model Model) ShortHelp() []key.Binding {
 		return nil
 	}
 
-	switch model.focusedView {
-	case focusList:
-		if containerList, ok := model.background.(ContainerList); ok {
-			return containerList.list.ShortHelp()
-		}
-	case focusDetails:
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.ShortHelp()
+	case shared.FocusDetail:
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -389,18 +478,335 @@ func (model Model) FullHelp() [][]key.Binding {
 		return nil
 	}
 
-	switch model.focusedView {
-	case focusList:
-		if containerList, ok := model.background.(ContainerList); ok {
-			return containerList.list.FullHelp()
-		}
-	case focusDetails:
+	switch model.splitView.Focus {
+	case shared.FocusList:
+		return model.splitView.List.FullHelp()
+	case shared.FocusDetail:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
 				model.detailsKeybindings.Down,
 				model.detailsKeybindings.Switch,
 			},
+		}
+	}
+	return nil
+}
+
+// Handler Functions (Moved from list.go/handlers.go)
+
+func (model *Model) getSelectedContainerIDs() []string {
+	selectedContainerIDs := make([]string, 0, len(model.selectedContainers.selections))
+	for containerID := range model.selectedContainers.selections {
+		selectedContainerIDs = append(selectedContainerIDs, containerID)
+	}
+	return selectedContainerIDs
+}
+
+func (model *Model) getSelectedContainerIndices() []int {
+	selectedContainerIndices := make([]int, 0, len(model.selectedContainers.selections))
+	for _, index := range model.selectedContainers.selections {
+		selectedContainerIndices = append(selectedContainerIndices, index)
+	}
+	return selectedContainerIndices
+}
+
+func (model *Model) setWorkingState(containerIDs []string, working bool) {
+	items := model.splitView.List.Items()
+	for index, item := range items {
+		if container, ok := item.(ContainerItem); ok && slices.Contains(containerIDs, container.ID) {
+			container.isWorking = working
+			if working {
+				container.spinner = newSpinner()
+			}
+			model.splitView.List.SetItem(index, container)
+		}
+	}
+}
+
+func (model *Model) anySelectedWorking() bool {
+	for containerID := range model.selectedContainers.selections {
+		if item := model.findItemByID(containerID); item != nil && item.isWorking {
+			return true
+		}
+	}
+	return false
+}
+
+func (model *Model) findItemByID(containerID string) *ContainerItem {
+	items := model.splitView.List.Items()
+	for _, item := range items {
+		if container, ok := item.(ContainerItem); ok && container.ID == containerID {
+			return &container
+		}
+	}
+	return nil
+}
+
+func (model *Model) handlePauseContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		if model.anySelectedWorking() {
+			return nil
+		}
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Pause, selectedContainerIDs)
+	} else {
+		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !selectedItem.isWorking {
+			model.setWorkingState([]string{selectedItem.ID}, true)
+			return PerformContainerOperation(Pause, []string{selectedItem.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleUnpauseContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		if model.anySelectedWorking() {
+			return nil
+		}
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Unpause, selectedContainerIDs)
+	} else {
+		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !selectedItem.isWorking {
+			model.setWorkingState([]string{selectedItem.ID}, true)
+			return PerformContainerOperation(Unpause, []string{selectedItem.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleStartContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		if model.anySelectedWorking() {
+			return nil
+		}
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Start, selectedContainerIDs)
+	} else {
+		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !selectedItem.isWorking {
+			model.setWorkingState([]string{selectedItem.ID}, true)
+			return PerformContainerOperation(Start, []string{selectedItem.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleStopContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		if model.anySelectedWorking() {
+			return nil
+		}
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Stop, selectedContainerIDs)
+	} else {
+		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !selectedItem.isWorking {
+			model.setWorkingState([]string{selectedItem.ID}, true)
+			return PerformContainerOperation(Stop, []string{selectedItem.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleRemoveContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		if model.anySelectedWorking() {
+			return nil
+		}
+		selectedContainerIndices := model.getSelectedContainerIndices()
+
+		var requestedContainersToDelete []*ContainerItem
+		items := model.splitView.List.Items()
+
+		for _, index := range selectedContainerIndices {
+			requestedContainer := items[index].(ContainerItem)
+			requestedContainersToDelete = append(requestedContainersToDelete, &requestedContainer)
+		}
+
+		return func() tea.Msg {
+			return MessageOpenDeleteConfirmationDialog{requestedContainersToDelete}
+		}
+	} else {
+		item, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok && !item.isWorking {
+			return func() tea.Msg {
+				return MessageOpenDeleteConfirmationDialog{[]*ContainerItem{&item}}
+			}
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleShowLogs() tea.Cmd {
+	item, ok := model.splitView.List.SelectedItem().(ContainerItem)
+	if !ok || item.isWorking {
+		return nil
+	}
+
+	if item.State != "running" {
+		return notifications.ShowInfo(item.Name + " is not running")
+	}
+
+	command := exec.Command("sh", "-c", "docker logs \"$0\" 2>&1 | less", item.ID) //nolint:gosec
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		if err != nil {
+			return notifications.AddNotificationMsg{
+				Message:  err.Error(),
+				Level:    notifications.Error,
+				Duration: 10 * 1000 * 1000 * 1000,
+			}
+		}
+		return nil
+	})
+}
+
+func (model *Model) handleExecShell() tea.Cmd {
+	item, ok := model.splitView.List.SelectedItem().(ContainerItem)
+	if !ok || item.isWorking {
+		return nil
+	}
+
+	if item.State != "running" {
+		return notifications.ShowInfo(item.Name + " is not running")
+	}
+
+	command := exec.Command("sh", "-c", "exec docker exec -it \"$0\" /bin/sh", item.ID) //nolint:gosec
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		if err != nil {
+			return notifications.AddNotificationMsg{
+				Message:  err.Error(),
+				Level:    notifications.Error,
+				Duration: 10 * 1000 * 1000 * 1000,
+			}
+		}
+		return nil
+	})
+}
+
+func (model *Model) handleConfirmationOfRemoveContainers() tea.Cmd {
+	if len(model.selectedContainers.selections) > 0 {
+		selectedContainerIDs := model.getSelectedContainerIDs()
+		model.setWorkingState(selectedContainerIDs, true)
+		return PerformContainerOperation(Remove, selectedContainerIDs)
+	} else {
+		item, ok := model.splitView.List.SelectedItem().(ContainerItem)
+		if ok {
+			model.setWorkingState([]string{item.ID}, true)
+			return PerformContainerOperation(Remove, []string{item.ID})
+		}
+	}
+	return nil
+}
+
+func (model *Model) handleToggleSelection() {
+	index := model.splitView.List.Index()
+	selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
+	if ok && !selectedItem.isWorking {
+		isSelected := selectedItem.isSelected
+
+		if isSelected {
+			model.selectedContainers.unselectContainerInList(selectedItem.ID)
+		} else {
+			model.selectedContainers.selectContainerInList(selectedItem.ID, index)
+		}
+
+		selectedItem.isSelected = !isSelected
+		model.splitView.List.SetItem(index, selectedItem)
+	}
+}
+
+func (model *Model) handleToggleSelectionOfAll() {
+	allNonWorkingAlreadySelected := true
+	items := model.splitView.List.Items()
+
+	for _, item := range items {
+		if container, ok := item.(ContainerItem); ok && !container.isWorking {
+			if _, selected := model.selectedContainers.selections[container.ID]; !selected {
+				allNonWorkingAlreadySelected = false
+				break
+			}
+		}
+	}
+
+	if allNonWorkingAlreadySelected {
+		model.selectedContainers = newSelectedContainers()
+		for index, item := range model.splitView.List.Items() {
+			container, ok := item.(ContainerItem)
+			if ok {
+				container.isSelected = false
+				model.splitView.List.SetItem(index, container)
+			}
+		}
+	} else {
+		model.selectedContainers = newSelectedContainers()
+		for index, item := range model.splitView.List.Items() {
+			container, ok := item.(ContainerItem)
+			if ok && !container.isWorking {
+				container.isSelected = true
+				model.splitView.List.SetItem(index, container)
+				model.selectedContainers.selectContainerInList(container.ID, index)
+			}
+		}
+	}
+}
+
+func (model *Model) handleContainerOperationResult(msg MessageContainerOperationResult) tea.Cmd {
+	model.setWorkingState(msg.IDs, false)
+
+	if msg.Error != nil {
+		return notifications.ShowError(msg.Error)
+	}
+
+	if msg.Operation == Remove {
+		items := model.splitView.List.Items()
+		var indicesToRemove []int
+		for index, item := range items {
+			if container, ok := item.(ContainerItem); ok {
+				for _, containerID := range msg.IDs {
+					if container.ID == containerID {
+						indicesToRemove = append([]int{index}, indicesToRemove...)
+						break
+					}
+				}
+			}
+		}
+		for _, index := range indicesToRemove {
+			model.splitView.List.RemoveItem(index)
+		}
+		return notifications.ShowSuccess("Container(s) removed successfully")
+	}
+
+	var newState string
+	switch msg.Operation {
+	case Pause:
+		newState = "paused"
+	case Unpause, Start:
+		newState = "running"
+	case Stop:
+		newState = "exited"
+	case Remove:
+		return nil
+	default:
+		return nil
+	}
+
+	items := model.splitView.List.Items()
+	for index, item := range items {
+		if container, ok := item.(ContainerItem); ok {
+			for _, containerID := range msg.IDs {
+				if container.ID == containerID {
+					container.State = newState
+					model.splitView.List.SetItem(index, container)
+					break
+				}
+			}
 		}
 	}
 	return nil
