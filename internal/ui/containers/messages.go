@@ -38,6 +38,7 @@ const (
 	Unpause
 	Start
 	Stop
+	Restart
 	Remove
 )
 
@@ -54,6 +55,8 @@ func PerformContainerOperation(operation Operation, containerIDs []string) tea.C
 			err = context.GetClient().StartContainers(containerIDs)
 		case Stop:
 			err = context.GetClient().StopContainers(containerIDs)
+		case Restart:
+			err = context.GetClient().RestartContainers(containerIDs)
 		case Remove:
 			err = context.GetClient().RemoveContainers(containerIDs)
 		}

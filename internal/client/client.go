@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 // ContainerStats represents the CPU and memory usage of a container.
@@ -193,6 +194,75 @@ func (clientWrapper *ClientWrapper) PauseContainers(containerIDs []string) error
 	return nil
 }
 
+// CreateContainerConfig holds configuration for creating a container.
+type CreateContainerConfig struct {
+	Name      string
+	ImageID   string
+	Ports     map[string]string // "hostPort" -> "containerPort"
+	Volumes   []string          // "hostPath:containerPath" format
+	Env       []string          // "KEY=value" format
+	AutoStart bool
+	Network   string // Network name (default: "bridge")
+}
+
+// CreateContainer creates a new container with the specified configuration.
+func (clientWrapper *ClientWrapper) CreateContainer(config CreateContainerConfig) (containerID string, err error) {
+	// Parse ports into nat.PortMap and nat.PortSet
+	portBindings := nat.PortMap{}
+	exposedPorts := nat.PortSet{}
+
+	for hostPort, containerPort := range config.Ports {
+		port, err := nat.NewPort("tcp", containerPort)
+		if err != nil {
+			return "", fmt.Errorf("invalid container port %s: %w", containerPort, err)
+		}
+		exposedPorts[port] = struct{}{}
+		portBindings[port] = []nat.PortBinding{{HostPort: hostPort}}
+	}
+
+	// Create container config
+	containerConfig := &container.Config{
+		Image:        config.ImageID,
+		Env:          config.Env,
+		ExposedPorts: exposedPorts,
+	}
+
+	// Set network mode, default to bridge
+	networkMode := config.Network
+	if networkMode == "" {
+		networkMode = "bridge"
+	}
+
+	// Create host config
+	hostConfig := &container.HostConfig{
+		PortBindings: portBindings,
+		Binds:        config.Volumes,
+		NetworkMode:  container.NetworkMode(networkMode),
+	}
+
+	// Create the container
+	resp, err := clientWrapper.client.ContainerCreate(
+		context.Background(),
+		containerConfig,
+		hostConfig,
+		nil, // NetworkingConfig
+		nil, // Platform
+		config.Name,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create container: %w", err)
+	}
+
+	// Auto-start if requested
+	if config.AutoStart {
+		if err := clientWrapper.StartContainer(resp.ID); err != nil {
+			return resp.ID, fmt.Errorf("container created but failed to start: %w", err)
+		}
+	}
+
+	return resp.ID, nil
+}
+
 // UnpauseContainer unpauses a specific Docker container by its ID.
 func (clientWrapper *ClientWrapper) UnpauseContainer(containerID string) error {
 	return clientWrapper.client.ContainerUnpause(context.Background(), containerID)
@@ -254,6 +324,27 @@ func (clientWrapper *ClientWrapper) RemoveContainer(containerID string) error {
 func (clientWrapper *ClientWrapper) RemoveContainers(containerIDs []string) error {
 	for _, containerID := range containerIDs {
 		if err := clientWrapper.RemoveContainer(containerID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// RestartContainer restarts a specific Docker container by its ID.
+func (clientWrapper *ClientWrapper) RestartContainer(containerID string) error {
+	timeout := 10 // seconds
+	return clientWrapper.client.ContainerRestart(
+		context.Background(),
+		containerID,
+		container.StopOptions{Timeout: &timeout},
+	)
+}
+
+// RestartContainers restarts multiple Docker containers by their IDs.
+func (clientWrapper *ClientWrapper) RestartContainers(containerIDs []string) error {
+	for _, containerID := range containerIDs {
+		if err := clientWrapper.RestartContainer(containerID); err != nil {
 			return err
 		}
 	}
@@ -552,4 +643,61 @@ func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (Conta
 // InspectContainer returns the detailed inspection information for a container.
 func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
 	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
+}
+
+// PullImage pulls an image from a registry.
+// If progressChan is provided, progress messages will be sent to it.
+// The channel will be closed when the pull completes or fails.
+func (clientWrapper *ClientWrapper) PullImage(imageName string, progressChan chan<- string) error {
+	out, err := clientWrapper.client.ImagePull(context.Background(), imageName, types.ImagePullOptions{})
+	if err != nil {
+		if progressChan != nil {
+			close(progressChan)
+		}
+		return fmt.Errorf("failed to pull image: %w", err)
+	}
+	defer out.Close()
+
+	// Read progress JSON stream
+	decoder := json.NewDecoder(out)
+	for {
+		var event struct {
+			Status   string `json:"status"`
+			Progress string `json:"progress"`
+			ID       string `json:"id"`
+			Error    string `json:"error"`
+		}
+
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			if progressChan != nil {
+				close(progressChan)
+			}
+			return fmt.Errorf("error reading pull progress: %w", err)
+		}
+
+		// Check for error in response
+		if event.Error != "" {
+			if progressChan != nil {
+				close(progressChan)
+			}
+			return fmt.Errorf("pull failed: %s", event.Error)
+		}
+
+		if progressChan != nil {
+			progressMsg := event.Status
+			if event.Progress != "" {
+				progressMsg += ": " + event.Progress
+			}
+			progressChan <- progressMsg
+		}
+	}
+
+	if progressChan != nil {
+		close(progressChan)
+	}
+
+	return nil
 }
