@@ -3,7 +3,7 @@ package colors
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/context"
 )
@@ -21,88 +21,88 @@ func TestColorFunctions(t *testing.T) {
 	context.SetConfig(config.DefaultConfig())
 
 	yellow := Yellow()
-	if yellow == "" {
-		t.Error("Yellow() returned empty color")
+	if yellow == nil {
+		t.Error("Yellow() returned nil color")
 	}
 
 	green := Green()
-	if green == "" {
-		t.Error("Green() returned empty color")
+	if green == nil {
+		t.Error("Green() returned nil color")
 	}
 
 	gray := Gray()
-	if gray == "" {
-		t.Error("Gray() returned empty color")
+	if gray == nil {
+		t.Error("Gray() returned nil color")
 	}
 
 	blue := Blue()
-	if blue == "" {
-		t.Error("Blue() returned empty color")
+	if blue == nil {
+		t.Error("Blue() returned nil color")
 	}
 
 	white := White()
-	if white == "" {
-		t.Error("White() returned empty color")
+	if white == nil {
+		t.Error("White() returned nil color")
 	}
 
 	black := Black()
-	if black == "" {
-		t.Error("Black() returned empty color")
+	if black == nil {
+		t.Error("Black() returned nil color")
 	}
 
 	red := Red()
-	if red == "" {
-		t.Error("Red() returned empty color")
+	if red == nil {
+		t.Error("Red() returned nil color")
 	}
 
 	magenta := Magenta()
-	if magenta == "" {
-		t.Error("Magenta() returned empty color")
+	if magenta == nil {
+		t.Error("Magenta() returned nil color")
 	}
 
 	cyan := Cyan()
-	if cyan == "" {
-		t.Error("Cyan() returned empty color")
+	if cyan == nil {
+		t.Error("Cyan() returned nil color")
 	}
 
 	brightBlack := BrightBlack()
-	if brightBlack == "" {
-		t.Error("BrightBlack() returned empty color")
+	if brightBlack == nil {
+		t.Error("BrightBlack() returned nil color")
 	}
 
 	brightRed := BrightRed()
-	if brightRed == "" {
-		t.Error("BrightRed() returned empty color")
+	if brightRed == nil {
+		t.Error("BrightRed() returned nil color")
 	}
 
 	brightGreen := BrightGreen()
-	if brightGreen == "" {
-		t.Error("BrightGreen() returned empty color")
+	if brightGreen == nil {
+		t.Error("BrightGreen() returned nil color")
 	}
 
 	brightYellow := BrightYellow()
-	if brightYellow == "" {
-		t.Error("BrightYellow() returned empty color")
+	if brightYellow == nil {
+		t.Error("BrightYellow() returned nil color")
 	}
 
 	brightBlue := BrightBlue()
-	if brightBlue == "" {
-		t.Error("BrightBlue() returned empty color")
+	if brightBlue == nil {
+		t.Error("BrightBlue() returned nil color")
 	}
 
 	brightMagenta := BrightMagenta()
-	if brightMagenta == "" {
-		t.Error("BrightMagenta() returned empty color")
+	if brightMagenta == nil {
+		t.Error("BrightMagenta() returned nil color")
 	}
 
 	brightCyan := BrightCyan()
-	if brightCyan == "" {
-		t.Error("BrightCyan() returned empty color")
+	if brightCyan == nil {
+		t.Error("BrightCyan() returned nil color")
 	}
 
 	brightWhite := BrightWhite()
-	if brightWhite == "" {
-		t.Error("BrightWhite() returned empty color")
+	if brightWhite == nil {
+		t.Error("BrightWhite() returned nil color")
 	}
 }
 

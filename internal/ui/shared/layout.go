@@ -1,6 +1,6 @@
 package shared
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 type Dimensions struct {
 	Width         int

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 )
@@ -36,10 +36,9 @@ type FormDialog struct {
 	errorMessage   string
 }
 
-var (
-	_ tea.Model      = (*FormDialog)(nil)
-	_ ComponentModel = (*FormDialog)(nil)
-)
+// FormDialog implements StringViewModel and ComponentModel
+// var _ StringViewModel = (*FormDialog)(nil)
+// var _ ComponentModel = (*FormDialog)(nil)
 
 // NewFormDialog creates a new form dialog with the specified fields.
 func NewFormDialog(title string, fields []FormField, actionType string, metadata map[string]interface{}) FormDialog {
@@ -62,7 +61,7 @@ func NewFormDialog(title string, fields []FormField, actionType string, metadata
 		ti.Placeholder = field.Placeholder
 		ti.SetValue(field.Value)
 		ti.CharLimit = 256
-		ti.Width = modalDimensions.Width - 6 // Account for padding and borders
+		ti.SetWidth(modalDimensions.Width - 6) // Account for padding and borders
 
 		if i == 0 {
 			ti.Focus()
@@ -100,7 +99,7 @@ func (dialog *FormDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 
 	// Update text input widths
 	for i := range dialog.textInputs {
-		dialog.textInputs[i].Width = modalDimensions.Width - 6
+		dialog.textInputs[i].SetWidth(modalDimensions.Width - 6)
 	}
 }
 
@@ -108,14 +107,14 @@ func (dialog FormDialog) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (dialog FormDialog) Update(msg tea.Msg) (FormDialog, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		dialog.UpdateWindowDimensions(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
 			return dialog, func() tea.Msg { return CloseDialogMessage{} }

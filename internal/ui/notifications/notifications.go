@@ -4,8 +4,8 @@ package notifications
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type Level int
@@ -151,9 +151,9 @@ var (
 			BorderForeground(lipgloss.Color("#56E095"))
 )
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	if len(m.notifications) == 0 {
-		return ""
+		return tea.NewView("")
 	}
 
 	var content string
@@ -174,5 +174,5 @@ func (m Model) View() string {
 		content = lipgloss.JoinVertical(lipgloss.Left, content, style.Render(n.Message))
 	}
 
-	return content
+	return tea.NewView(content)
 }

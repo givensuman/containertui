@@ -5,8 +5,8 @@ import (
 	"bufio"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	contxt "github.com/givensuman/containertui/internal/context"
 )
 
@@ -64,7 +64,7 @@ type newLogLineMsg struct {
 }
 
 // Update implements the Bubbletea update loop for the logs overlay.
-func (model *ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 	switch msg := msg.(type) {
 	case logsLoadedMsg:
 		model.isLoaded = true
@@ -82,12 +82,12 @@ func (model *ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.lines = append(model.lines, msg.line)
 		model.viewport.SetContent(strings.Join(model.lines, "\n"))
 		// If at the bottom or the log buffer size <= height, scroll to end.
-		if model.isAtBottom || len(model.lines) <= model.viewport.Height {
+		if model.isAtBottom || len(model.lines) <= model.viewport.Height() {
 			model.viewport.GotoBottom()
 		}
 		return model, model.streamLogsCmd()
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc":
 			// Cancel streaming goroutine.
@@ -122,8 +122,10 @@ func (model *ContainerLogs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (model *ContainerLogs) setDimensions(width, height int) {
 	model.width = width
 	model.height = height
-	model.viewport.Width = width - 4   // Leave padding for overlay border.
-	model.viewport.Height = height - 6 // Leave padding for title/controls.
+	model.viewport = viewport.New(
+		viewport.WithWidth(width-4),   // Leave padding for overlay border.
+		viewport.WithHeight(height-6), // Leave padding for title/controls.
+	)
 	if model.isLoaded && len(model.lines) > 0 {
 		model.viewport.SetContent(strings.Join(model.lines, "\n"))
 	}

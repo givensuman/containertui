@@ -2,9 +2,10 @@ package volumes
 
 import (
 	"fmt"
+	"image/color"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
@@ -69,7 +70,7 @@ func (volumeItem VolumeItem) Title() string {
 		Render(title)
 
 	statusIcon := volumeItem.getIsSelectedIcon()
-	var isSelectedColor lipgloss.Color
+	var isSelectedColor color.Color
 	switch volumeItem.isSelected {
 	case true:
 		isSelectedColor = colors.Selected()

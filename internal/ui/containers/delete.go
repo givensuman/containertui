@@ -3,8 +3,8 @@ package containers
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/shared"
@@ -35,10 +35,9 @@ type DeleteConfirmation struct {
 	hoveredButtonOption buttonOption
 }
 
-var (
-	_ tea.Model             = (*DeleteConfirmation)(nil)
-	_ shared.ComponentModel = (*DeleteConfirmation)(nil)
-)
+// DeleteConfirmation implements StringViewModel
+// var _ tea.Model = (*DeleteConfirmation)(nil)
+// var _ shared.ComponentModel = (*DeleteConfirmation)(nil)
 
 func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirmation {
 	width, height := context.GetWindowSize()
@@ -75,19 +74,19 @@ func (model DeleteConfirmation) Init() tea.Cmd {
 	return nil
 }
 
-func (model DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model DeleteConfirmation) Update(msg tea.Msg) (DeleteConfirmation, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		model.UpdateWindowDimensions(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
-		case tea.KeyEscape.String(), tea.KeyEsc.String():
+		case "esc":
 			cmds = append(cmds, CloseOverlay())
 
-		case tea.KeyTab.String(), tea.KeyShiftTab.String():
+		case "tab", "shift+tab":
 			switch model.hoveredButtonOption {
 			case confirm:
 				model.hoveredButtonOption = decline
@@ -95,17 +94,17 @@ func (model DeleteConfirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				model.hoveredButtonOption = confirm
 			}
 
-		case "l", tea.KeyRight.String():
+		case "l", "right":
 			if model.hoveredButtonOption == decline {
 				model.hoveredButtonOption = confirm
 			}
 
-		case "h", tea.KeyLeft.String():
+		case "h", "left":
 			if model.hoveredButtonOption == confirm {
 				model.hoveredButtonOption = decline
 			}
 
-		case tea.KeyEnter.String():
+		case "enter":
 			if model.hoveredButtonOption == confirm {
 				cmds = append(cmds, func() tea.Msg { return MessageConfirmDelete{} })
 			}

@@ -1,8 +1,8 @@
 package shared
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 )
@@ -24,10 +24,9 @@ type SmartDialog struct {
 	height         int
 }
 
-var (
-	_ tea.Model      = (*SmartDialog)(nil)
-	_ ComponentModel = (*SmartDialog)(nil)
-)
+// SmartDialog implements StringViewModel and ComponentModel
+// var _ StringViewModel = (*SmartDialog)(nil)
+// var _ ComponentModel = (*SmartDialog)(nil)
 
 // NewSmartDialog creates a generic confirmation or warning dialog.
 func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
@@ -70,12 +69,12 @@ func (dialog SmartDialog) Init() tea.Cmd {
 	return nil
 }
 
-func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (dialog SmartDialog) Update(msg tea.Msg) (SmartDialog, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		dialog.UpdateWindowDimensions(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
 			return dialog, func() tea.Msg { return CloseDialogMessage{} }

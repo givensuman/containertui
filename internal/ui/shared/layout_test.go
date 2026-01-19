@@ -3,7 +3,7 @@ package shared
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func TestAdjustedWidth(t *testing.T) {

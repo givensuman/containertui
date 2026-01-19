@@ -2,7 +2,9 @@
 package colors
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -49,70 +51,70 @@ var ansiColorMap = map[ANSIColor]string{
 	ColorBrightWhite:   "15",
 }
 
-func Black() lipgloss.Color {
+func Black() color.Color {
 	return lipgloss.Color(ColorBlack.String())
 }
 
-func Red() lipgloss.Color {
+func Red() color.Color {
 	return lipgloss.Color(ColorRed.String())
 }
 
-func Green() lipgloss.Color {
+func Green() color.Color {
 	return lipgloss.Color(ColorBrightGreen.String())
 }
 
-func Yellow() lipgloss.Color {
+func Yellow() color.Color {
 	return lipgloss.Color(ColorBrightYellow.String())
 }
 
-func Blue() lipgloss.Color {
+func Blue() color.Color {
 	return lipgloss.Color(ColorBlue.String())
 }
 
-func Magenta() lipgloss.Color {
+func Magenta() color.Color {
 	return lipgloss.Color(ColorMagenta.String())
 }
 
-func Cyan() lipgloss.Color {
+func Cyan() color.Color {
 	return lipgloss.Color(ColorCyan.String())
 }
 
-func White() lipgloss.Color {
+func White() color.Color {
 	return lipgloss.Color(ColorWhite.String())
 }
 
-func BrightBlack() lipgloss.Color {
+func BrightBlack() color.Color {
 	return lipgloss.Color(ColorBrightBlack.String())
 }
 
-func BrightRed() lipgloss.Color {
+func BrightRed() color.Color {
 	return lipgloss.Color(ColorBrightRed.String())
 }
 
-func BrightGreen() lipgloss.Color {
+func BrightGreen() color.Color {
 	return lipgloss.Color(ColorBrightGreen.String())
 }
 
-func BrightYellow() lipgloss.Color {
+func BrightYellow() color.Color {
 	return lipgloss.Color(ColorBrightYellow.String())
 }
 
-func BrightBlue() lipgloss.Color {
+func BrightBlue() color.Color {
 	return lipgloss.Color(ColorBrightBlue.String())
 }
 
-func BrightMagenta() lipgloss.Color {
+func BrightMagenta() color.Color {
 	return lipgloss.Color(ColorBrightMagenta.String())
 }
 
-func BrightCyan() lipgloss.Color {
+func BrightCyan() color.Color {
 	return lipgloss.Color(ColorBrightCyan.String())
 }
 
-func BrightWhite() lipgloss.Color {
+func BrightWhite() color.Color {
 	return lipgloss.Color(ColorBrightWhite.String())
 }
 
-func Gray() lipgloss.Color {
+func Gray() color.Color {
 	return lipgloss.Color(ColorBrightBlack.String())
 }
