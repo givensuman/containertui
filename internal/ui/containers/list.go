@@ -195,6 +195,13 @@ func (containerList ContainerList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
+	case shared.MsgFocusChanged:
+		if msg.IsDetailsFocused {
+			containerList.list.SetDelegate(shared.UnfocusDelegateStyles(newDefaultDelegate()))
+		} else {
+			containerList.list.SetDelegate(newDefaultDelegate())
+		}
+
 	case tea.KeyMsg:
 		if containerList.list.FilterState() == list.Filtering {
 			break

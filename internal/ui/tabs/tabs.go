@@ -18,6 +18,7 @@ const (
 	Images
 	Volumes
 	Networks
+	Services
 )
 
 func (t Tab) String() string {
@@ -26,6 +27,7 @@ func (t Tab) String() string {
 		"Images",
 		"Volumes",
 		"Networks",
+		"Services",
 	}[t]
 }
 
@@ -34,6 +36,7 @@ type KeyMap struct {
 	SwitchToImages     key.Binding
 	SwitchToVolumes    key.Binding
 	SwitchToNetworks   key.Binding
+	SwitchToServices   key.Binding
 }
 
 func NewKeyMap() KeyMap {
@@ -54,6 +57,10 @@ func NewKeyMap() KeyMap {
 			key.WithKeys("4"),
 			key.WithHelp("4", "networks"),
 		),
+		SwitchToServices: key.NewBinding(
+			key.WithKeys("5"),
+			key.WithHelp("5", "services"),
+		),
 	}
 }
 
@@ -67,7 +74,7 @@ type Model struct {
 func New() Model {
 	return Model{
 		ActiveTab: Containers,
-		Tabs:      []Tab{Containers, Images, Volumes, Networks},
+		Tabs:      []Tab{Containers, Images, Volumes, Networks, Services},
 		KeyMap:    NewKeyMap(),
 	}
 }
@@ -88,6 +95,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ActiveTab = Volumes
 		case key.Matches(msg, m.KeyMap.SwitchToNetworks):
 			m.ActiveTab = Networks
+		case key.Matches(msg, m.KeyMap.SwitchToServices):
+			m.ActiveTab = Services
 		}
 	case tea.WindowSizeMsg:
 		m.WindowWidth = msg.Width

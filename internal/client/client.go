@@ -4,7 +4,10 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -279,6 +282,83 @@ func (clientWrapper *ClientWrapper) RemoveContainers(containerIDs []string) erro
 	}
 
 	return nil
+}
+
+// Service represents a Docker Compose service.
+type Service struct {
+	Name        string
+	Replicas    int
+	Containers  []Container
+	ComposeFile string
+}
+
+// GetServices retrieves services based on docker-compose labels from containers.
+func (clientWrapper *ClientWrapper) GetServices() ([]Service, error) {
+	containers, err := clientWrapper.GetContainers()
+	if err != nil {
+		return nil, err
+	}
+
+	servicesMap := make(map[string]*Service)
+
+	for _, container := range containers {
+		// We need to inspect to get labels
+		details, err := clientWrapper.InspectContainer(container.ID)
+		if err != nil {
+			continue
+		}
+
+		projectName := details.Config.Labels["com.docker.compose.project"]
+		serviceName := details.Config.Labels["com.docker.compose.service"]
+		workingDir := details.Config.Labels["com.docker.compose.project.working_dir"]
+		configFiles := details.Config.Labels["com.docker.compose.project.config_files"]
+
+		if projectName != "" && serviceName != "" {
+			key := projectName + "/" + serviceName
+			if _, exists := servicesMap[key]; !exists {
+				composeFile := ""
+				if configFiles != "" {
+					files := strings.Split(configFiles, ",")
+					if len(files) > 0 {
+						// The label might contain multiple files, we take the first one?
+						// Or check workingDir?
+						// Often config_files is absolute path.
+						composeFile = files[0]
+					}
+				}
+				if composeFile == "" && workingDir != "" {
+					// Fallback to trying standard names in working dir
+					possiblePaths := []string{
+						fmt.Sprintf("%s/docker-compose.yml", workingDir),
+						fmt.Sprintf("%s/docker-compose.yaml", workingDir),
+						fmt.Sprintf("%s/compose.yml", workingDir),
+						fmt.Sprintf("%s/compose.yaml", workingDir),
+					}
+					for _, p := range possiblePaths {
+						if _, err := os.Stat(p); err == nil {
+							composeFile = p
+							break
+						}
+					}
+				}
+
+				servicesMap[key] = &Service{
+					Name:        serviceName,
+					Replicas:    0,
+					Containers:  []Container{},
+					ComposeFile: composeFile,
+				}
+			}
+			servicesMap[key].Replicas++
+			servicesMap[key].Containers = append(servicesMap[key].Containers, container)
+		}
+	}
+
+	var services []Service
+	for _, s := range servicesMap {
+		services = append(services, *s)
+	}
+	return services, nil
 }
 
 // Logs represents the response from Moby's ContainerLogs.

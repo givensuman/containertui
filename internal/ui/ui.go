@@ -16,6 +16,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/images"
 	"github.com/givensuman/containertui/internal/ui/networks"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/services"
 	"github.com/givensuman/containertui/internal/ui/tabs"
 	"github.com/givensuman/containertui/internal/ui/volumes"
 )
@@ -29,6 +30,7 @@ type Model struct {
 	imagesModel        images.Model
 	volumesModel       volumes.Model
 	networksModel      networks.Model
+	servicesModel      services.Model
 	notificationsModel notifications.Model
 	overlayModel       *overlay.Model
 	help               help.Model
@@ -42,6 +44,7 @@ func NewModel() Model {
 	imagesModel := images.New()
 	volumesModel := volumes.New()
 	networksModel := networks.New()
+	servicesModel := services.New()
 	notificationsModel := notifications.New()
 
 	overlayModel := overlay.New(notificationsModel, containersModel, overlay.Right, overlay.Top, 0, 0)
@@ -55,6 +58,7 @@ func NewModel() Model {
 		imagesModel:        imagesModel,
 		volumesModel:       volumesModel,
 		networksModel:      networksModel,
+		servicesModel:      servicesModel,
 		notificationsModel: notificationsModel,
 		overlayModel:       overlayModel,
 		help:               helpModel,
@@ -101,6 +105,9 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		updatedNetworks, _ := model.networksModel.Update(contentMsg)
 		model.networksModel = updatedNetworks.(networks.Model)
+
+		updatedServices, _ := model.servicesModel.Update(contentMsg)
+		model.servicesModel = updatedServices.(services.Model)
 
 		model.help.Width = msg.Width
 
@@ -180,6 +187,14 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, networksCmd)
 			activeView = model.networksModel
 		}
+	case tabs.Services:
+		activeView = model.servicesModel
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			updatedServices, servicesCmd := model.servicesModel.Update(msg)
+			model.servicesModel = updatedServices.(services.Model)
+			cmds = append(cmds, servicesCmd)
+			activeView = model.servicesModel
+		}
 	}
 
 	model.overlayModel.Foreground = model.notificationsModel
@@ -215,6 +230,8 @@ func (model Model) View() string {
 		currentHelp = model.volumesModel
 	case tabs.Networks:
 		currentHelp = model.networksModel
+	case tabs.Services:
+		currentHelp = model.servicesModel
 	}
 
 	if currentHelp != nil {

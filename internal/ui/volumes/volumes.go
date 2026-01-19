@@ -205,10 +205,12 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if keyMsg.String() == "tab" && model.list.FilterState() != list.Filtering {
 				if model.focusedView == focusList {
 					model.focusedView = focusDetails
+					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: true} })
 				} else {
 					model.focusedView = focusList
+					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: false} })
 				}
-				return model, nil
+				return model, tea.Batch(cmds...)
 			}
 		}
 
@@ -219,6 +221,12 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !isKeyMessage || model.focusedView == focusList {
 			switch msg := msg.(type) {
+			case shared.MsgFocusChanged:
+				if msg.IsDetailsFocused {
+					model.list.SetDelegate(shared.UnfocusDelegateStyles(newDefaultDelegate()))
+				} else {
+					model.list.SetDelegate(newDefaultDelegate())
+				}
 			case tea.WindowSizeMsg:
 				model.UpdateWindowDimensions(msg)
 			case tea.KeyMsg:

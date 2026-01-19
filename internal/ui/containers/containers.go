@@ -178,10 +178,12 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if keyMsg.String() == "tab" {
 				if model.focusedView == focusList {
 					model.focusedView = focusDetails
+					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: true} })
 				} else {
 					model.focusedView = focusList
+					cmds = append(cmds, func() tea.Msg { return shared.MsgFocusChanged{IsDetailsFocused: false} })
 				}
-				return model, nil
+				return model, tea.Batch(cmds...)
 			}
 		}
 	}

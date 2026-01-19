@@ -27,3 +27,17 @@ func ChangeDelegateStyles(delegate list.DefaultDelegate) list.DefaultDelegate {
 
 	return delegate
 }
+
+// UnfocusDelegateStyles modifies the delegate styles to look "unfocused" (no primary color highlights).
+func UnfocusDelegateStyles(delegate list.DefaultDelegate) list.DefaultDelegate {
+	// Revert to normal/muted colors but keep layout
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
+		BorderLeftForeground(colors.Muted()). // Or clear/transparent? Muted shows position but not focus.
+		Foreground(colors.Text())
+
+	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.
+		BorderLeftForeground(colors.Muted()).
+		Foreground(colors.Muted())
+
+	return delegate
+}
