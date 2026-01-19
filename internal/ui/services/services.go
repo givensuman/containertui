@@ -6,15 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/shared"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
 type sessionState int
@@ -67,7 +66,6 @@ type Model struct {
 	splitView          shared.SplitView
 	keybindings        *keybindings
 	sessionState       sessionState
-	overlayModel       *overlay.Model
 	currentServiceName string
 	detailsKeybindings detailsKeybindings
 }
@@ -97,10 +95,10 @@ func New() Model {
 	listModel.SetShowTitle(false)
 	listModel.SetShowStatusBar(false)
 	listModel.SetFilteringEnabled(true)
-	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Cursor.Color = colors.Primary()
+	// listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	// listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
 
 	serviceKeybindings := newKeybindings()
 	listModel.AdditionalFullHelpKeys = func() []key.Binding {
@@ -118,7 +116,6 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 	}
 
-	model.overlayModel = overlay.New(nil, model.splitView.List, overlay.Center, overlay.Center, 0, 0)
 	return model
 }
 
@@ -235,8 +232,8 @@ func (model *Model) updateDetails(service client.Service) {
 	}
 }
 
-func (model Model) View() string {
-	return model.splitView.View()
+func (model Model) View() tea.View {
+	return tea.NewView(model.splitView.View())
 }
 
 func (model Model) ShortHelp() []key.Binding {

@@ -1,77 +1,79 @@
 package colors
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/context"
 )
 
-func Primary() lipgloss.Color {
+func Primary() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Primary.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Primary)
+		return lipgloss.Color(string(cfg.Theme.Primary))
 	}
 
 	return Blue()
 }
 
-func Border() lipgloss.Color {
+func Border() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Border.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Border)
+		return lipgloss.Color(string(cfg.Theme.Border))
 	}
 
 	return Gray()
 }
 
-func Text() lipgloss.Color {
+func Text() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Text.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Text)
+		return lipgloss.Color(string(cfg.Theme.Text))
 	}
 
 	return White()
 }
 
-func Muted() lipgloss.Color {
+func Muted() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Muted.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Muted)
+		return lipgloss.Color(string(cfg.Theme.Muted))
 	}
 
 	return Gray()
 }
 
-func Selected() lipgloss.Color {
+func Selected() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Selected.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Selected)
+		return lipgloss.Color(string(cfg.Theme.Selected))
 	}
 
 	return Primary()
 }
 
-func Success() lipgloss.Color {
+func Success() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Success.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Success)
+		return lipgloss.Color(string(cfg.Theme.Success))
 	}
 
 	return Green()
 }
 
-func Warning() lipgloss.Color {
+func Warning() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Warning.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Warning)
+		return lipgloss.Color(string(cfg.Theme.Warning))
 	}
 
 	return Yellow()
 }
 
-func Error() lipgloss.Color {
+func Error() color.Color {
 	cfg := context.GetConfig()
 	if cfg != nil && cfg.Theme.Error.IsAssigned() {
-		return lipgloss.Color(cfg.Theme.Error)
+		return lipgloss.Color(string(cfg.Theme.Error))
 	}
 
 	return Red()

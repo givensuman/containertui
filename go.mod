@@ -3,39 +3,37 @@ module github.com/givensuman/containertui
 go 1.25.4
 
 require (
-	github.com/charmbracelet/bubbles v0.21.0
-	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/lipgloss v1.1.0
+	charm.land/bubbles/v2 v2.0.0-rc.1
+	charm.land/bubbletea/v2 v2.0.0-rc.2
+	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106192539-4b304240aab7
 	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/docker v25.0.3+incompatible
+	github.com/docker/go-connections v0.6.0
 	github.com/guptarohit/asciigraph v0.7.3
-	github.com/rmhubbert/bubbletea-overlay v0.6.3
+	github.com/rmhubbert/bubbletea-overlay v0.6.4
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	charm.land/bubbles/v2 v2.0.0-rc.1 // indirect
-	charm.land/bubbletea/v2 v2.0.0-rc.2 // indirect
-	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251205162909-7869489d8971 // indirect
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/charmbracelet/bubbletea v1.3.10 // indirect
 	github.com/charmbracelet/colorprofile v0.3.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20251205161215-1948445e3318 // indirect
-	github.com/charmbracelet/x/ansi v0.11.3 // indirect
+	github.com/charmbracelet/lipgloss v1.1.0 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20251116181749-377898bcce38 // indirect
+	github.com/charmbracelet/x/ansi v0.11.4 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
-	github.com/charmbracelet/x/exp/golden v0.0.0-20250806222409-83e3a29d542f // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
-	github.com/clipperhouse/displaywidth v0.6.1 // indirect
+	github.com/clipperhouse/displaywidth v0.7.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

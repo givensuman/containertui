@@ -1,8 +1,8 @@
 package shared
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 )
 
@@ -14,7 +14,7 @@ func (p Placeholder) Init() tea.Cmd {
 	return nil
 }
 
-func (p Placeholder) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (p Placeholder) Update(msg tea.Msg) (Placeholder, tea.Cmd) {
 	return p, nil
 }
 

@@ -4,9 +4,9 @@ package tabs
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/ui/shared"
 )
@@ -85,7 +85,7 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.KeyMap.SwitchToContainers):
 			m.ActiveTab = Containers
@@ -105,7 +105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	var tabs []string
 	for _, t := range m.Tabs {
 		if m.ActiveTab == t {
@@ -122,7 +122,7 @@ func (m Model) View() string {
 	gapWidth := maxInt(0, m.WindowWidth-lipgloss.Width(row)-2) // -2 for safety margin
 	gap := strings.Repeat(" ", gapWidth)
 
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
+	return tea.NewView(lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap))
 }
 
 func maxInt(a, b int) int {

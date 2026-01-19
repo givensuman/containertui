@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/shared"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
 // MsgPullProgress contains progress information from image pull.
@@ -71,11 +70,11 @@ type keybindings struct {
 func newKeybindings() *keybindings {
 	return &keybindings{
 		toggleSelection: key.NewBinding(
-			key.WithKeys(tea.KeySpace.String()),
+			key.WithKeys("space"),
 			key.WithHelp("space", "toggle selection"),
 		),
 		toggleSelectionOfAll: key.NewBinding(
-			key.WithKeys(tea.KeyCtrlA.String()),
+			key.WithKeys("ctrl+a"),
 			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
 		remove: key.NewBinding(
@@ -250,8 +249,7 @@ type Model struct {
 
 	sessionState       sessionState
 	detailsKeybindings detailsKeybindings
-	foreground         tea.Model
-	overlayModel       *overlay.Model
+	foreground         interface{} // Can be SmartDialog, FormDialog, etc.
 }
 
 var (
@@ -277,10 +275,10 @@ func New() Model {
 	listModel.SetShowTitle(false)
 	listModel.SetShowStatusBar(false)
 	listModel.SetFilteringEnabled(true)
-	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Cursor.Color = colors.Primary()
+	// listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
+	// listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
 
 	imageKeybindings := newKeybindings()
 	listModel.AdditionalFullHelpKeys = func() []key.Binding {
@@ -304,7 +302,6 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 	}
 
-	model.overlayModel = overlay.New(nil, model.splitView.List, overlay.Center, overlay.Center, 0, 0)
 	return model
 }
 
@@ -371,9 +368,18 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch model.sessionState {
 	case viewOverlay:
-		foregroundModel, foregroundCmd := model.foreground.Update(msg)
-		model.foreground = foregroundModel
-		cmds = append(cmds, foregroundCmd)
+		if model.foreground != nil {
+			switch fg := model.foreground.(type) {
+			case shared.SmartDialog:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			case shared.FormDialog:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			}
+		}
 
 		if _, ok := msg.(shared.CloseDialogMessage); ok {
 			model.sessionState = viewMain
@@ -455,7 +461,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg := msg.(type) {
 			case tea.WindowSizeMsg:
 				model.UpdateWindowDimensions(msg)
-			case tea.KeyMsg:
+			case tea.KeyPressMsg:
 				if model.splitView.List.FilterState() == list.Filtering {
 					break
 				}
@@ -583,9 +589,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	model.overlayModel.Foreground = model.foreground
-	model.overlayModel.Background = model.splitView // SplitView implements View()
-
 	return model, tea.Batch(cmds...)
 }
 
@@ -643,13 +646,25 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model Model) View() string {
+func (model Model) View() tea.View {
 	if model.sessionState == viewOverlay && model.foreground != nil {
-		model.overlayModel.Background = shared.SimpleViewModel{Content: model.splitView.View()}
-		return model.overlayModel.View()
+		var fgView string
+		switch fg := model.foreground.(type) {
+		case shared.SmartDialog:
+			fgView = fg.View()
+		case shared.FormDialog:
+			fgView = fg.View()
+		}
+
+		return shared.RenderOverlay(
+			model.splitView.View(),
+			fgView,
+			model.WindowWidth,
+			model.WindowHeight,
+		)
 	}
 
-	return model.splitView.View()
+	return tea.NewView(model.splitView.View())
 }
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {

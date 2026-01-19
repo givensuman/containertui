@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
@@ -21,7 +21,6 @@ import (
 	"github.com/givensuman/containertui/internal/ui/notifications"
 	"github.com/givensuman/containertui/internal/ui/shared"
 	"github.com/guptarohit/asciigraph"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
 type sessionState int
@@ -120,11 +119,11 @@ func newKeybindings() *keybindings {
 			key.WithHelp("x", "exec shell"),
 		),
 		toggleSelection: key.NewBinding(
-			key.WithKeys(tea.KeySpace.String()),
+			key.WithKeys("space"),
 			key.WithHelp("space", "toggle selection"),
 		),
 		toggleSelectionOfAll: key.NewBinding(
-			key.WithKeys(tea.KeyCtrlA.String()),
+			key.WithKeys("ctrl+a"),
 			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
 		switchTab: key.NewBinding(
@@ -161,8 +160,7 @@ type Model struct {
 	keybindings        *keybindings
 	sessionState       sessionState
 
-	foreground   tea.Model
-	overlayModel *overlay.Model
+	foreground interface{} // Can be DeleteConfirmation, *ContainerLogs, or FormDialog
 
 	currentContainerID string
 	cpuHistory         []float64
@@ -204,10 +202,8 @@ func New() Model {
 	listModel.SetShowTitle(false)
 	listModel.SetShowStatusBar(false)
 	listModel.SetFilteringEnabled(true)
-	listModel.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.FilterCursor = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
+	listModel.Styles.Filter.Cursor.Color = colors.Primary()
 
 	containerKeybindings := newKeybindings()
 	listModel.AdditionalFullHelpKeys = func() []key.Binding {
@@ -236,16 +232,6 @@ func New() Model {
 		cpuHistory:         make([]float64, 0),
 		detailsKeybindings: newDetailsKeybindings(),
 	}
-
-	deleteConfirmation := newDeleteConfirmation(nil)
-	model.overlayModel = overlay.New(
-		deleteConfirmation,
-		model.splitView.List, // Initial placeholder
-		overlay.Center,
-		overlay.Center,
-		0,
-		0,
-	)
 
 	return model
 }
@@ -291,7 +277,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle keybindings when list is focused
 		if model.splitView.Focus == shared.FocusList {
 			switch msg := msg.(type) {
-			case tea.KeyMsg:
+			case tea.KeyPressMsg:
 				if model.splitView.List.FilterState() == list.Filtering {
 					break
 				}
@@ -355,9 +341,27 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, splitCmd)
 		}
 
-		foregroundModel, foregroundCmd := model.foreground.Update(msg)
-		model.foreground = foregroundModel
-		cmds = append(cmds, foregroundCmd)
+		if model.foreground != nil {
+			// Type switch to call Update on different foreground types
+			switch fg := model.foreground.(type) {
+			case DeleteConfirmation:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			case *ContainerLogs:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			case shared.SmartDialog:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			case shared.FormDialog:
+				updated, cmd := fg.Update(msg)
+				model.foreground = updated
+				cmds = append(cmds, cmd)
+			}
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -368,9 +372,10 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.sessionState = viewMain
 
 	case MessageOpenDeleteConfirmationDialog:
-		model.foreground = newDeleteConfirmation(msg.requestedContainersToDelete...)
+		fg := newDeleteConfirmation(msg.requestedContainersToDelete...)
+		model.foreground = fg
 		model.sessionState = viewOverlay
-		cmds = append(cmds, model.foreground.Init())
+		cmds = append(cmds, fg.Init())
 
 	case MessageConfirmDelete:
 		cmds = append(cmds, model.handleConfirmationOfRemoveContainers())
@@ -387,7 +392,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ID == model.currentContainerID && msg.Err == nil {
 			model.inspection = msg.Container
 			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width)
+				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width())
 				pane.SetContent(inspectionContent)
 			}
 		}
@@ -400,7 +405,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				model.cpuHistory = model.cpuHistory[1:]
 			}
 			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width)
+				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width())
 				pane.SetContent(inspectionContent)
 			}
 		}
@@ -421,25 +426,33 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	model.overlayModel.Foreground = model.foreground
-	model.overlayModel.Background = model.splitView
-
-	updatedOverlayModel, overlayCmd := model.overlayModel.Update(msg)
-	if overlayModel, ok := updatedOverlayModel.(*overlay.Model); ok {
-		model.overlayModel = overlayModel
-		cmds = append(cmds, overlayCmd)
-	}
-
 	return model, tea.Batch(cmds...)
 }
 
-func (model Model) View() string {
+func (model Model) View() tea.View {
 	if model.sessionState == viewOverlay && model.foreground != nil {
-		model.overlayModel.Background = shared.SimpleViewModel{Content: model.splitView.View()}
-		return model.overlayModel.View()
+		// Type switch to call View on different foreground types
+		var fgView string
+		switch fg := model.foreground.(type) {
+		case DeleteConfirmation:
+			fgView = fg.View()
+		case *ContainerLogs:
+			fgView = fg.View()
+		case shared.SmartDialog:
+			fgView = fg.View()
+		case shared.FormDialog:
+			fgView = fg.View()
+		}
+
+		return shared.RenderOverlay(
+			model.splitView.View(),
+			fgView,
+			model.WindowWidth,
+			model.WindowHeight,
+		)
 	}
 
-	return model.splitView.View()
+	return tea.NewView(model.splitView.View())
 }
 
 func (model *Model) handleStatsTick() []tea.Cmd {

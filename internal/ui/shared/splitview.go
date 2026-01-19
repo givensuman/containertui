@@ -1,10 +1,10 @@
 package shared
 
 import (
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 )
 
@@ -19,7 +19,9 @@ const (
 // Pane is a component that can be placed in the right side of a SplitView.
 // It must accept size updates and standard bubbletea events.
 type Pane interface {
-	tea.Model
+	Init() tea.Cmd
+	Update(tea.Msg) (Pane, tea.Cmd)
+	View() string
 	SetSize(width, height int)
 }
 
@@ -30,7 +32,7 @@ type ViewportPane struct {
 
 func NewViewportPane() *ViewportPane {
 	return &ViewportPane{
-		Viewport: viewport.New(0, 0),
+		Viewport: viewport.New(),
 	}
 }
 
@@ -38,7 +40,7 @@ func (v *ViewportPane) Init() tea.Cmd {
 	return nil
 }
 
-func (v *ViewportPane) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (v *ViewportPane) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	var cmd tea.Cmd
 	v.Viewport, cmd = v.Viewport.Update(msg)
 	return v, cmd
@@ -49,8 +51,7 @@ func (v *ViewportPane) View() string {
 }
 
 func (v *ViewportPane) SetSize(w, h int) {
-	v.Viewport.Width = w
-	v.Viewport.Height = h
+	v.Viewport = viewport.New(viewport.WithWidth(w), viewport.WithHeight(h))
 }
 
 func (v *ViewportPane) SetContent(s string) {

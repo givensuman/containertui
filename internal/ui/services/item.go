@@ -3,7 +3,7 @@ package services
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/list"
+	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
 )
 

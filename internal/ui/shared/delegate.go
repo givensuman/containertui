@@ -1,7 +1,7 @@
 package shared
 
 import (
-	"github.com/charmbracelet/bubbles/list"
+	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/colors"
 )
 

@@ -1,7 +1,7 @@
 package shared
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type Component struct {
@@ -12,6 +12,13 @@ type Component struct {
 type ComponentModel interface {
 	tea.Model
 	UpdateWindowDimensions(msg tea.WindowSizeMsg)
+}
+
+// StringViewModel is for child components that render to strings (not top-level tea.View)
+type StringViewModel interface {
+	Init() tea.Cmd
+	Update(tea.Msg) (tea.Model, tea.Cmd)
+	View() string
 }
 
 // Dialog-related messages

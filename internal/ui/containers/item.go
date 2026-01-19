@@ -2,11 +2,12 @@ package containers
 
 import (
 	"fmt"
+	"image/color"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
@@ -106,7 +107,7 @@ func (containerItem ContainerItem) Title() string {
 		containerItem.Name,
 	)
 
-	var titleColor lipgloss.Color
+	var titleColor color.Color
 	switch containerItem.State {
 	case "running":
 		titleColor = colors.Success()
@@ -122,7 +123,7 @@ func (containerItem ContainerItem) Title() string {
 		Render(title)
 
 	if !containerItem.isWorking {
-		var isSelectedColor lipgloss.Color
+		var isSelectedColor color.Color
 		switch containerItem.isSelected {
 		case true:
 			isSelectedColor = colors.Selected()

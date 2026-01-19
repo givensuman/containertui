@@ -2,13 +2,13 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
@@ -32,7 +32,6 @@ type Model struct {
 	networksModel      networks.Model
 	servicesModel      services.Model
 	notificationsModel notifications.Model
-	overlayModel       *overlay.Model
 	help               help.Model
 }
 
@@ -47,7 +46,6 @@ func NewModel() Model {
 	servicesModel := services.New()
 	notificationsModel := notifications.New()
 
-	overlayModel := overlay.New(notificationsModel, containersModel, overlay.Right, overlay.Top, 0, 0)
 	helpModel := help.New()
 
 	return Model{
@@ -60,7 +58,6 @@ func NewModel() Model {
 		networksModel:      networksModel,
 		servicesModel:      servicesModel,
 		notificationsModel: notificationsModel,
-		overlayModel:       overlayModel,
 		help:               helpModel,
 	}
 }
@@ -71,8 +68,6 @@ func (model Model) Init() tea.Cmd {
 
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-
-	overlayMsg := msg
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -92,7 +87,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Width:  msg.Width,
 			Height: contentHeight,
 		}
-		overlayMsg = contentMsg
 
 		updatedContainers, _ := model.containersModel.Update(contentMsg)
 		model.containersModel = updatedContainers.(containers.Model)
@@ -109,9 +103,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updatedServices, _ := model.servicesModel.Update(contentMsg)
 		model.servicesModel = updatedServices.(services.Model)
 
-		model.help.Width = msg.Width
-
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
 			return model, tea.Quit
@@ -132,58 +124,38 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model.notificationsModel = updatedNotifications.(notifications.Model)
 	cmds = append(cmds, notificationsCmd)
 
-	var activeView tea.Model
 	switch model.tabsModel.ActiveTab {
 	case tabs.Containers:
-		activeView = model.containersModel
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedContainers, containersCmd := model.containersModel.Update(msg)
 			model.containersModel = updatedContainers.(containers.Model)
 			cmds = append(cmds, containersCmd)
-			activeView = model.containersModel
 		}
 	case tabs.Images:
-		activeView = model.imagesModel
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedImages, imagesCmd := model.imagesModel.Update(msg)
 			model.imagesModel = updatedImages.(images.Model)
 			cmds = append(cmds, imagesCmd)
-			activeView = model.imagesModel
 		}
 	case tabs.Volumes:
-		activeView = model.volumesModel
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedVolumes, volumesCmd := model.volumesModel.Update(msg)
 			model.volumesModel = updatedVolumes.(volumes.Model)
 			cmds = append(cmds, volumesCmd)
-			activeView = model.volumesModel
 		}
 	case tabs.Networks:
-		activeView = model.networksModel
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedNetworks, networksCmd := model.networksModel.Update(msg)
 			model.networksModel = updatedNetworks.(networks.Model)
 			cmds = append(cmds, networksCmd)
-			activeView = model.networksModel
 		}
 	case tabs.Services:
-		activeView = model.servicesModel
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedServices, servicesCmd := model.servicesModel.Update(msg)
 			model.servicesModel = updatedServices.(services.Model)
 			cmds = append(cmds, servicesCmd)
-			activeView = model.servicesModel
 		}
 	}
-
-	model.overlayModel.Foreground = model.notificationsModel
-	model.overlayModel.Background = activeView
-
-	updatedOverlay, overlayCmd := model.overlayModel.Update(overlayMsg)
-	if ov, ok := updatedOverlay.(*overlay.Model); ok {
-		model.overlayModel = ov
-	}
-	cmds = append(cmds, overlayCmd)
 
 	return model, tea.Batch(cmds...)
 }
@@ -193,9 +165,28 @@ type helpProvider interface {
 	FullHelp() [][]key.Binding
 }
 
-func (model Model) View() string {
-	tabsView := model.tabsModel.View()
-	contentView := model.overlayModel.View()
+func (model Model) View() tea.View {
+	// Both tabs and content views return tea.View
+	// We need to extract the string content to join them vertically
+	// For now,  we'll render the tea.View content using fmt.Sprint
+	tabsView := fmt.Sprint(model.tabsModel.View().Content)
+
+	// Get the active view
+	var contentViewContent tea.Layer
+	switch model.tabsModel.ActiveTab {
+	case tabs.Containers:
+		contentViewContent = model.containersModel.View().Content
+	case tabs.Images:
+		contentViewContent = model.imagesModel.View().Content
+	case tabs.Volumes:
+		contentViewContent = model.volumesModel.View().Content
+	case tabs.Networks:
+		contentViewContent = model.networksModel.View().Content
+	case tabs.Services:
+		contentViewContent = model.servicesModel.View().Content
+	}
+
+	contentViewStr := fmt.Sprint(contentViewContent)
 
 	var helpView string
 	var currentHelp helpProvider
@@ -217,10 +208,10 @@ func (model Model) View() string {
 		helpView = model.help.View(currentHelp)
 	}
 
-	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentView)
+	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentViewStr)
 
 	if helpView == "" {
-		return fullView
+		return tea.NewView(fullView)
 	}
 
 	helpStyle := lipgloss.NewStyle().Width(model.width)
@@ -250,16 +241,16 @@ func (model Model) View() string {
 			cutPoint = len(fullLines)
 		}
 		topLines := fullLines[:cutPoint]
-		return strings.Join(append(topLines, renderedHelpLines...), "\n")
+		return tea.NewView(strings.Join(append(topLines, renderedHelpLines...), "\n"))
 	}
 
-	return fullView
+	return tea.NewView(fullView)
 }
 
 func Start() error {
 	model := NewModel()
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(model)
 	_, err := p.Run()
 	return err
 }
