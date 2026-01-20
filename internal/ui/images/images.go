@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/shared"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/components"
 )
 
 // MsgPullProgress contains progress information from image pull.
@@ -33,29 +33,6 @@ type MsgRefreshImages struct{}
 type MsgCreateContainerComplete struct {
 	ContainerID string
 	Err         error
-}
-
-type detailsKeybindings struct {
-	Up     key.Binding
-	Down   key.Binding
-	Switch key.Binding
-}
-
-func newDetailsKeybindings() detailsKeybindings {
-	return detailsKeybindings{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		Switch: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "switch focus"),
-		),
-	}
 }
 
 type keybindings struct {
@@ -94,25 +71,6 @@ func newKeybindings() *keybindings {
 			key.WithHelp("1-4/tab", "switch tab"),
 		),
 	}
-}
-
-// selectedImages maps an image's ID to its index in the list.
-type selectedImages struct {
-	selections map[string]int
-}
-
-func newSelectedImages() *selectedImages {
-	return &selectedImages{
-		selections: make(map[string]int),
-	}
-}
-
-func (selectedImages *selectedImages) selectImageInList(id string, index int) {
-	selectedImages.selections[id] = index
-}
-
-func (selectedImages selectedImages) unselectImageInList(id string) {
-	delete(selectedImages.selections, id)
 }
 
 // validateImageName validates that an image name is not empty.
@@ -233,101 +191,86 @@ func parseBool(input string) bool {
 	return lower == "yes"
 }
 
-type sessionState int
-
-const (
-	viewMain sessionState = iota
-	viewOverlay
-)
-
 // Model represents the images component state.
 type Model struct {
-	shared.Component
-	splitView      shared.SplitView
-	selectedImages *selectedImages
-	keybindings    *keybindings
-
-	sessionState       sessionState
-	detailsKeybindings detailsKeybindings
-	foreground         interface{} // Can be SmartDialog, FormDialog, etc.
+	components.ResourceView[string, ImageItem]
+	keybindings *keybindings
 }
 
 var (
-	_ tea.Model             = (*Model)(nil)
-	_ shared.ComponentModel = (*Model)(nil)
+	_ tea.Model = (*Model)(nil)
 )
 
 func New() Model {
-	imageList, err := context.GetClient().GetImages()
-	if err != nil {
-		imageList = []client.Image{}
-	}
-	items := make([]list.Item, 0, len(imageList))
-	for _, image := range imageList {
-		items = append(items, ImageItem{Image: image})
-	}
-
-	width, height := context.GetWindowSize()
-
-	delegate := newDefaultDelegate()
-	listModel := list.New(items, delegate, width, height)
-	listModel.SetShowHelp(false)
-	listModel.SetShowTitle(false)
-	listModel.SetShowStatusBar(false)
-	listModel.SetFilteringEnabled(true)
-	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.Filter.Cursor.Color = colors.Primary()
-	// listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	// listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
-
 	imageKeybindings := newKeybindings()
-	listModel.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			imageKeybindings.toggleSelection,
-			imageKeybindings.toggleSelectionOfAll,
-			imageKeybindings.remove,
-			imageKeybindings.pullImage,
-			imageKeybindings.createContainer,
-			imageKeybindings.switchTab,
+
+	fetchImages := func() ([]ImageItem, error) {
+		imageList, err := context.GetClient().GetImages()
+		if err != nil {
+			return nil, err
 		}
+		items := make([]ImageItem, 0, len(imageList))
+		for _, image := range imageList {
+			items = append(items, ImageItem{Image: image})
+		}
+		return items, nil
 	}
 
-	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
+	resourceView := components.NewResourceView[string, ImageItem](
+		"Images",
+		fetchImages,
+		func(item ImageItem) string { return item.Image.ID },
+		func(item ImageItem) string { return item.Title() },
+		func(w, h int) {
+			// Window resize handled by base component
+		},
+	)
+
+	// Set custom delegate
+	delegate := newDefaultDelegate()
+	resourceView.SetDelegate(delegate)
 
 	model := Model{
-		splitView:          splitView,
-		selectedImages:     newSelectedImages(),
-		keybindings:        imageKeybindings,
-		sessionState:       viewMain,
-		detailsKeybindings: newDetailsKeybindings(),
+		ResourceView: *resourceView,
+		keybindings:  imageKeybindings,
+	}
+
+	// Add custom keybindings to help
+	model.ResourceView.AdditionalHelp = []key.Binding{
+		imageKeybindings.toggleSelection,
+		imageKeybindings.toggleSelectionOfAll,
+		imageKeybindings.remove,
+		imageKeybindings.pullImage,
+		imageKeybindings.createContainer,
 	}
 
 	return model
 }
 
 func (model Model) Init() tea.Cmd {
-	return nil
+	return model.ResourceView.Init()
 }
 
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// 1. Try standard ResourceView updates first (resizing, dialog closing, basic navigation)
+	updatedView, cmd := model.ResourceView.Update(msg)
+	model.ResourceView = updatedView
 	var cmds []tea.Cmd
+	cmds = append(cmds, cmd)
 
-	// Handle global messages first
+	// 2. Handle Messages
 	switch msg := msg.(type) {
 	case MsgPullComplete:
 		if msg.Err != nil {
 			// Show error dialog
-			errorDialog := shared.NewSmartDialog(
+			errorDialog := components.NewSmartDialog(
 				fmt.Sprintf("Failed to pull image:\n\n%v", msg.Err),
-				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK", IsSafe: true}},
 			)
-			model.foreground = errorDialog
-			model.sessionState = viewOverlay
+			model.ResourceView.SetOverlay(errorDialog)
 		} else {
 			// Success - close dialog and refresh list
-			model.sessionState = viewMain
-			model.foreground = nil
-
+			model.ResourceView.CloseOverlay()
 			// Trigger images refresh
 			return model, func() tea.Msg {
 				return MsgRefreshImages{}
@@ -335,61 +278,47 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return model, nil
 	case MsgRefreshImages:
-		// Refresh the images list
-		imageList, err := context.GetClient().GetImages()
-		if err == nil {
-			items := make([]list.Item, 0, len(imageList))
-			for _, image := range imageList {
-				items = append(items, ImageItem{Image: image})
-			}
-			model.splitView.List.SetItems(items)
-		}
-		return model, nil
+		// Refresh the images list via ResourceView
+		return model, model.ResourceView.Refresh()
+
 	case MsgCreateContainerComplete:
 		if msg.Err != nil {
 			// Show error dialog
-			errorDialog := shared.NewSmartDialog(
+			errorDialog := components.NewSmartDialog(
 				fmt.Sprintf("Failed to create container:\n\n%v", msg.Err),
-				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK", IsSafe: true}},
 			)
-			model.foreground = errorDialog
-			model.sessionState = viewOverlay
+			model.ResourceView.SetOverlay(errorDialog)
 		} else {
 			// Success - show success message
-			successDialog := shared.NewSmartDialog(
+			successDialog := components.NewSmartDialog(
 				fmt.Sprintf("Container created successfully!\n\nContainer ID: %s", msg.ContainerID[:12]),
-				[]shared.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK", IsSafe: true}},
 			)
-			model.foreground = successDialog
-			model.sessionState = viewOverlay
+			model.ResourceView.SetOverlay(successDialog)
 		}
 		return model, nil
 	}
 
-	switch model.sessionState {
-	case viewOverlay:
-		if model.foreground != nil {
-			switch fg := model.foreground.(type) {
-			case shared.SmartDialog:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			case shared.FormDialog:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			}
-		}
-
-		if _, ok := msg.(shared.CloseDialogMessage); ok {
-			model.sessionState = viewMain
-			model.foreground = nil
-		} else if confirmMsg, ok := msg.(shared.ConfirmationMessage); ok {
+	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
+	if model.ResourceView.IsOverlayVisible() {
+		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteImage" {
 				imageID := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveImage(imageID)
-				if err != nil {
-					break
+				if err == nil {
+					// We need to refresh list.
+					// ResourceView has Refresh() command but for immediate feedback we might want local update.
+					// Refresh() is safer.
+					return model, model.ResourceView.Refresh()
+				} else {
+					// Show error
+					errorDialog := components.NewSmartDialog(
+						fmt.Sprintf("Failed to remove image:\n\n%v", err),
+						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+					)
+					model.ResourceView.SetOverlay(errorDialog)
+					return model, nil
 				}
 			} else if confirmMsg.Action.Type == "PullImageAction" {
 				// Extract image name from form values
@@ -398,11 +327,11 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				imageName := formValues["Image"]
 
 				// Show progress dialog
-				progressDialog := shared.NewSmartDialog(
+				progressDialog := components.NewSmartDialog(
 					fmt.Sprintf("Pulling image: %s\n\nThis may take a few moments...", imageName),
-					[]shared.DialogButton{}, // No buttons while pulling
+					[]components.DialogButton{}, // No buttons while pulling
 				)
-				model.foreground = progressDialog
+				model.ResourceView.SetOverlay(progressDialog)
 
 				// Start pull in goroutine
 				return model, func() tea.Msg {
@@ -433,11 +362,11 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// Show progress dialog
-				progressDialog := shared.NewSmartDialog(
+				progressDialog := components.NewSmartDialog(
 					"Creating container...",
-					[]shared.DialogButton{}, // No buttons while creating
+					[]components.DialogButton{}, // No buttons while creating
 				)
-				model.foreground = progressDialog
+				model.ResourceView.SetOverlay(progressDialog)
 
 				// Create container
 				return model, func() tea.Msg {
@@ -448,265 +377,219 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return MsgCreateContainerComplete{ContainerID: containerID, Err: nil}
 				}
 			}
-			model.sessionState = viewMain
-			model.foreground = nil
+
+			model.ResourceView.CloseOverlay()
+			return model, nil
 		}
-	case viewMain:
-		// Forward message to SplitView first
-		updatedSplitView, splitCmd := model.splitView.Update(msg)
-		model.splitView = updatedSplitView
-		cmds = append(cmds, splitCmd)
 
-		if model.splitView.Focus == shared.FocusList {
-			switch msg := msg.(type) {
-			case tea.WindowSizeMsg:
-				model.UpdateWindowDimensions(msg)
-			case tea.KeyPressMsg:
-				if model.splitView.List.FilterState() == list.Filtering {
-					break
-				}
+		// Let ResourceView handle forwarding to overlay
+		return model, tea.Batch(cmds...)
+	}
 
-				switch {
-				case key.Matches(msg, model.keybindings.switchTab):
-					// Handled by parent container (or ignored here if we want parent to switch tabs)
-					// The generic tab switching logic for FOCUS is handled by SplitView.
-					// The numeric keys for switching TABS are handled by the main UI loop usually,
-					// but here we might need to bubble them up or just ignore them so they bubble.
-					return model, nil
-				case key.Matches(msg, model.keybindings.toggleSelection):
-					model.handleToggleSelection()
-				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-					model.handleToggleSelectionOfAll()
-				case key.Matches(msg, model.keybindings.pullImage):
-					// Show form dialog to get image name
-					formDialog := shared.NewFormDialog(
-						"Pull Image",
-						[]shared.FormField{
+	// 4. Main View Logic
+	if model.ResourceView.IsListFocused() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			if model.ResourceView.IsFiltering() {
+				break
+			}
+
+			switch {
+			case key.Matches(msg, model.keybindings.switchTab):
+				return model, nil // Handled by parent
+
+			case key.Matches(msg, model.keybindings.toggleSelection):
+				model.handleToggleSelection()
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
+				model.handleToggleSelectionOfAll()
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.pullImage):
+				// Show form dialog to get image name
+				formDialog := components.NewFormDialog(
+					"Pull Image",
+					[]components.FormField{
+						{
+							Label:       "Image",
+							Placeholder: "nginx:latest",
+							Required:    true,
+							Validator:   validateImageName,
+						},
+					},
+					base.SmartDialogAction{Type: "PullImageAction"},
+					nil,
+				)
+				model.ResourceView.SetOverlay(formDialog)
+
+			case key.Matches(msg, model.keybindings.createContainer):
+				selectedItem := model.ResourceView.GetSelectedItem()
+				if selectedItem != nil {
+					// Show form dialog to create container
+					formDialog := components.NewFormDialog(
+						"Create Container from Image",
+						[]components.FormField{
 							{
-								Label:       "Image",
-								Placeholder: "nginx:latest",
-								Required:    true,
-								Validator:   validateImageName,
+								Label:       "Name",
+								Placeholder: "my-container (optional)",
+								Required:    false,
+							},
+							{
+								Label:       "Ports",
+								Placeholder: "8080:80,443:443",
+								Required:    false,
+								Validator:   validatePorts,
+							},
+							{
+								Label:       "Volumes",
+								Placeholder: "/host:/container",
+								Required:    false,
+								Validator:   validateVolumes,
+							},
+							{
+								Label:       "Environment",
+								Placeholder: "KEY=value,FOO=bar",
+								Required:    false,
+								Validator:   validateEnv,
+							},
+							{
+								Label:       "Auto-start",
+								Placeholder: "yes/no",
+								Required:    false,
+								Validator:   validateBool,
 							},
 						},
-						"PullImageAction",
+						base.SmartDialogAction{
+							Type:    "CreateContainerAction",
+							Payload: map[string]interface{}{"imageID": selectedItem.Image.ID},
+						},
 						nil,
 					)
-					model.foreground = formDialog
-					model.sessionState = viewOverlay
-				case key.Matches(msg, model.keybindings.createContainer):
-					selectedItem := model.splitView.List.SelectedItem()
-					if selectedItem != nil {
-						if imageItem, ok := selectedItem.(ImageItem); ok {
-							// Show form dialog to create container
-							formDialog := shared.NewFormDialog(
-								"Create Container from Image",
-								[]shared.FormField{
-									{
-										Label:       "Name",
-										Placeholder: "my-container (optional)",
-										Required:    false,
-									},
-									{
-										Label:       "Ports",
-										Placeholder: "8080:80,443:443",
-										Required:    false,
-										Validator:   validatePorts,
-									},
-									{
-										Label:       "Volumes",
-										Placeholder: "/host:/container",
-										Required:    false,
-										Validator:   validateVolumes,
-									},
-									{
-										Label:       "Environment",
-										Placeholder: "KEY=value,FOO=bar",
-										Required:    false,
-										Validator:   validateEnv,
-									},
-									{
-										Label:       "Auto-start",
-										Placeholder: "yes/no",
-										Required:    false,
-										Validator:   validateBool,
-									},
-								},
-								"CreateContainerAction",
-								map[string]interface{}{"imageID": imageItem.Image.ID},
-							)
-							model.foreground = formDialog
-							model.sessionState = viewOverlay
-						}
-					}
-				case key.Matches(msg, model.keybindings.remove):
-					selectedItem := model.splitView.List.SelectedItem()
-					if selectedItem != nil {
-						if imageItem, ok := selectedItem.(ImageItem); ok {
-							containersUsingImage, _ := context.GetClient().GetContainersUsingImage(imageItem.Image.ID)
-							if len(containersUsingImage) > 0 {
-								warningDialog := shared.NewSmartDialog(
-									fmt.Sprintf("Image %s is used by %d containers (%v).\nCannot delete.", imageItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
-									[]shared.DialogButton{
-										{Label: "OK", IsSafe: true},
-									},
-								)
-								model.foreground = warningDialog
-								model.sessionState = viewOverlay
-							} else {
-								confirmationDialog := shared.NewSmartDialog(
-									fmt.Sprintf("Are you sure you want to delete image %s?", imageItem.Image.ID[:12]),
-									[]shared.DialogButton{
-										{Label: "Cancel", IsSafe: true},
-										{Label: "Delete", IsSafe: false, Action: shared.SmartDialogAction{Type: "DeleteImage", Payload: imageItem.Image.ID}},
-									},
-								)
-								model.foreground = confirmationDialog
-								model.sessionState = viewOverlay
-							}
-						}
-					}
+					model.ResourceView.SetOverlay(formDialog)
 				}
-			}
-		}
 
-		// Update Detail Content
-		selectedItem := model.splitView.List.SelectedItem()
-		if selectedItem != nil {
-			if imageItem, ok := selectedItem.(ImageItem); ok {
-				detailsContent := fmt.Sprintf(
-					"ID: %s\nSize: %d\nTags: %v",
-					imageItem.Image.ID, imageItem.Image.Size, imageItem.Image.RepoTags,
-				)
-				if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-					pane.SetContent(detailsContent)
-				}
-			}
-		} else {
-			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-				pane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
+			case key.Matches(msg, model.keybindings.remove):
+				model.handleRemove()
+				return model, nil
 			}
 		}
 	}
+
+	// 5. Update Detail Content
+	model.updateDetailContent()
 
 	return model, tea.Batch(cmds...)
 }
 
+func (model Model) View() tea.View {
+	return tea.NewView(model.ResourceView.View())
+}
+
 func (model *Model) handleToggleSelection() {
-	currentIndex := model.splitView.List.Index()
-	selectedItem, ok := model.splitView.List.SelectedItem().(ImageItem)
-	if ok {
-		isSelected := selectedItem.isSelected
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil {
+		model.ResourceView.ToggleSelection(selectedItem.Image.ID)
 
-		if isSelected {
-			model.selectedImages.unselectImageInList(selectedItem.Image.ID)
-		} else {
-			model.selectedImages.selectImageInList(selectedItem.Image.ID, currentIndex)
-		}
-
-		selectedItem.isSelected = !isSelected
-		model.splitView.List.SetItem(currentIndex, selectedItem)
+		// Update visual state
+		index := model.ResourceView.GetSelectedIndex()
+		selectedItem.isSelected = !selectedItem.isSelected
+		model.ResourceView.SetItem(index, *selectedItem)
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
-	allImagesSelected := true
-	items := model.splitView.List.Items()
+	// Similar logic to container selection toggling
+	// If any item is not selected, select all. Otherwise deselect all.
 
+	items := model.ResourceView.GetItems()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+
+	shouldSelectAll := false
 	for _, item := range items {
-		if imageItem, ok := item.(ImageItem); ok {
-			if _, isSelected := model.selectedImages.selections[imageItem.Image.ID]; !isSelected {
-				allImagesSelected = false
+		found := false
+		for _, id := range selectedIDs {
+			if id == item.Image.ID {
+				found = true
 				break
 			}
 		}
+		if !found {
+			shouldSelectAll = true
+			break
+		}
 	}
 
-	if allImagesSelected {
-		// Unselect all items.
-		model.selectedImages = newSelectedImages()
-
-		for index, item := range model.splitView.List.Items() {
-			if imageItem, ok := item.(ImageItem); ok {
-				imageItem.isSelected = false
-				model.splitView.List.SetItem(index, imageItem)
+	if shouldSelectAll {
+		// Select all
+		for i, item := range items {
+			found := false
+			for _, id := range selectedIDs {
+				if id == item.Image.ID {
+					found = true
+					break
+				}
 			}
+			if !found {
+				model.ResourceView.ToggleSelection(item.Image.ID)
+			}
+			item.isSelected = true
+			model.ResourceView.SetItem(i, item)
 		}
 	} else {
-		// Select all items.
-		model.selectedImages = newSelectedImages()
-
-		for index, item := range model.splitView.List.Items() {
-			if imageItem, ok := item.(ImageItem); ok {
-				imageItem.isSelected = true
-				model.splitView.List.SetItem(index, imageItem)
-				model.selectedImages.selectImageInList(imageItem.Image.ID, index)
-			}
+		// Deselect all
+		for i, item := range items {
+			model.ResourceView.ToggleSelection(item.Image.ID)
+			item.isSelected = false
+			model.ResourceView.SetItem(i, item)
 		}
 	}
 }
 
-func (model Model) View() tea.View {
-	if model.sessionState == viewOverlay && model.foreground != nil {
-		var fgView string
-		switch fg := model.foreground.(type) {
-		case shared.SmartDialog:
-			fgView = fg.View()
-		case shared.FormDialog:
-			fgView = fg.View()
-		}
+func (model *Model) handleRemove() {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem == nil {
+		return
+	}
 
-		return shared.RenderOverlay(
-			model.splitView.View(),
-			fgView,
-			model.WindowWidth,
-			model.WindowHeight,
+	containersUsingImage, _ := context.GetClient().GetContainersUsingImage(selectedItem.Image.ID)
+	if len(containersUsingImage) > 0 {
+		warningDialog := components.NewSmartDialog(
+			fmt.Sprintf("Image %s is used by %d containers (%v).\nCannot delete.", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
+			[]components.DialogButton{
+				{Label: "OK", IsSafe: true},
+			},
 		)
+		model.ResourceView.SetOverlay(warningDialog)
+	} else {
+		confirmationDialog := components.NewSmartDialog(
+			fmt.Sprintf("Are you sure you want to delete image %s?", selectedItem.Image.ID[:12]),
+			[]components.DialogButton{
+				{Label: "Cancel", IsSafe: true},
+				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteImage", Payload: selectedItem.Image.ID}},
+			},
+		)
+		model.ResourceView.SetOverlay(confirmationDialog)
 	}
-
-	return tea.NewView(model.splitView.View())
 }
 
-func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	model.WindowWidth = msg.Width
-	model.WindowHeight = msg.Height
-	model.splitView.SetSize(msg.Width, msg.Height)
-
-	switch model.sessionState {
-	case viewOverlay:
-		if smartDialog, ok := model.foreground.(shared.SmartDialog); ok {
-			smartDialog.UpdateWindowDimensions(msg)
-			model.foreground = smartDialog
-		}
+func (model *Model) updateDetailContent() {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil {
+		detailsContent := fmt.Sprintf(
+			"ID: %s\nSize: %d\nTags: %v",
+			selectedItem.Image.ID, selectedItem.Image.Size, selectedItem.Image.RepoTags,
+		)
+		model.ResourceView.SetContent(detailsContent)
+	} else {
+		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
 	}
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	switch model.splitView.Focus {
-	case shared.FocusList:
-		return model.splitView.List.ShortHelp()
-	case shared.FocusDetail:
-		return []key.Binding{
-			model.detailsKeybindings.Up,
-			model.detailsKeybindings.Down,
-			model.detailsKeybindings.Switch,
-		}
-	}
-	return nil
+	return model.ResourceView.ShortHelp()
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	switch model.splitView.Focus {
-	case shared.FocusList:
-		return model.splitView.List.FullHelp()
-	case shared.FocusDetail:
-		return [][]key.Binding{
-			{
-				model.detailsKeybindings.Up,
-				model.detailsKeybindings.Down,
-				model.detailsKeybindings.Switch,
-			},
-		}
-	}
-	return nil
+	return model.ResourceView.FullHelp()
 }

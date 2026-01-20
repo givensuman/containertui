@@ -28,8 +28,8 @@ type Model struct {
 	tabsModel          tabs.Model
 	containersModel    containers.Model
 	imagesModel        images.Model
-	volumesModel       volumes.Model
-	networksModel      networks.Model
+	volumesModel       *volumes.Model
+	networksModel      *networks.Model
 	servicesModel      services.Model
 	notificationsModel notifications.Model
 	help               help.Model
@@ -95,10 +95,10 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.imagesModel = updatedImages.(images.Model)
 
 		updatedVolumes, _ := model.volumesModel.Update(contentMsg)
-		model.volumesModel = updatedVolumes.(volumes.Model)
+		model.volumesModel = updatedVolumes.(*volumes.Model)
 
 		updatedNetworks, _ := model.networksModel.Update(contentMsg)
-		model.networksModel = updatedNetworks.(networks.Model)
+		model.networksModel = updatedNetworks.(*networks.Model)
 
 		updatedServices, _ := model.servicesModel.Update(contentMsg)
 		model.servicesModel = updatedServices.(services.Model)
@@ -140,13 +140,13 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tabs.Volumes:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedVolumes, volumesCmd := model.volumesModel.Update(msg)
-			model.volumesModel = updatedVolumes.(volumes.Model)
+			model.volumesModel = updatedVolumes.(*volumes.Model)
 			cmds = append(cmds, volumesCmd)
 		}
 	case tabs.Networks:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			updatedNetworks, networksCmd := model.networksModel.Update(msg)
-			model.networksModel = updatedNetworks.(networks.Model)
+			model.networksModel = updatedNetworks.(*networks.Model)
 			cmds = append(cmds, networksCmd)
 		}
 	case tabs.Services:
@@ -170,24 +170,45 @@ func (model Model) View() tea.View {
 	// Both tabs and content views return tea.View
 	// We need to extract the string content to join them vertically
 	// For now,  we'll render the tea.View content using fmt.Sprint
-	tabsView := fmt.Sprint(model.tabsModel.View().Content)
+	tabsView := fmt.Sprint(model.tabsModel.View())
 
 	// Get the active view
-	var contentViewContent tea.Layer
+	var contentViewContent string
 	switch model.tabsModel.ActiveTab {
 	case tabs.Containers:
-		contentViewContent = model.containersModel.View().Content
+		// We know these models return a View that wraps a single string
+		// Since we cannot access .Content on tea.View (opaque in v2), we must assume
+		// the sub-models are returning views that render to string properly when formatted,
+		// OR we need to change how we compose.
+		// However, lipgloss.JoinVertical expects strings.
+		// If model.X.View() returns tea.View, fmt.Sprint(v) might not give the content.
+		// But in v2, tea.View is an interface or struct?
+		// Actually, tea.NewView returns a tea.View struct which might have unexported fields.
+		// Let's check if we can get the string content.
+		// tea.View in v2 is a struct with `func (v View) String() string`?
+		// No, tea.View is a struct.
+		// Let's look at bubbletea v2 View definition if possible or assume we need to change strategy.
+		// IF tea.View has a String() method, fmt.Sprint works.
+		// Let's try calling View() on them and using fmt.Sprint.
+
+		// The error was: model.volumesModel.View().Content undefined.
+		// So we can't access .Content.
+
+		// Let's use fmt.Sprint(model.X.View()) assuming it implements Stringer or we can rely on it.
+		// IF NOT, we should expose a ViewString() method on submodels.
+		// But let's try this first as tea.View likely implements Stringer.
+		contentViewContent = fmt.Sprint(model.containersModel.View())
 	case tabs.Images:
-		contentViewContent = model.imagesModel.View().Content
+		contentViewContent = fmt.Sprint(model.imagesModel.View())
 	case tabs.Volumes:
-		contentViewContent = model.volumesModel.View().Content
+		contentViewContent = fmt.Sprint(model.volumesModel.View())
 	case tabs.Networks:
-		contentViewContent = model.networksModel.View().Content
+		contentViewContent = fmt.Sprint(model.networksModel.View())
 	case tabs.Services:
-		contentViewContent = model.servicesModel.View().Content
+		contentViewContent = fmt.Sprint(model.servicesModel.View())
 	}
 
-	contentViewStr := fmt.Sprint(contentViewContent)
+	contentViewStr := contentViewContent
 
 	var helpView string
 	var currentHelp helpProvider

@@ -9,7 +9,7 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/shared"
+	"github.com/givensuman/containertui/internal/ui/styles"
 )
 
 type NetworkItem struct {
@@ -24,7 +24,7 @@ var (
 
 func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
-	delegate = shared.ChangeDelegateStyles(delegate)
+	delegate = styles.ChangeDelegateStyles(delegate)
 
 	return delegate
 }

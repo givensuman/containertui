@@ -10,16 +10,14 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/list"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/notifications"
-	"github.com/givensuman/containertui/internal/ui/shared"
 	"github.com/guptarohit/asciigraph"
 )
 
@@ -133,32 +131,11 @@ func newKeybindings() *keybindings {
 	}
 }
 
-// selectedContainers maps a container's ID to its index in the list.
-type selectedContainers struct {
-	selections map[string]int
-}
-
-func newSelectedContainers() *selectedContainers {
-	return &selectedContainers{
-		selections: make(map[string]int),
-	}
-}
-
-func (selectedContainers *selectedContainers) selectContainerInList(id string, index int) {
-	selectedContainers.selections[id] = index
-}
-
-func (selectedContainers selectedContainers) unselectContainerInList(id string) {
-	delete(selectedContainers.selections, id)
-}
-
 // Model represents the containers component state.
 type Model struct {
-	shared.Component
-	splitView          shared.SplitView
-	selectedContainers *selectedContainers
-	keybindings        *keybindings
-	sessionState       sessionState
+	components.ResourceView[string, ContainerItem]
+	keybindings  *keybindings
+	sessionState sessionState
 
 	foreground interface{} // Can be DeleteConfirmation, *ContainerLogs, or FormDialog
 
@@ -168,69 +145,80 @@ type Model struct {
 
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
+
+	WindowWidth  int
+	WindowHeight int
 }
 
+// Ensure Model satisfies base.Component but we cannot directly assign (*Model)(nil) if Model has embedded fields that complicate it?
+// Actually base.Component is struct { WindowWidth, WindowHeight int }.
+// Model embeds ResourceView which embeds base.Component.
+// So Model HAS WindowWidth/WindowHeight.
+// BUT `var _ base.Component = (*Model)(nil)` tries to assign *Model to base.Component (struct).
+// This is invalid Go. You can assign to interface, but base.Component is a struct.
+// You cannot say "Model implements struct".
+// If base.Component was an interface it would be fine.
+// Since base.Component is a struct, we don't need this check.
+
 var (
-	_ tea.Model             = (*Model)(nil)
-	_ shared.ComponentModel = (*Model)(nil)
+	_ tea.Model = (*Model)(nil)
 )
 
 func New() Model {
-	containers, err := context.GetClient().GetContainers()
-	if err != nil {
-		containers = []client.Container{}
-	}
-	containerItems := make([]list.Item, 0, len(containers))
-	for _, container := range containers {
-		containerItems = append(
-			containerItems,
-			ContainerItem{
+	containerKeybindings := newKeybindings()
+
+	// Initialize ResourceView
+	fetchContainers := func() ([]ContainerItem, error) {
+		containers, err := context.GetClient().GetContainers()
+		if err != nil {
+			return nil, err
+		}
+		items := make([]ContainerItem, 0, len(containers))
+		for _, container := range containers {
+			items = append(items, ContainerItem{
 				Container:  container,
 				isSelected: false,
 				isWorking:  false,
 				spinner:    newSpinner(),
-			},
-		)
-	}
-
-	width, height := context.GetWindowSize()
-
-	delegate := newDefaultDelegate()
-	listModel := list.New(containerItems, delegate, width, height)
-
-	listModel.SetShowHelp(false)
-	listModel.SetShowTitle(false)
-	listModel.SetShowStatusBar(false)
-	listModel.SetFilteringEnabled(true)
-	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.Filter.Cursor.Color = colors.Primary()
-
-	containerKeybindings := newKeybindings()
-	listModel.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			containerKeybindings.pauseContainer,
-			containerKeybindings.unpauseContainer,
-			containerKeybindings.startContainer,
-			containerKeybindings.stopContainer,
-			containerKeybindings.restartContainer,
-			containerKeybindings.removeContainer,
-			containerKeybindings.showLogs,
-			containerKeybindings.execShell,
-			containerKeybindings.toggleSelection,
-			containerKeybindings.toggleSelectionOfAll,
-			containerKeybindings.switchTab,
+			})
 		}
+		return items, nil
 	}
 
-	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
+	resourceView := components.NewResourceView[string, ContainerItem](
+		"Containers",
+		fetchContainers,
+		func(item ContainerItem) string { return item.ID },
+		func(item ContainerItem) string { return item.Name },
+		func(w, h int) {
+			// Window resize handled by base component
+		},
+	)
+
+	// Set the custom delegate
+	delegate := newDefaultDelegate()
+	resourceView.SetDelegate(delegate)
 
 	model := Model{
-		splitView:          splitView,
-		selectedContainers: newSelectedContainers(),
+		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
 		sessionState:       viewMain,
 		cpuHistory:         make([]float64, 0),
 		detailsKeybindings: newDetailsKeybindings(),
+	}
+
+	// Add custom keybindings to help
+	model.ResourceView.AdditionalHelp = []key.Binding{
+		containerKeybindings.pauseContainer,
+		containerKeybindings.unpauseContainer,
+		containerKeybindings.startContainer,
+		containerKeybindings.stopContainer,
+		containerKeybindings.restartContainer,
+		containerKeybindings.removeContainer,
+		containerKeybindings.showLogs,
+		containerKeybindings.execShell,
+		containerKeybindings.toggleSelection,
+		containerKeybindings.toggleSelectionOfAll,
 	}
 
 	return model
@@ -245,7 +233,7 @@ func tickCmd() tea.Cmd {
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
-	model.splitView.SetSize(msg.Width, msg.Height)
+	model.ResourceView.UpdateWindowDimensions(msg)
 
 	switch model.sessionState {
 	case viewOverlay:
@@ -261,7 +249,10 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 }
 
 func (model Model) Init() tea.Cmd {
-	return tickCmd()
+	return tea.Batch(
+		model.ResourceView.Init(),
+		tickCmd(),
+	)
 }
 
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -269,27 +260,25 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch model.sessionState {
 	case viewMain:
-		// Forward messages to SplitView first
-		updatedSplitView, splitCmd := model.splitView.Update(msg)
-		model.splitView = updatedSplitView
-		cmds = append(cmds, splitCmd)
+		// Forward messages to ResourceView first
+		updatedView, viewCmd := model.ResourceView.Update(msg)
+		model.ResourceView = updatedView
+		cmds = append(cmds, viewCmd)
 
 		// Handle keybindings when list is focused
-		if model.splitView.Focus == shared.FocusList {
+		if model.ResourceView.IsListFocused() {
 			switch msg := msg.(type) {
 			case tea.KeyPressMsg:
-				if model.splitView.List.FilterState() == list.Filtering {
+				if model.ResourceView.IsFiltering() {
 					break
 				}
 
-				if msg.String() == "q" {
-					return model, tea.Quit
+				// Don't intercept global navigation keys
+				if key.Matches(msg, model.keybindings.switchTab) {
+					return model, nil
 				}
 
 				switch {
-				case key.Matches(msg, model.keybindings.switchTab):
-					// Handled by parent
-					return model, nil
 				case key.Matches(msg, model.keybindings.pauseContainer):
 					cmds = append(cmds, model.handlePauseContainers())
 				case key.Matches(msg, model.keybindings.unpauseContainer):
@@ -319,26 +308,27 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Update Detail Content if selection changes
-		selectedItem := model.splitView.List.SelectedItem()
+		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil {
-			if containerItem, ok := selectedItem.(ContainerItem); ok {
-				if containerItem.ID != model.currentContainerID {
-					model.currentContainerID = containerItem.ID
-					model.cpuHistory = make([]float64, 0)
-					cmds = append(cmds, func() tea.Msg {
-						containerInfo, err := context.GetClient().InspectContainer(containerItem.ID)
-						return MsgContainerInspection{ID: containerItem.ID, Container: containerInfo, Err: err}
-					})
-				}
+			if selectedItem.ID != model.currentContainerID {
+				model.currentContainerID = selectedItem.ID
+				model.cpuHistory = make([]float64, 0)
+
+				// Capture ID for closure
+				id := selectedItem.ID
+				cmds = append(cmds, func() tea.Msg {
+					containerInfo, err := context.GetClient().InspectContainer(id)
+					return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
+				})
 			}
 		}
 
 	case viewOverlay:
-		// Update SplitView for background resize but don't process keys
+		// Update ResourceView for background resize but don't process keys
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
-			updatedSplitView, splitCmd := model.splitView.Update(msg)
-			model.splitView = updatedSplitView
-			cmds = append(cmds, splitCmd)
+			updatedView, viewCmd := model.ResourceView.Update(msg)
+			model.ResourceView = updatedView
+			cmds = append(cmds, viewCmd)
 		}
 
 		if model.foreground != nil {
@@ -352,11 +342,11 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				updated, cmd := fg.Update(msg)
 				model.foreground = updated
 				cmds = append(cmds, cmd)
-			case shared.SmartDialog:
+			case components.SmartDialog:
 				updated, cmd := fg.Update(msg)
 				model.foreground = updated
 				cmds = append(cmds, cmd)
-			case shared.FormDialog:
+			case components.FormDialog:
 				updated, cmd := fg.Update(msg)
 				model.foreground = updated
 				cmds = append(cmds, cmd)
@@ -391,10 +381,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MsgContainerInspection:
 		if msg.ID == model.currentContainerID && msg.Err == nil {
 			model.inspection = msg.Container
-			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width())
-				pane.SetContent(inspectionContent)
-			}
+			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.ResourceView.GetContentWidth())
+			model.ResourceView.SetContent(inspectionContent)
 		}
 
 	case MsgContainerStats:
@@ -404,25 +392,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(model.cpuHistory) > 30 {
 				model.cpuHistory = model.cpuHistory[1:]
 			}
-			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
-				inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, pane.Viewport.Width())
-				pane.SetContent(inspectionContent)
-			}
-		}
-
-	// Forward spinner ticks to list items
-	case spinner.TickMsg:
-		var batchCmds []tea.Cmd
-		for index, item := range model.splitView.List.Items() {
-			if container, ok := item.(ContainerItem); ok && container.isWorking {
-				var cmd tea.Cmd
-				container.spinner, cmd = container.spinner.Update(msg)
-				model.splitView.List.SetItem(index, container)
-				batchCmds = append(batchCmds, cmd)
-			}
-		}
-		if len(batchCmds) > 0 {
-			cmds = append(cmds, tea.Batch(batchCmds...))
+			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.ResourceView.GetContentWidth())
+			model.ResourceView.SetContent(inspectionContent)
 		}
 	}
 
@@ -438,21 +409,21 @@ func (model Model) View() tea.View {
 			fgView = fg.View()
 		case *ContainerLogs:
 			fgView = fg.View()
-		case shared.SmartDialog:
+		case components.SmartDialog:
 			fgView = fg.View()
-		case shared.FormDialog:
+		case components.FormDialog:
 			fgView = fg.View()
 		}
 
-		return shared.RenderOverlay(
-			model.splitView.View(),
+		return components.RenderOverlay(
+			model.ResourceView.View(),
 			fgView,
 			model.WindowWidth,
 			model.WindowHeight,
 		)
 	}
 
-	return tea.NewView(model.splitView.View())
+	return tea.NewView(model.ResourceView.View())
 }
 
 func (model *Model) handleStatsTick() []tea.Cmd {
@@ -460,14 +431,14 @@ func (model *Model) handleStatsTick() []tea.Cmd {
 	cmds = append(cmds, tickCmd())
 
 	if model.sessionState == viewMain {
-		selectedItem := model.splitView.List.SelectedItem()
-		if selectedItem != nil {
-			if containerItem, ok := selectedItem.(ContainerItem); ok && containerItem.State == "running" {
-				cmds = append(cmds, func() tea.Msg {
-					containerStats, err := context.GetClient().GetContainerStats(containerItem.ID)
-					return MsgContainerStats{ID: containerItem.ID, Stats: containerStats, Err: err}
-				})
-			}
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && selectedItem.State == "running" {
+			// Capture ID for closure
+			id := selectedItem.ID
+			cmds = append(cmds, func() tea.Msg {
+				containerStats, err := context.GetClient().GetContainerStats(id)
+				return MsgContainerStats{ID: id, Stats: containerStats, Err: err}
+			})
 		}
 	}
 	return cmds
@@ -480,101 +451,81 @@ func (model Model) ShortHelp() []key.Binding {
 		}
 		return nil
 	}
-
-	switch model.splitView.Focus {
-	case shared.FocusList:
-		return model.splitView.List.ShortHelp()
-	case shared.FocusDetail:
-		return []key.Binding{
-			model.detailsKeybindings.Up,
-			model.detailsKeybindings.Down,
-		}
-	}
-
-	return nil
+	return model.ResourceView.ShortHelp()
 }
 
 func (model Model) FullHelp() [][]key.Binding {
 	if model.sessionState == viewOverlay {
 		return nil
 	}
-
-	switch model.splitView.Focus {
-	case shared.FocusList:
-		return model.splitView.List.FullHelp()
-	case shared.FocusDetail:
-		return [][]key.Binding{
-			{
-				model.detailsKeybindings.Up,
-				model.detailsKeybindings.Down,
-				model.detailsKeybindings.Switch,
-			},
-		}
-	}
-	return nil
+	return model.ResourceView.FullHelp()
 }
 
 // Handler Functions (Moved from list.go/handlers.go)
 
 func (model *Model) getSelectedContainerIDs() []string {
-	selectedContainerIDs := make([]string, 0, len(model.selectedContainers.selections))
-	for containerID := range model.selectedContainers.selections {
-		selectedContainerIDs = append(selectedContainerIDs, containerID)
-	}
-	return selectedContainerIDs
-}
-
-func (model *Model) getSelectedContainerIndices() []int {
-	selectedContainerIndices := make([]int, 0, len(model.selectedContainers.selections))
-	for _, index := range model.selectedContainers.selections {
-		selectedContainerIndices = append(selectedContainerIndices, index)
-	}
-	return selectedContainerIndices
+	// Use ResourceView's SelectionManager to get selections
+	return model.ResourceView.GetSelectedIDs()
 }
 
 func (model *Model) setWorkingState(containerIDs []string, working bool) {
-	items := model.splitView.List.Items()
-	for index, item := range items {
-		if container, ok := item.(ContainerItem); ok && slices.Contains(containerIDs, container.ID) {
-			container.isWorking = working
+	items := model.ResourceView.GetItems()
+	var updatedItems []ContainerItem
+
+	for _, item := range items {
+		if slices.Contains(containerIDs, item.ID) {
+			item.isWorking = working
 			if working {
-				container.spinner = newSpinner()
+				item.spinner = newSpinner()
 			}
-			model.splitView.List.SetItem(index, container)
+			updatedItems = append(updatedItems, item)
+		} else {
+			updatedItems = append(updatedItems, item)
+		}
+	}
+
+	// We need to update items in the list.
+	// Since ResourceView doesn't expose partial updates easily yet,
+	// we'll update the whole list or individual items if we can match indices.
+	// However, ResourceView is generic. Let's iterate and update.
+
+	currentItems := model.ResourceView.GetItems()
+	for i, item := range currentItems {
+		if slices.Contains(containerIDs, item.ID) {
+			item.isWorking = working
+			if working {
+				item.spinner = newSpinner()
+			}
+			model.ResourceView.SetItem(i, item)
 		}
 	}
 }
 
 func (model *Model) anySelectedWorking() bool {
-	for containerID := range model.selectedContainers.selections {
-		if item := model.findItemByID(containerID); item != nil && item.isWorking {
-			return true
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	items := model.ResourceView.GetItems()
+
+	for _, item := range items {
+		if slices.Contains(selectedIDs, item.ID) {
+			if item.isWorking {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func (model *Model) findItemByID(containerID string) *ContainerItem {
-	items := model.splitView.List.Items()
-	for _, item := range items {
-		if container, ok := item.(ContainerItem); ok && container.ID == containerID {
-			return &container
-		}
-	}
-	return nil
-}
-
 func (model *Model) handlePauseContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Pause, selectedContainerIDs)
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Pause, selectedIDs)
 	} else {
-		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !selectedItem.isWorking {
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Pause, []string{selectedItem.ID})
 		}
@@ -583,16 +534,16 @@ func (model *Model) handlePauseContainers() tea.Cmd {
 }
 
 func (model *Model) handleUnpauseContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Unpause, selectedContainerIDs)
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Unpause, selectedIDs)
 	} else {
-		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !selectedItem.isWorking {
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Unpause, []string{selectedItem.ID})
 		}
@@ -601,16 +552,16 @@ func (model *Model) handleUnpauseContainers() tea.Cmd {
 }
 
 func (model *Model) handleStartContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Start, selectedContainerIDs)
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Start, selectedIDs)
 	} else {
-		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !selectedItem.isWorking {
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Start, []string{selectedItem.ID})
 		}
@@ -619,16 +570,16 @@ func (model *Model) handleStartContainers() tea.Cmd {
 }
 
 func (model *Model) handleStopContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Stop, selectedContainerIDs)
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Stop, selectedIDs)
 	} else {
-		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !selectedItem.isWorking {
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Stop, []string{selectedItem.ID})
 		}
@@ -637,16 +588,16 @@ func (model *Model) handleStopContainers() tea.Cmd {
 }
 
 func (model *Model) handleRestartContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Restart, selectedContainerIDs)
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Restart, selectedIDs)
 	} else {
-		selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !selectedItem.isWorking {
+		selectedItem := model.ResourceView.GetSelectedItem()
+		if selectedItem != nil && !selectedItem.isWorking {
 			model.setWorkingState([]string{selectedItem.ID}, true)
 			return PerformContainerOperation(Restart, []string{selectedItem.ID})
 		}
@@ -655,28 +606,33 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 }
 
 func (model *Model) handleRemoveContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		selectedContainerIndices := model.getSelectedContainerIndices()
 
 		var requestedContainersToDelete []*ContainerItem
-		items := model.splitView.List.Items()
+		items := model.ResourceView.GetItems()
 
-		for _, index := range selectedContainerIndices {
-			requestedContainer := items[index].(ContainerItem)
-			requestedContainersToDelete = append(requestedContainersToDelete, &requestedContainer)
+		for _, item := range items {
+			if slices.Contains(selectedIDs, item.ID) {
+				// Create a copy to take address safely
+				itm := item
+				requestedContainersToDelete = append(requestedContainersToDelete, &itm)
+			}
 		}
 
 		return func() tea.Msg {
 			return MessageOpenDeleteConfirmationDialog{requestedContainersToDelete}
 		}
 	} else {
-		item, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok && !item.isWorking {
+		item := model.ResourceView.GetSelectedItem()
+		if item != nil && !item.isWorking {
+			// Create a copy to take address safely
+			itm := *item
 			return func() tea.Msg {
-				return MessageOpenDeleteConfirmationDialog{[]*ContainerItem{&item}}
+				return MessageOpenDeleteConfirmationDialog{[]*ContainerItem{&itm}}
 			}
 		}
 	}
@@ -684,8 +640,8 @@ func (model *Model) handleRemoveContainers() tea.Cmd {
 }
 
 func (model *Model) handleShowLogs() tea.Cmd {
-	item, ok := model.splitView.List.SelectedItem().(ContainerItem)
-	if !ok || item.isWorking {
+	item := model.ResourceView.GetSelectedItem()
+	if item == nil || item.isWorking {
 		return nil
 	}
 
@@ -707,8 +663,8 @@ func (model *Model) handleShowLogs() tea.Cmd {
 }
 
 func (model *Model) handleExecShell() tea.Cmd {
-	item, ok := model.splitView.List.SelectedItem().(ContainerItem)
-	if !ok || item.isWorking {
+	item := model.ResourceView.GetSelectedItem()
+	if item == nil || item.isWorking {
 		return nil
 	}
 
@@ -730,13 +686,13 @@ func (model *Model) handleExecShell() tea.Cmd {
 }
 
 func (model *Model) handleConfirmationOfRemoveContainers() tea.Cmd {
-	if len(model.selectedContainers.selections) > 0 {
-		selectedContainerIDs := model.getSelectedContainerIDs()
-		model.setWorkingState(selectedContainerIDs, true)
-		return PerformContainerOperation(Remove, selectedContainerIDs)
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
+		model.setWorkingState(selectedIDs, true)
+		return PerformContainerOperation(Remove, selectedIDs)
 	} else {
-		item, ok := model.splitView.List.SelectedItem().(ContainerItem)
-		if ok {
+		item := model.ResourceView.GetSelectedItem()
+		if item != nil {
 			model.setWorkingState([]string{item.ID}, true)
 			return PerformContainerOperation(Remove, []string{item.ID})
 		}
@@ -745,53 +701,55 @@ func (model *Model) handleConfirmationOfRemoveContainers() tea.Cmd {
 }
 
 func (model *Model) handleToggleSelection() {
-	index := model.splitView.List.Index()
-	selectedItem, ok := model.splitView.List.SelectedItem().(ContainerItem)
-	if ok && !selectedItem.isWorking {
-		isSelected := selectedItem.isSelected
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil && !selectedItem.isWorking {
+		model.ResourceView.ToggleSelection(selectedItem.ID)
 
-		if isSelected {
-			model.selectedContainers.unselectContainerInList(selectedItem.ID)
-		} else {
-			model.selectedContainers.selectContainerInList(selectedItem.ID, index)
-		}
-
-		selectedItem.isSelected = !isSelected
-		model.splitView.List.SetItem(index, selectedItem)
+		// Update the visual state of the item
+		index := model.ResourceView.GetSelectedIndex()
+		selectedItem.isSelected = !selectedItem.isSelected
+		model.ResourceView.SetItem(index, *selectedItem)
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
-	allNonWorkingAlreadySelected := true
-	items := model.splitView.List.Items()
+	// First check if we need to select all or deselect all
+	// Logic: If any non-working item is unselected, select all. Otherwise deselect all.
 
+	items := model.ResourceView.GetItems()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+
+	shouldSelectAll := false
 	for _, item := range items {
-		if container, ok := item.(ContainerItem); ok && !container.isWorking {
-			if _, selected := model.selectedContainers.selections[container.ID]; !selected {
-				allNonWorkingAlreadySelected = false
+		if !item.isWorking {
+			if !slices.Contains(selectedIDs, item.ID) {
+				shouldSelectAll = true
 				break
 			}
 		}
 	}
 
-	if allNonWorkingAlreadySelected {
-		model.selectedContainers = newSelectedContainers()
-		for index, item := range model.splitView.List.Items() {
-			container, ok := item.(ContainerItem)
-			if ok {
-				container.isSelected = false
-				model.splitView.List.SetItem(index, container)
+	if shouldSelectAll {
+		// Select all non-working items
+		for i, item := range items {
+			if !item.isWorking {
+				if !slices.Contains(selectedIDs, item.ID) {
+					model.ResourceView.ToggleSelection(item.ID)
+				}
+				// Visual update
+				item.isSelected = true
+				model.ResourceView.SetItem(i, item)
 			}
 		}
 	} else {
-		model.selectedContainers = newSelectedContainers()
-		for index, item := range model.splitView.List.Items() {
-			container, ok := item.(ContainerItem)
-			if ok && !container.isWorking {
-				container.isSelected = true
-				model.splitView.List.SetItem(index, container)
-				model.selectedContainers.selectContainerInList(container.ID, index)
+		// Deselect all
+		for i, item := range items {
+			if slices.Contains(selectedIDs, item.ID) {
+				model.ResourceView.ToggleSelection(item.ID)
 			}
+			// Visual update
+			item.isSelected = false
+			model.ResourceView.SetItem(i, item)
 		}
 	}
 }
@@ -804,22 +762,29 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	}
 
 	if msg.Operation == Remove {
-		items := model.splitView.List.Items()
-		var indicesToRemove []int
-		for index, item := range items {
-			if container, ok := item.(ContainerItem); ok {
-				for _, containerID := range msg.IDs {
-					if container.ID == containerID {
-						indicesToRemove = append([]int{index}, indicesToRemove...)
-						break
-					}
-				}
+		// Remove items from list
+		// Since ResourceView doesn't have RemoveItem by ID easily, we need to find indices.
+		// NOTE: Removing items while iterating or by index requires care as indices shift.
+		// However, standard bubbletea list.Model handles RemoveItem safely if we do it one by one?
+		// Actually, let's refresh the list from source or filter it locally.
+
+		// Ideally we'd just re-fetch, but for instant feedback let's filter the current items.
+		currentItems := model.ResourceView.GetItems()
+		var newItems []ContainerItem
+		for _, item := range currentItems {
+			if !slices.Contains(msg.IDs, item.ID) {
+				newItems = append(newItems, item)
 			}
 		}
-		for _, index := range indicesToRemove {
-			model.splitView.List.RemoveItem(index)
-		}
-		return notifications.ShowSuccess("Container(s) removed successfully")
+
+		// This is a bit of a hack since ResourceView encapsulates the list model.
+		// But ResourceView usually exposes SetItems.
+		// Let's assume ResourceView allows full replacement or we trigger a refresh.
+		// Since ResourceView is generic, we can just trigger a refresh if we had a Reload command.
+		// But here we want to update the local state.
+
+		// Let's assume for now we just trigger a refresh.
+		return model.ResourceView.Refresh()
 	}
 
 	var newState string
@@ -836,18 +801,15 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 		return nil
 	}
 
-	items := model.splitView.List.Items()
-	for index, item := range items {
-		if container, ok := item.(ContainerItem); ok {
-			for _, containerID := range msg.IDs {
-				if container.ID == containerID {
-					container.State = newState
-					model.splitView.List.SetItem(index, container)
-					break
-				}
-			}
+	// Update states locally
+	items := model.ResourceView.GetItems()
+	for i, item := range items {
+		if slices.Contains(msg.IDs, item.ID) {
+			item.State = newState
+			model.ResourceView.SetItem(i, item)
 		}
 	}
+
 	return nil
 }
 

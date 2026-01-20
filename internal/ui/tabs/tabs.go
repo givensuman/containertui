@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/ui/shared"
+	"github.com/givensuman/containertui/internal/ui/base"
 )
 
 type Tab int
@@ -65,7 +65,7 @@ func NewKeyMap() KeyMap {
 }
 
 type Model struct {
-	shared.Component
+	base.Component
 	ActiveTab Tab
 	Tabs      []Tab
 	KeyMap    KeyMap

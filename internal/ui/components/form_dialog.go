@@ -1,4 +1,4 @@
-package shared
+package components
 
 import (
 	"fmt"
@@ -9,6 +9,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/layout"
 )
 
 // FormField represents a single field in a form.
@@ -22,7 +24,7 @@ type FormField struct {
 
 // FormDialog is a modal dialog with multiple text input fields.
 type FormDialog struct {
-	Component
+	base.Component
 	title          string
 	fields         []FormField
 	textInputs     []textinput.Model
@@ -41,7 +43,7 @@ type FormDialog struct {
 // var _ ComponentModel = (*FormDialog)(nil)
 
 // NewFormDialog creates a new form dialog with the specified fields.
-func NewFormDialog(title string, fields []FormField, actionType string, metadata map[string]interface{}) FormDialog {
+func NewFormDialog(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]interface{}) FormDialog {
 	width, height := context.GetWindowSize()
 
 	style := lipgloss.NewStyle().
@@ -50,7 +52,7 @@ func NewFormDialog(title string, fields []FormField, actionType string, metadata
 		BorderForeground(colors.Primary()).
 		Align(lipgloss.Left)
 
-	layoutManager := NewLayoutManager(width, height)
+	layoutManager := layout.NewLayoutManager(width, height)
 	modalDimensions := layoutManager.CalculateModal(style)
 	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
@@ -80,7 +82,7 @@ func NewFormDialog(title string, fields []FormField, actionType string, metadata
 		textInputs:     textInputs,
 		focusIndex:     0,
 		submitLabel:    "Submit",
-		actionType:     actionType,
+		actionType:     action.Type,
 		actionMetadata: metadata,
 		style:          style,
 		width:          width,
@@ -93,7 +95,7 @@ func (dialog *FormDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.width = msg.Width
 	dialog.height = msg.Height
 
-	layoutManager := NewLayoutManager(msg.Width, msg.Height)
+	layoutManager := layout.NewLayoutManager(msg.Width, msg.Height)
 	modalDimensions := layoutManager.CalculateModal(dialog.style)
 	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
@@ -117,7 +119,7 @@ func (dialog FormDialog) Update(msg tea.Msg) (FormDialog, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
-			return dialog, func() tea.Msg { return CloseDialogMessage{} }
+			return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
 
 		case "tab", "down":
 			// Move to next field
@@ -152,8 +154,8 @@ func (dialog FormDialog) Update(msg tea.Msg) (FormDialog, tea.Cmd) {
 			dialog.actionMetadata["values"] = values
 
 			return dialog, func() tea.Msg {
-				return ConfirmationMessage{
-					Action: SmartDialogAction{
+				return base.ConfirmationMessage{
+					Action: base.SmartDialogAction{
 						Type:    dialog.actionType,
 						Payload: dialog.actionMetadata,
 					},

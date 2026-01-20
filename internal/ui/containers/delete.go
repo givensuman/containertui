@@ -7,7 +7,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/shared"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/layout"
 )
 
 type buttonOption int
@@ -29,15 +30,21 @@ func (bo buttonOption) String() string {
 }
 
 type DeleteConfirmation struct {
-	shared.Component
+	base.Component
 	style               lipgloss.Style
 	requestedContainers []*ContainerItem
 	hoveredButtonOption buttonOption
+
+	// Add dimensions locally since base.Component is just a mixin that might not hold state depending on implementation,
+	// but here we are embedding base.Component which has WindowWidth/WindowHeight.
+	// However, to be explicit and safe:
+	WindowWidth  int
+	WindowHeight int
 }
 
 // DeleteConfirmation implements StringViewModel
 // var _ tea.Model = (*DeleteConfirmation)(nil)
-// var _ shared.ComponentModel = (*DeleteConfirmation)(nil)
+// var _ base.ComponentModel = (*DeleteConfirmation)(nil)
 
 func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirmation {
 	width, height := context.GetWindowSize()
@@ -48,7 +55,7 @@ func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirma
 		BorderForeground(colors.Primary()).
 		Align(lipgloss.Center)
 
-	lm := shared.NewLayoutManager(width, height)
+	lm := layout.NewLayoutManager(width, height)
 	dims := lm.CalculateModal(style)
 
 	style = style.Width(dims.Width).Height(dims.Height)
@@ -57,6 +64,8 @@ func newDeleteConfirmation(requestedContainers ...*ContainerItem) DeleteConfirma
 		style:               style,
 		requestedContainers: requestedContainers,
 		hoveredButtonOption: decline,
+		WindowWidth:         width,
+		WindowHeight:        height,
 	}
 }
 
@@ -64,7 +73,7 @@ func (model *DeleteConfirmation) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
 
-	layoutManager := shared.NewLayoutManager(msg.Width, msg.Height)
+	layoutManager := layout.NewLayoutManager(msg.Width, msg.Height)
 	dimensions := layoutManager.CalculateModal(model.style)
 
 	model.style = model.style.Width(dimensions.Width).Height(dimensions.Height)

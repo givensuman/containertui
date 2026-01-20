@@ -1,4 +1,4 @@
-package shared
+package layout
 
 import "charm.land/lipgloss/v2"
 

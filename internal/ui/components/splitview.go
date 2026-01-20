@@ -1,4 +1,4 @@
-package shared
+package components
 
 import (
 	"charm.land/bubbles/v2/list"
@@ -6,6 +6,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/layout"
+	"github.com/givensuman/containertui/internal/ui/styles"
 )
 
 // FocusState defines which pane is currently active.
@@ -92,17 +95,17 @@ func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 		if keyMsg.String() == "tab" && s.List.FilterState() != list.Filtering {
 			if s.Focus == FocusList {
 				s.Focus = FocusDetail
-				cmds = append(cmds, func() tea.Msg { return MsgFocusChanged{IsDetailsFocused: true} })
+				cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
 			} else {
 				s.Focus = FocusList
-				cmds = append(cmds, func() tea.Msg { return MsgFocusChanged{IsDetailsFocused: false} })
+				cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: false} })
 			}
 			return s, tea.Batch(cmds...)
 		}
 	}
 
 	// Handle Focus Changes
-	if _, ok := msg.(MsgFocusChanged); ok {
+	if _, ok := msg.(base.MsgFocusChanged); ok {
 		// Note: list.Model does not export Delegate().
 		// We cannot get the current delegate to cast it.
 		// However, we can construct new delegates since we know the types we use in this app.
@@ -115,11 +118,11 @@ func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 			base := list.NewDefaultDelegate()
 			// We might lose specific settings like ShowDescription if they were changed dynamically.
 			// But for this app, they are usually static per view.
-			s.List.SetDelegate(UnfocusDelegateStyles(base))
+			s.List.SetDelegate(styles.UnfocusDelegateStyles(base))
 		} else {
 			// Refocus
 			base := list.NewDefaultDelegate()
-			s.List.SetDelegate(ChangeDelegateStyles(base))
+			s.List.SetDelegate(styles.ChangeDelegateStyles(base))
 		}
 	}
 
@@ -163,7 +166,7 @@ func (s *SplitView) SetSize(width, height int) {
 	s.height = height
 
 	// Use existing LayoutManager
-	layoutManager := NewLayoutManager(width, height)
+	layoutManager := layout.NewLayoutManager(width, height)
 	masterLayout, detailLayout := layoutManager.CalculateMasterDetail(s.style)
 
 	s.style = s.style.Width(masterLayout.Width).Height(masterLayout.Height)
@@ -218,7 +221,7 @@ func (s *SplitView) SetSize(width, height int) {
 }
 
 func (s SplitView) View() string {
-	layoutManager := NewLayoutManager(s.width, s.height)
+	layoutManager := layout.NewLayoutManager(s.width, s.height)
 	_, detailLayout := layoutManager.CalculateMasterDetail(s.style)
 
 	// 1. Render List
