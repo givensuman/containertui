@@ -11,3 +11,4 @@ Support other clients.
 -- Other
 Reconsider usage of nerd fonts.
 Expand configuration options.
+Unify app layout; containers package in particular, also shared package.

@@ -1,21 +1,23 @@
-package shared
+package components
 
 import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/layout"
 )
 
 // DialogButton defines a button in the dialog
 type DialogButton struct {
 	Label  string
-	Action SmartDialogAction // Empty action means Cancel/Close
-	IsSafe bool              // True = Primary/Safe color, False = Danger/Red
+	Action base.SmartDialogAction // Empty action means Cancel/Close
+	IsSafe bool                   // True = Primary/Safe color, False = Danger/Red
 }
 
 type SmartDialog struct {
-	Component
+	base.Component
 	style          lipgloss.Style
 	message        string
 	buttons        []DialogButton
@@ -38,7 +40,7 @@ func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 		BorderForeground(colors.Primary()).
 		Align(lipgloss.Center)
 
-	layoutManager := NewLayoutManager(width, height)
+	layoutManager := layout.NewLayoutManager(width, height)
 	modalDimensions := layoutManager.CalculateModal(style)
 	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
@@ -60,7 +62,7 @@ func (dialog *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.width = msg.Width
 	dialog.height = msg.Height
 
-	layoutManager := NewLayoutManager(msg.Width, msg.Height)
+	layoutManager := layout.NewLayoutManager(msg.Width, msg.Height)
 	modalDimensions := layoutManager.CalculateModal(dialog.style)
 	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 }
@@ -77,7 +79,7 @@ func (dialog SmartDialog) Update(msg tea.Msg) (SmartDialog, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
-			return dialog, func() tea.Msg { return CloseDialogMessage{} }
+			return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
 
 		case "tab", "right", "l":
 			dialog.selectedButton = (dialog.selectedButton + 1) % len(dialog.buttons)
@@ -88,9 +90,9 @@ func (dialog SmartDialog) Update(msg tea.Msg) (SmartDialog, tea.Cmd) {
 		case "enter":
 			selectedButton := dialog.buttons[dialog.selectedButton]
 			if selectedButton.Action.Type == "" {
-				return dialog, func() tea.Msg { return CloseDialogMessage{} }
+				return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
 			}
-			return dialog, func() tea.Msg { return ConfirmationMessage{Action: selectedButton.Action} }
+			return dialog, func() tea.Msg { return base.ConfirmationMessage{Action: selectedButton.Action} }
 		}
 	}
 

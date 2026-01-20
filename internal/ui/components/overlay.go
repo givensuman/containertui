@@ -1,5 +1,5 @@
 // Package shared defines shared UI logic
-package shared
+package components
 
 import (
 	tea "charm.land/bubbletea/v2"
@@ -46,4 +46,26 @@ func RenderOverlay(background, foreground string, width, height int) tea.View {
 	canvas := lipgloss.NewCanvas(bgLayer, fgLayer)
 
 	return tea.NewView(canvas.Render())
+}
+
+// RenderOverlayString is the same as RenderOverlay but returns a string.
+func RenderOverlayString(background, foreground string, width, height int) string {
+	// Create background layer that fills the entire area
+	bgLayer := lipgloss.NewLayer(background).Width(width).Height(height)
+
+	// Create foreground layer centered
+	fgLayer := lipgloss.NewLayer(foreground)
+
+	// Center the foreground layer
+	fgWidth := fgLayer.GetWidth()
+	fgHeight := fgLayer.GetHeight()
+	centerX := (width - fgWidth) / 2
+	centerY := (height - fgHeight) / 2
+
+	fgLayer = fgLayer.X(centerX).Y(centerY).Z(1) // Z=1 to render on top
+
+	// Compose layers into a canvas
+	canvas := lipgloss.NewCanvas(bgLayer, fgLayer)
+
+	return canvas.Render()
 }

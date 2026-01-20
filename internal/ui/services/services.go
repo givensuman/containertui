@@ -13,7 +13,9 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/shared"
+	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/components"
+	"github.com/givensuman/containertui/internal/ui/styles"
 )
 
 type sessionState int
@@ -62,8 +64,8 @@ func newKeybindings() *keybindings {
 }
 
 type Model struct {
-	shared.Component
-	splitView          shared.SplitView
+	base.Component
+	splitView          components.SplitView
 	keybindings        *keybindings
 	sessionState       sessionState
 	currentServiceName string
@@ -71,8 +73,8 @@ type Model struct {
 }
 
 var (
-	_ tea.Model             = (*Model)(nil)
-	_ shared.ComponentModel = (*Model)(nil)
+	_ tea.Model           = (*Model)(nil)
+	_ base.ComponentModel = (*Model)(nil)
 )
 
 func New() Model {
@@ -88,7 +90,7 @@ func New() Model {
 	width, height := context.GetWindowSize()
 
 	delegate := list.NewDefaultDelegate()
-	delegate = shared.ChangeDelegateStyles(delegate)
+	delegate = styles.ChangeDelegateStyles(delegate)
 	listModel := list.New(serviceItems, delegate, width, height)
 
 	listModel.SetShowHelp(false)
@@ -107,7 +109,7 @@ func New() Model {
 		}
 	}
 
-	splitView := shared.NewSplitView(listModel, shared.NewViewportPane())
+	splitView := components.NewSplitView(listModel, components.NewViewportPane())
 
 	model := Model{
 		splitView:          splitView,
@@ -162,7 +164,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, splitCmd)
 
 	// Handle keybindings when list is focused
-	if model.splitView.Focus == shared.FocusList {
+	if model.splitView.Focus == components.FocusList {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			if model.splitView.List.FilterState() != list.Filtering {
 				if keyMsg.String() == "q" {
@@ -188,7 +190,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// No selection
 		if model.currentServiceName != "" {
 			model.currentServiceName = ""
-			if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+			if pane, ok := model.splitView.Detail.(*components.ViewportPane); ok {
 				pane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
 			}
 		}
@@ -227,7 +229,7 @@ func (model *Model) updateDetails(service client.Service) {
 	builder.WriteString(sectionHeader.Render("Compose Configuration") + "\n")
 	builder.WriteString(content)
 
-	if pane, ok := model.splitView.Detail.(*shared.ViewportPane); ok {
+	if pane, ok := model.splitView.Detail.(*components.ViewportPane); ok {
 		pane.SetContent(builder.String())
 	}
 }
@@ -238,9 +240,9 @@ func (model Model) View() tea.View {
 
 func (model Model) ShortHelp() []key.Binding {
 	switch model.splitView.Focus {
-	case shared.FocusList:
+	case components.FocusList:
 		return model.splitView.List.ShortHelp()
-	case shared.FocusDetail:
+	case components.FocusDetail:
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -252,9 +254,9 @@ func (model Model) ShortHelp() []key.Binding {
 
 func (model Model) FullHelp() [][]key.Binding {
 	switch model.splitView.Focus {
-	case shared.FocusList:
+	case components.FocusList:
 		return model.splitView.List.FullHelp()
-	case shared.FocusDetail:
+	case components.FocusDetail:
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

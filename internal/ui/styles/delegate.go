@@ -1,4 +1,4 @@
-package shared
+package styles
 
 import (
 	"charm.land/bubbles/v2/list"

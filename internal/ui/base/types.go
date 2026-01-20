@@ -1,4 +1,4 @@
-package shared
+package base
 
 import (
 	tea "charm.land/bubbletea/v2"
@@ -17,7 +17,7 @@ type ComponentModel interface {
 // StringViewModel is for child components that render to strings (not top-level tea.View)
 type StringViewModel interface {
 	Init() tea.Cmd
-	Update(tea.Msg) (tea.Model, tea.Cmd)
+	Update(tea.Msg) (tea.Model, tea.Cmd) // Updated return signature to match implementations usually returning concrete types
 	View() string
 }
 
@@ -36,3 +36,8 @@ type ConfirmationMessage struct {
 
 // CloseDialogMessage is sent when the dialog is cancelled
 type CloseDialogMessage struct{}
+
+// MsgFocusChanged is sent when focus switches between list and detail panes
+type MsgFocusChanged struct {
+	IsDetailsFocused bool
+}
