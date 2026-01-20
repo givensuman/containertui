@@ -72,6 +72,11 @@ type SplitView struct {
 	height int
 
 	style lipgloss.Style
+
+	// Store delegates to preserve custom UpdateFunc and other settings
+	focusedDelegate    list.DefaultDelegate
+	unfocusedDelegate  list.DefaultDelegate
+	hasCachedDelegates bool
 }
 
 func NewSplitView(list list.Model, detail Pane) SplitView {
@@ -81,6 +86,16 @@ func NewSplitView(list list.Model, detail Pane) SplitView {
 		Focus:  FocusList,
 		style:  lipgloss.NewStyle(), // Base style, will be updated on resize
 	}
+}
+
+// SetDelegates stores the focused and unfocused versions of a delegate
+// This should be called after initializing the list with a custom delegate
+func (s *SplitView) SetDelegates(baseDelegate list.DefaultDelegate) {
+	s.focusedDelegate = styles.ChangeDelegateStyles(baseDelegate)
+	s.unfocusedDelegate = styles.UnfocusDelegateStyles(baseDelegate)
+	s.hasCachedDelegates = true
+	// Apply focused delegate initially
+	s.List.SetDelegate(s.focusedDelegate)
 }
 
 func (s SplitView) Init() tea.Cmd {
@@ -106,23 +121,25 @@ func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 
 	// Handle Focus Changes
 	if _, ok := msg.(base.MsgFocusChanged); ok {
-		// Note: list.Model does not export Delegate().
-		// We cannot get the current delegate to cast it.
-		// However, we can construct new delegates since we know the types we use in this app.
-		// We assume the caller initializes the List with a DefaultDelegate.
-
+		// Use stored delegates if available, otherwise fall back to creating new ones
 		if s.Focus == FocusDetail {
-			// We need to construct a base delegate and unfocus it.
-			// Since we can't read the existing one, we create a new default and apply unfocused styles.
-			// This assumes standard behavior.
-			base := list.NewDefaultDelegate()
-			// We might lose specific settings like ShowDescription if they were changed dynamically.
-			// But for this app, they are usually static per view.
-			s.List.SetDelegate(styles.UnfocusDelegateStyles(base))
+			if s.hasCachedDelegates {
+				// We have a stored unfocused delegate
+				s.List.SetDelegate(s.unfocusedDelegate)
+			} else {
+				// Fallback: create new delegate and apply unfocused styles
+				base := list.NewDefaultDelegate()
+				s.List.SetDelegate(styles.UnfocusDelegateStyles(base))
+			}
 		} else {
-			// Refocus
-			base := list.NewDefaultDelegate()
-			s.List.SetDelegate(styles.ChangeDelegateStyles(base))
+			if s.hasCachedDelegates {
+				// We have a stored focused delegate
+				s.List.SetDelegate(s.focusedDelegate)
+			} else {
+				// Fallback: create new delegate and apply focused styles
+				base := list.NewDefaultDelegate()
+				s.List.SetDelegate(styles.ChangeDelegateStyles(base))
+			}
 		}
 	}
 
@@ -177,36 +194,7 @@ func (s *SplitView) SetSize(width, height int) {
 	s.List.SetHeight(masterLayout.ContentHeight)
 
 	// Resize Detail Pane
-	// We calculate the inner size available for the pane
-	// The detail view usually has a border.
-	// We need to account for that border in the Pane size or the container.
-	// In the original code:
-	// detailStyle := lipgloss.NewStyle().Width(detailLayout.Width - 2).Height(detailLayout.Height).Border(...).Padding(1)
-	// viewportWidth := detailLayout.Width - 4 (2 for border, 2 for padding)
-
-	// To keep SplitView generic, we will let the Pane handle its own internal sizing,
-	// BUT we must determine if SplitView renders the border or the Pane does.
-	//
-	// Strategy: SplitView renders the layout structure (two side-by-side blocks).
-	// It passes the explicit dimensions to the children.
-	//
-	// However, the "Focus Border" (blue when active) was part of the original renderMainView logic.
-	// If we move that into SplitView, SplitView needs to know about borders.
-
-	// Let's have SplitView calculate the "Container" size for the right side.
-	// The Pane receives the size MINUS the border/padding that SplitView draws.
-	// SplitView will draw the border to indicate focus.
-
-	// Original code:
-	// detailStyle... Width(detailLayout.Width - 2).Height(detailLayout.Height)... Padding(1)
-	// viewportWidth := detailLayout.Width - 4
-	// viewportHeight := detailLayout.Height - 2
-
-	// We'll mimic this:
-	// The "Container" for the detail view is (W-2, H).
-	// It has Padding(1), effectively reducing content area by another 2 in width and 2 in height.
-	// So content area is (W-4, H-2).
-
+	// The detail view has a border (2) and padding (2)
 	contentW := detailLayout.Width - 4
 	contentH := detailLayout.Height - 2
 

@@ -78,9 +78,9 @@ func (rv *ResourceView[ID, Item]) Init() tea.Cmd {
 	return nil
 }
 
-// SetDelegate sets the list delegate.
+// SetDelegate sets the list delegate and stores focused/unfocused versions.
 func (rv *ResourceView[ID, Item]) SetDelegate(delegate list.DefaultDelegate) {
-	rv.SplitView.List.SetDelegate(delegate)
+	rv.SplitView.SetDelegates(delegate)
 }
 
 // Refresh reloads the items using the LoadItems callback.

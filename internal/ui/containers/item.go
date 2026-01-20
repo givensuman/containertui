@@ -11,7 +11,6 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/styles"
 )
 
 type ContainerItem struct {
@@ -60,7 +59,6 @@ func (containerItem ContainerItem) getTitleOrnament() string {
 
 func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
-	delegate = styles.ChangeDelegateStyles(delegate)
 
 	delegate.UpdateFunc = func(msg tea.Msg, model *list.Model) tea.Cmd {
 		if _, ok := msg.(spinner.TickMsg); ok {

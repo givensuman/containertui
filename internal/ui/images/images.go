@@ -392,7 +392,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
-				return model, nil // Handled by parent
+				return model, tea.Batch(cmds...) // Handled by parent
 
 			case key.Matches(msg, model.keybindings.toggleSelection):
 				model.handleToggleSelection()
