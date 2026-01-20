@@ -24,6 +24,7 @@ import (
 type Model struct {
 	width              int
 	height             int
+	previousTab        tabs.Tab
 	tabsModel          tabs.Model
 	containersModel    containers.Model
 	imagesModel        images.Model
@@ -50,6 +51,7 @@ func NewModel() Model {
 	return Model{
 		width:              width,
 		height:             height,
+		previousTab:        tabs.Containers,
 		tabsModel:          tabsModel,
 		containersModel:    containersModel,
 		imagesModel:        imagesModel,
@@ -139,6 +141,29 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updatedNotifications, notificationsCmd := model.notificationsModel.Update(msg)
 	model.notificationsModel = updatedNotifications.(notifications.Model)
 	cmds = append(cmds, notificationsCmd)
+
+	// Detect tab changes and trigger update on newly active tab
+	if model.tabsModel.ActiveTab != model.previousTab {
+		model.previousTab = model.tabsModel.ActiveTab
+
+		// Send a window size message to trigger update on the newly active tab
+		// This ensures updateDetailContent() gets called
+		dummyMsg := tea.WindowSizeMsg{Width: model.width, Height: model.height - 4}
+		switch model.tabsModel.ActiveTab {
+		case tabs.Images:
+			var imagesCmd tea.Cmd
+			model.imagesModel, imagesCmd = model.imagesModel.Update(dummyMsg)
+			cmds = append(cmds, imagesCmd)
+		case tabs.Networks:
+			var networksCmd tea.Cmd
+			model.networksModel, networksCmd = model.networksModel.Update(dummyMsg)
+			cmds = append(cmds, networksCmd)
+		case tabs.Volumes:
+			var volumesCmd tea.Cmd
+			model.volumesModel, volumesCmd = model.volumesModel.Update(dummyMsg)
+			cmds = append(cmds, volumesCmd)
+		}
+	}
 
 	switch model.tabsModel.ActiveTab {
 	case tabs.Containers:

@@ -2,23 +2,20 @@
 package containers
 
 import (
-	"fmt"
 	"os/exec"
 	"slices"
-	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
-	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/components"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
-	"github.com/guptarohit/asciigraph"
 )
 
 type sessionState int
@@ -28,16 +25,6 @@ const (
 	viewOverlay
 )
 
-// MsgStatsTick is sent to trigger a stats refresh.
-type MsgStatsTick time.Time
-
-// MsgContainerStats contains the stats for a container.
-type MsgContainerStats struct {
-	ID    string
-	Stats client.ContainerStats
-	Err   error
-}
-
 // MsgContainerInspection contains the inspection data for a container.
 type MsgContainerInspection struct {
 	ID        string
@@ -45,10 +32,15 @@ type MsgContainerInspection struct {
 	Err       error
 }
 
+// MsgRestoreScroll is sent to restore scroll position after content is set
+type MsgRestoreScroll struct{}
+
 type detailsKeybindings struct {
-	Up     key.Binding
-	Down   key.Binding
-	Switch key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Switch     key.Binding
+	ToggleJSON key.Binding
+	CopyOutput key.Binding
 }
 
 func newDetailsKeybindings() detailsKeybindings {
@@ -64,6 +56,14 @@ func newDetailsKeybindings() detailsKeybindings {
 		Switch: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "switch focus"),
+		),
+		ToggleJSON: key.NewBinding(
+			key.WithKeys("J"),
+			key.WithHelp("J", "toggle JSON/YAML"),
+		),
+		CopyOutput: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy to clipboard"),
 		),
 	}
 }
@@ -140,11 +140,14 @@ type Model struct {
 	foreground interface{} // Can be DeleteConfirmation, *ContainerLogs, or FormDialog
 
 	currentContainerID string
-	cpuHistory         []float64
-	lastStats          client.ContainerStats
-
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
+
+	// Track scroll position per container ID
+	scrollPositions map[string]int
+
+	// Track current output format (can toggle with 'J')
+	currentFormat string
 
 	WindowWidth  int
 	WindowHeight int
@@ -199,8 +202,9 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
 		sessionState:       viewMain,
-		cpuHistory:         make([]float64, 0),
 		detailsKeybindings: newDetailsKeybindings(),
+		scrollPositions:    make(map[string]int),
+		currentFormat:      "", // Empty means use config default
 	}
 
 	// Add custom keybindings to help
@@ -218,12 +222,6 @@ func New() Model {
 	}
 
 	return model
-}
-
-func tickCmd() tea.Cmd {
-	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
-		return MsgStatsTick(t)
-	})
 }
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
@@ -245,10 +243,7 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 }
 
 func (model Model) Init() tea.Cmd {
-	return tea.Batch(
-		model.ResourceView.Init(),
-		tickCmd(),
-	)
+	return model.ResourceView.Init()
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -303,12 +298,31 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
+		// Handle keybindings when detail pane is focused
+		if !model.ResourceView.IsListFocused() {
+			switch msg := msg.(type) {
+			case tea.KeyPressMsg:
+				switch {
+				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+					cmd := model.handleToggleFormat()
+					cmds = append(cmds, cmd)
+				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+					cmd := model.handleCopyToClipboard()
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				}
+			}
+		}
+
 		// Update Detail Content if selection changes
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil {
 			if selectedItem.ID != model.currentContainerID {
+				// Save scroll position of previous container
+				model.saveScrollPosition()
+
 				model.currentContainerID = selectedItem.ID
-				model.cpuHistory = make([]float64, 0)
 
 				// Capture ID for closure
 				id := selectedItem.ID
@@ -371,26 +385,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-	case MsgStatsTick:
-		cmds = append(cmds, model.handleStatsTick()...)
-
 	case MsgContainerInspection:
 		if msg.ID == model.currentContainerID && msg.Err == nil {
 			model.inspection = msg.Container
-			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.ResourceView.GetContentWidth())
-			model.ResourceView.SetContent(inspectionContent)
+			model.refreshInspectionContent()
+			// Send a message to restore scroll position on next update
+			cmds = append(cmds, func() tea.Msg { return MsgRestoreScroll{} })
 		}
 
-	case MsgContainerStats:
-		if msg.ID == model.currentContainerID && msg.Err == nil {
-			model.lastStats = msg.Stats
-			model.cpuHistory = append(model.cpuHistory, msg.Stats.CPUPercent)
-			if len(model.cpuHistory) > 30 {
-				model.cpuHistory = model.cpuHistory[1:]
-			}
-			inspectionContent := formatInspection(model.inspection, model.lastStats, model.cpuHistory, model.ResourceView.GetContentWidth())
-			model.ResourceView.SetContent(inspectionContent)
-		}
+	case MsgRestoreScroll:
+		// Restore scroll position after viewport has processed content
+		model.restoreScrollPosition()
 	}
 
 	return model, tea.Batch(cmds...)
@@ -422,24 +427,6 @@ func (model Model) View() string {
 	return model.ResourceView.View()
 }
 
-func (model *Model) handleStatsTick() []tea.Cmd {
-	var cmds []tea.Cmd
-	cmds = append(cmds, tickCmd())
-
-	if model.sessionState == viewMain {
-		selectedItem := model.ResourceView.GetSelectedItem()
-		if selectedItem != nil && selectedItem.State == "running" {
-			// Capture ID for closure
-			id := selectedItem.ID
-			cmds = append(cmds, func() tea.Msg {
-				containerStats, err := context.GetClient().GetContainerStats(id)
-				return MsgContainerStats{ID: id, Stats: containerStats, Err: err}
-			})
-		}
-	}
-	return cmds
-}
-
 func (model Model) ShortHelp() []key.Binding {
 	if model.sessionState == viewOverlay {
 		if helpKeyMap, ok := model.foreground.(help.KeyMap); ok {
@@ -447,13 +434,151 @@ func (model Model) ShortHelp() []key.Binding {
 		}
 		return nil
 	}
+
+	// If detail pane is focused, show detail keybindings
+	if !model.ResourceView.IsListFocused() {
+		return []key.Binding{
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
+			model.detailsKeybindings.ToggleJSON,
+			model.detailsKeybindings.CopyOutput,
+			model.detailsKeybindings.Switch,
+		}
+	}
+
 	return model.ResourceView.ShortHelp()
+}
+
+// getViewport returns the viewport from the detail pane if available
+func (model *Model) getViewport() *viewport.Model {
+	if vp, ok := model.ResourceView.SplitView.Detail.(*components.ViewportPane); ok {
+		return &vp.Viewport
+	}
+	return nil
+}
+
+// saveScrollPosition saves the current scroll position for the current container
+func (model *Model) saveScrollPosition() {
+	if model.currentContainerID != "" {
+		if vp := model.getViewport(); vp != nil {
+			model.scrollPositions[model.currentContainerID] = vp.YOffset()
+		}
+	}
+}
+
+// restoreScrollPosition restores the scroll position for the current container
+func (model *Model) restoreScrollPosition() {
+	if model.currentContainerID != "" {
+		if vp := model.getViewport(); vp != nil {
+			if pos, exists := model.scrollPositions[model.currentContainerID]; exists {
+				vp.SetYOffset(pos)
+			} else {
+				vp.SetYOffset(0) // Reset to top for new containers
+			}
+		}
+	}
+}
+
+// refreshInspectionContent regenerates and sets the inspection content
+func (model *Model) refreshInspectionContent() {
+	if model.inspection.ID == "" {
+		return
+	}
+
+	// Determine format to use
+	format := infopanel.GetOutputFormat()
+	if model.currentFormat != "" {
+		if model.currentFormat == "json" {
+			format = infopanel.FormatJSON
+		} else {
+			format = infopanel.FormatYAML
+		}
+	}
+
+	content := builders.BuildContainerPanel(model.inspection, model.ResourceView.GetContentWidth(), false, format)
+	model.ResourceView.SetContent(content)
+
+	// Restore scroll position after content is set
+	// Need to do this on next frame after viewport processes the content
+	model.restoreScrollPosition()
+}
+
+// handleCopyToClipboard copies the current inspection output to clipboard
+func (model *Model) handleCopyToClipboard() tea.Cmd {
+	if model.inspection.ID == "" {
+		return nil
+	}
+
+	// Determine which format to use
+	format := infopanel.GetOutputFormat()
+	if model.currentFormat != "" {
+		if model.currentFormat == "json" {
+			format = infopanel.FormatJSON
+		} else {
+			format = infopanel.FormatYAML
+		}
+	}
+
+	// Marshal the data without syntax highlighting
+	data, err := infopanel.MarshalToFormat(model.inspection, format)
+	if err != nil {
+		return notifications.ShowError(err)
+	}
+
+	// Copy to clipboard
+	err = clipboard.WriteAll(data)
+	if err != nil {
+		return notifications.ShowError(err)
+	}
+
+	return notifications.ShowSuccess("Copied to clipboard")
+}
+
+// handleToggleFormat toggles between JSON and YAML format
+func (model *Model) handleToggleFormat() tea.Cmd {
+	// Determine current effective format
+	currentFormat := model.currentFormat
+	if currentFormat == "" {
+		cfg := context.GetConfig()
+		currentFormat = cfg.InspectionFormat
+		if currentFormat == "" {
+			currentFormat = "yaml"
+		}
+	}
+
+	// Toggle to the opposite format
+	if currentFormat == "json" {
+		model.currentFormat = "yaml"
+	} else {
+		model.currentFormat = "json"
+	}
+
+	// Refresh content with new format
+	model.refreshInspectionContent()
+
+	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
 func (model Model) FullHelp() [][]key.Binding {
 	if model.sessionState == viewOverlay {
 		return nil
 	}
+
+	// If detail pane is focused, show detail keybindings
+	if !model.ResourceView.IsListFocused() {
+		return [][]key.Binding{
+			{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
+			},
+			{
+				model.detailsKeybindings.ToggleJSON,
+				model.detailsKeybindings.CopyOutput,
+			},
+		}
+	}
+
 	return model.ResourceView.FullHelp()
 }
 
@@ -807,77 +932,4 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	}
 
 	return nil
-}
-
-func formatInspection(container types.ContainerJSON, containerStats client.ContainerStats, cpuHistory []float64, viewportWidth int) string {
-	var builder strings.Builder
-
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).MarginBottom(1)
-	builder.WriteString(headerStyle.Render(fmt.Sprintf("%s (%s)", container.Name, container.ID[:12])) + "\n")
-
-	infoStyle := lipgloss.NewStyle().Foreground(colors.Text()).MarginBottom(1)
-	stateColor := colors.Success()
-	if !container.State.Running {
-		stateColor = colors.Muted()
-	}
-	stateString := lipgloss.NewStyle().Foreground(stateColor).Render(container.State.Status)
-
-	builder.WriteString(infoStyle.Render("Image: "+container.Config.Image) + "\n")
-	builder.WriteString(fmt.Sprintf("State: %s\n\n", stateString))
-
-	if container.State.Running && len(cpuHistory) > 0 {
-		graphHeight := 8
-		graphWidth := viewportWidth - 10
-		if graphWidth > 10 {
-			usageGraph := asciigraph.Plot(cpuHistory,
-				asciigraph.Height(graphHeight),
-				asciigraph.Width(graphWidth),
-				asciigraph.Caption("CPU Usage (%)"),
-				asciigraph.SeriesColors(
-					asciigraph.Blue,
-				),
-			)
-			builder.WriteString(usageGraph + "\n\n")
-
-			statsStyle := lipgloss.NewStyle().Foreground(colors.Primary())
-			memUsageMB := containerStats.MemUsage / 1024 / 1024
-			memLimitMB := containerStats.MemLimit / 1024 / 1024
-			builder.WriteString(statsStyle.Render(fmt.Sprintf("CPU: %.2f%% | Mem: %.0fMB / %.0fMB",
-				containerStats.CPUPercent, memUsageMB, memLimitMB)) + "\n\n")
-		}
-	}
-
-	sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).Underline(true).MarginTop(1).MarginBottom(0)
-
-	builder.WriteString(sectionHeader.Render("Configuration") + "\n")
-	builder.WriteString(fmt.Sprintf("Cmd: %v\n", container.Config.Cmd))
-	builder.WriteString(fmt.Sprintf("Entrypoint: %v\n", container.Config.Entrypoint))
-	builder.WriteString(fmt.Sprintf("WorkingDir: %s\n", container.Config.WorkingDir))
-
-	if len(container.Config.Env) > 0 {
-		builder.WriteString("\n" + sectionHeader.Render("Environment Variables") + "\n")
-		for _, envVar := range container.Config.Env {
-			builder.WriteString(envVar + "\n")
-		}
-	}
-
-	if len(container.Mounts) > 0 {
-		builder.WriteString("\n" + sectionHeader.Render("Mounts") + "\n")
-		for _, mount := range container.Mounts {
-			builder.WriteString(fmt.Sprintf("%s -> %s (%s)\n", mount.Source, mount.Destination, mount.Type))
-		}
-	}
-
-	if container.NetworkSettings != nil && len(container.NetworkSettings.Ports) > 0 {
-		builder.WriteString("\n" + sectionHeader.Render("Ports") + "\n")
-		for port, bindings := range container.NetworkSettings.Ports {
-			portBindings := make([]string, 0, len(bindings))
-			for _, portBinding := range bindings {
-				portBindings = append(portBindings, fmt.Sprintf("%s:%s", portBinding.HostIP, portBinding.HostPort))
-			}
-			builder.WriteString(fmt.Sprintf("%s -> %v\n", port, portBindings))
-		}
-	}
-
-	return builder.String()
 }

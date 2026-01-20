@@ -15,6 +15,7 @@ func main() {
 	var noNerdFonts bool
 	var configPath string
 	var colorsFlag []string
+	var jsonFormat bool
 
 	rootCmd := &cobra.Command{
 		Use:   "containertui",
@@ -33,6 +34,10 @@ func main() {
 
 			if noNerdFonts {
 				cfg.NoNerdFonts = true
+			}
+
+			if jsonFormat {
+				cfg.InspectionFormat = "json"
 			}
 
 			if len(colorsFlag) > 0 {
@@ -93,6 +98,7 @@ func main() {
 	rootCmd.Flags().BoolVar(&noNerdFonts, "no-nerd-fonts", false, "disable nerd fonts")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to config file")
 	rootCmd.Flags().StringSliceVar(&colorsFlag, "colors", nil, "color overrides (format: --colors 'primary=#b4befe' --colors 'warning=#f9e2af,success=#a6e3a1')")
+	rootCmd.Flags().BoolVar(&jsonFormat, "json", false, "use JSON format for inspection output")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

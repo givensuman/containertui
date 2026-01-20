@@ -54,7 +54,8 @@ func (v *ViewportPane) View() string {
 }
 
 func (v *ViewportPane) SetSize(w, h int) {
-	v.Viewport = viewport.New(viewport.WithWidth(w), viewport.WithHeight(h))
+	v.Viewport.SetWidth(w)
+	v.Viewport.SetHeight(h)
 }
 
 func (v *ViewportPane) SetContent(s string) {

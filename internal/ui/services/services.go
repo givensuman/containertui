@@ -1,9 +1,7 @@
 package services
 
 import (
-	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -15,6 +13,7 @@ import (
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 )
 
 type sessionState int
@@ -195,37 +194,22 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (model *Model) updateDetails(service client.Service) {
-	content := ""
+	// Use the new panel builder with empty format (will use config default)
+	panelContent := builders.BuildServicePanel(service, 80, false, "")
+
+	// Add compose file content if available
 	if service.ComposeFile != "" {
 		data, err := os.ReadFile(service.ComposeFile)
-		if err != nil {
-			content = fmt.Sprintf("Error reading compose file: %v", err)
-		} else {
-			content = string(data)
+		if err == nil {
+			panelContent += "\n\n"
+			sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).Underline(true).MarginTop(1).MarginBottom(0)
+			panelContent += sectionHeader.Render("Compose File Content") + "\n"
+			panelContent += string(data)
 		}
-	} else {
-		content = "No docker-compose file found for this service."
 	}
-
-	// Add some header info
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).MarginBottom(1)
-	builder := strings.Builder{}
-
-	builder.WriteString(headerStyle.Render(fmt.Sprintf("%s (%d replicas)", service.Name, service.Replicas)) + "\n")
-
-	infoStyle := lipgloss.NewStyle().Foreground(colors.Text()).MarginBottom(1)
-	if service.ComposeFile != "" {
-		builder.WriteString(infoStyle.Render("Compose File: "+service.ComposeFile) + "\n\n")
-	} else {
-		builder.WriteString(infoStyle.Render("No compose file detected") + "\n\n")
-	}
-
-	sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).Underline(true).MarginTop(1).MarginBottom(0)
-	builder.WriteString(sectionHeader.Render("Compose Configuration") + "\n")
-	builder.WriteString(content)
 
 	if pane, ok := model.splitView.Detail.(*components.ViewportPane); ok {
-		pane.SetContent(builder.String())
+		pane.SetContent(panelContent)
 	}
 }
 
