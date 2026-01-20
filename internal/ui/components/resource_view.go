@@ -50,6 +50,7 @@ func NewResourceView[ID comparable, Item list.Item](
 	listModel := list.New([]list.Item{}, delegate, 0, 0)
 	listModel.Title = title
 	listModel.SetShowTitle(false) // We usually handle title outside or via splitview headers if needed
+	listModel.SetShowHelp(false)  // Disable built-in help, we use global help
 
 	// Initialize split view
 	splitView := NewSplitView(listModel, NewViewportPane())

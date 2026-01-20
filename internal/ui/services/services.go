@@ -72,11 +72,6 @@ type Model struct {
 	detailsKeybindings detailsKeybindings
 }
 
-var (
-	_ tea.Model           = (*Model)(nil)
-	_ base.ComponentModel = (*Model)(nil)
-)
-
 func New() Model {
 	services, err := context.GetClient().GetServices()
 	if err != nil {
@@ -137,7 +132,7 @@ func (model Model) Init() tea.Cmd {
 	return tickCmd()
 }
 
-func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -234,8 +229,8 @@ func (model *Model) updateDetails(service client.Service) {
 	}
 }
 
-func (model Model) View() tea.View {
-	return tea.NewView(model.splitView.View())
+func (model Model) View() string {
+	return model.splitView.View()
 }
 
 func (model Model) ShortHelp() []key.Binding {

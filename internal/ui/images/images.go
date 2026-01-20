@@ -197,10 +197,6 @@ type Model struct {
 	keybindings *keybindings
 }
 
-var (
-	_ tea.Model = (*Model)(nil)
-)
-
 func New() Model {
 	imageKeybindings := newKeybindings()
 
@@ -251,7 +247,7 @@ func (model Model) Init() tea.Cmd {
 	return model.ResourceView.Init()
 }
 
-func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 1. Try standard ResourceView updates first (resizing, dialog closing, basic navigation)
 	updatedView, cmd := model.ResourceView.Update(msg)
 	model.ResourceView = updatedView
@@ -482,8 +478,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func (model Model) View() tea.View {
-	return tea.NewView(model.ResourceView.View())
+func (model Model) View() string {
+	return model.ResourceView.View()
 }
 
 func (model *Model) handleToggleSelection() {

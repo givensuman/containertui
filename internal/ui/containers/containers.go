@@ -160,10 +160,6 @@ type Model struct {
 // If base.Component was an interface it would be fine.
 // Since base.Component is a struct, we don't need this check.
 
-var (
-	_ tea.Model = (*Model)(nil)
-)
-
 func New() Model {
 	containerKeybindings := newKeybindings()
 
@@ -255,7 +251,7 @@ func (model Model) Init() tea.Cmd {
 	)
 }
 
-func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch model.sessionState {
@@ -400,7 +396,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func (model Model) View() tea.View {
+func (model Model) View() string {
 	if model.sessionState == viewOverlay && model.foreground != nil {
 		// Type switch to call View on different foreground types
 		var fgView string
@@ -415,7 +411,7 @@ func (model Model) View() tea.View {
 			fgView = fg.View()
 		}
 
-		return components.RenderOverlay(
+		return components.RenderOverlayString(
 			model.ResourceView.View(),
 			fgView,
 			model.WindowWidth,
@@ -423,7 +419,7 @@ func (model Model) View() tea.View {
 		)
 	}
 
-	return tea.NewView(model.ResourceView.View())
+	return model.ResourceView.View()
 }
 
 func (model *Model) handleStatsTick() []tea.Cmd {

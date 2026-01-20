@@ -83,7 +83,7 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch {
@@ -105,7 +105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() tea.View {
+func (m Model) View() string {
 	var tabs []string
 	for _, t := range m.Tabs {
 		if m.ActiveTab == t {
@@ -122,7 +122,7 @@ func (m Model) View() tea.View {
 	gapWidth := maxInt(0, m.WindowWidth-lipgloss.Width(row)-2) // -2 for safety margin
 	gap := strings.Repeat(" ", gapWidth)
 
-	return tea.NewView(lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap))
+	return lipgloss.JoinHorizontal(lipgloss.Top, row, gap)
 }
 
 func maxInt(a, b int) int {

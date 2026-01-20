@@ -2,7 +2,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -75,8 +74,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.height = msg.Height
 		context.SetWindowSize(msg.Width, msg.Height)
 
-		updatedTabs, _ := model.tabsModel.Update(msg)
-		model.tabsModel = updatedTabs.(tabs.Model)
+		model.tabsModel, _ = model.tabsModel.Update(msg)
 
 		contentHeight := msg.Height - 4
 		if contentHeight < 0 {
@@ -88,20 +86,15 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Height: contentHeight,
 		}
 
-		updatedContainers, _ := model.containersModel.Update(contentMsg)
-		model.containersModel = updatedContainers.(containers.Model)
+		model.containersModel, _ = model.containersModel.Update(contentMsg)
 
-		updatedImages, _ := model.imagesModel.Update(contentMsg)
-		model.imagesModel = updatedImages.(images.Model)
+		model.imagesModel, _ = model.imagesModel.Update(contentMsg)
 
-		updatedVolumes, _ := model.volumesModel.Update(contentMsg)
-		model.volumesModel = updatedVolumes.(*volumes.Model)
+		model.volumesModel, _ = model.volumesModel.Update(contentMsg)
 
-		updatedNetworks, _ := model.networksModel.Update(contentMsg)
-		model.networksModel = updatedNetworks.(*networks.Model)
+		model.networksModel, _ = model.networksModel.Update(contentMsg)
 
-		updatedServices, _ := model.servicesModel.Update(contentMsg)
-		model.servicesModel = updatedServices.(services.Model)
+		model.servicesModel, _ = model.servicesModel.Update(contentMsg)
 
 		model.help.Width = msg.Width
 
@@ -122,8 +115,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, tea.Quit
 		}
 
-		updatedTabs, tabsCmd := model.tabsModel.Update(msg)
-		model.tabsModel = updatedTabs.(tabs.Model)
+		var tabsCmd tea.Cmd
+		model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
 		if tabsCmd != nil {
 			cmds = append(cmds, tabsCmd)
 		}
@@ -150,32 +143,32 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch model.tabsModel.ActiveTab {
 	case tabs.Containers:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			updatedContainers, containersCmd := model.containersModel.Update(msg)
-			model.containersModel = updatedContainers.(containers.Model)
+			var containersCmd tea.Cmd
+			model.containersModel, containersCmd = model.containersModel.Update(msg)
 			cmds = append(cmds, containersCmd)
 		}
 	case tabs.Images:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			updatedImages, imagesCmd := model.imagesModel.Update(msg)
-			model.imagesModel = updatedImages.(images.Model)
+			var imagesCmd tea.Cmd
+			model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
 			cmds = append(cmds, imagesCmd)
 		}
 	case tabs.Volumes:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			updatedVolumes, volumesCmd := model.volumesModel.Update(msg)
-			model.volumesModel = updatedVolumes.(*volumes.Model)
+			var volumesCmd tea.Cmd
+			model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
 			cmds = append(cmds, volumesCmd)
 		}
 	case tabs.Networks:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			updatedNetworks, networksCmd := model.networksModel.Update(msg)
-			model.networksModel = updatedNetworks.(*networks.Model)
+			var networksCmd tea.Cmd
+			model.networksModel, networksCmd = model.networksModel.Update(msg)
 			cmds = append(cmds, networksCmd)
 		}
 	case tabs.Services:
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			updatedServices, servicesCmd := model.servicesModel.Update(msg)
-			model.servicesModel = updatedServices.(services.Model)
+			var servicesCmd tea.Cmd
+			model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
 			cmds = append(cmds, servicesCmd)
 		}
 	}
@@ -193,7 +186,16 @@ func (model Model) View() tea.View {
 	// Both tabs and content views return tea.View
 	// We need to extract the string content to join them vertically
 	// For now,  we'll render the tea.View content using fmt.Sprint
-	tabsView := fmt.Sprint(model.tabsModel.View())
+	// tabsView := fmt.Sprint(model.tabsModel.View())
+	// Use explicit rendering if we can, but tabsModel.View() returns tea.View.
+	// We can trust tea.View's stringer for simple views? Or is there a rendering issue?
+	// The user mentions a "{" character. This suggests tea.View struct default string representation is being printed.
+	// tea.View string representation is likely {body...}
+	// We MUST get the string content from the view properly.
+	// Since tea.View (v2) doesn't expose string easily, we might need to change tabs.Model.View to return string.
+	// Let's modify tabs/tabs.go to return string instead of tea.View, similar to ResourceView.
+
+	tabsView := model.tabsModel.View() // Will change signature to string
 
 	// Get the active view
 	var contentViewContent string
@@ -220,15 +222,15 @@ func (model Model) View() tea.View {
 		// Let's use fmt.Sprint(model.X.View()) assuming it implements Stringer or we can rely on it.
 		// IF NOT, we should expose a ViewString() method on submodels.
 		// But let's try this first as tea.View likely implements Stringer.
-		contentViewContent = fmt.Sprint(model.containersModel.View())
+		contentViewContent = model.containersModel.View()
 	case tabs.Images:
-		contentViewContent = fmt.Sprint(model.imagesModel.View())
+		contentViewContent = model.imagesModel.View()
 	case tabs.Volumes:
-		contentViewContent = fmt.Sprint(model.volumesModel.View())
+		contentViewContent = model.volumesModel.View()
 	case tabs.Networks:
-		contentViewContent = fmt.Sprint(model.networksModel.View())
+		contentViewContent = model.networksModel.View()
 	case tabs.Services:
-		contentViewContent = fmt.Sprint(model.servicesModel.View())
+		contentViewContent = model.servicesModel.View()
 	}
 
 	contentViewStr := contentViewContent
