@@ -35,10 +35,6 @@ func LoadFromFile(path string) (*Config, error) {
 	}
 
 	// Clean the path to prevent directory traversal
-	// Note: This is a user-supplied configuration path, but we still clean it for safety.
-	// The linter warning (G304) is about potential file inclusion via variable.
-	// Since this is intended to read a user-specified config file, we accept the path
-	// but clean it.
 	cleanPath := filepath.Clean(path)
 
 	file, err := os.Open(cleanPath)
@@ -46,6 +42,7 @@ func LoadFromFile(path string) (*Config, error) {
 		if os.IsNotExist(err) {
 			return DefaultConfig(), nil
 		}
+
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
 	defer func() {
@@ -70,6 +67,7 @@ func ConfigDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get user config dir: %w", err)
 	}
+
 	return filepath.Join(configDir, "containertui"), nil
 }
 
@@ -79,5 +77,6 @@ func ConfigFilePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return filepath.Join(dir, "config.yaml"), nil
 }

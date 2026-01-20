@@ -19,6 +19,7 @@ install:
 # Run the program
 run args="":
     #!/bin/bash
+    DEBUG=true
     go run ./cmd {{ args }}
 
 # Run program tests

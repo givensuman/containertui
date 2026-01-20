@@ -166,6 +166,7 @@ type helpProvider interface {
 }
 
 func (model Model) View() tea.View {
+	var view tea.View
 	// Both tabs and content views return tea.View
 	// We need to extract the string content to join them vertically
 	// For now,  we'll render the tea.View content using fmt.Sprint
@@ -211,7 +212,10 @@ func (model Model) View() tea.View {
 	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentViewStr)
 
 	if helpView == "" {
-		return tea.NewView(fullView)
+		view = tea.NewView(fullView)
+		view.AltScreen = true
+
+		return view
 	}
 
 	helpStyle := lipgloss.NewStyle().Width(model.width)
@@ -234,17 +238,20 @@ func (model Model) View() tea.View {
 		}
 
 		cutPoint := model.height - renderedHelpHeight
-		if cutPoint < 0 {
-			cutPoint = 0
-		}
-		if cutPoint > len(fullLines) {
-			cutPoint = len(fullLines)
-		}
+		cutPoint = max(cutPoint, 0)
+		cutPoint = min(cutPoint, len(fullLines))
 		topLines := fullLines[:cutPoint]
-		return tea.NewView(strings.Join(append(topLines, renderedHelpLines...), "\n"))
+
+		view = tea.NewView(strings.Join(append(topLines, renderedHelpLines...), "\n"))
+		view.AltScreen = true
+
+		return view
 	}
 
-	return tea.NewView(fullView)
+	view = tea.NewView(fullView)
+	view.AltScreen = true
+
+	return view
 }
 
 func Start() error {
