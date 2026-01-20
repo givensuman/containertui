@@ -271,7 +271,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				// Don't intercept global navigation keys
 				if key.Matches(msg, model.keybindings.switchTab) {
-					return model, nil
+					return model, tea.Batch(cmds...)
 				}
 
 				switch {

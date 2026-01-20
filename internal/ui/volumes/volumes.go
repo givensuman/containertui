@@ -127,14 +127,71 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
-				return model, nil // Handled by parent
+				return model, tea.Batch(cmds...) // Handled by parent
 
 			case key.Matches(msg, model.keybindings.toggleSelection):
-				model.ResourceView.HandleToggleSelection()
+				selectedItem := model.ResourceView.GetSelectedItem()
+				if selectedItem != nil {
+					model.ResourceView.ToggleSelection(selectedItem.Volume.Name)
+
+					// Update the visual state of the item
+					index := model.ResourceView.GetSelectedIndex()
+					selectedItem.isSelected = !selectedItem.isSelected
+					model.ResourceView.SetItem(index, *selectedItem)
+				}
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				model.ResourceView.HandleToggleAll()
+				// Check if we need to select all or deselect all
+				items := model.ResourceView.GetItems()
+				selectedIDs := model.ResourceView.GetSelectedIDs()
+
+				shouldSelectAll := false
+				for _, item := range items {
+					found := false
+					for _, id := range selectedIDs {
+						if id == item.Volume.Name {
+							found = true
+							break
+						}
+					}
+					if !found {
+						shouldSelectAll = true
+						break
+					}
+				}
+
+				if shouldSelectAll {
+					// Select all
+					for i, item := range items {
+						found := false
+						for _, id := range selectedIDs {
+							if id == item.Volume.Name {
+								found = true
+								break
+							}
+						}
+						if !found {
+							model.ResourceView.ToggleSelection(item.Volume.Name)
+						}
+						// Visual update
+						item.isSelected = true
+						model.ResourceView.SetItem(i, item)
+					}
+				} else {
+					// Deselect all
+					for i, item := range items {
+						for _, id := range selectedIDs {
+							if id == item.Volume.Name {
+								model.ResourceView.ToggleSelection(item.Volume.Name)
+								break
+							}
+						}
+						// Visual update
+						item.isSelected = false
+						model.ResourceView.SetItem(i, item)
+					}
+				}
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):

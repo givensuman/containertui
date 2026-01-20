@@ -15,7 +15,6 @@ import (
 	"github.com/givensuman/containertui/internal/context"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/styles"
 )
 
 type sessionState int
@@ -85,7 +84,6 @@ func New() Model {
 	width, height := context.GetWindowSize()
 
 	delegate := list.NewDefaultDelegate()
-	delegate = styles.ChangeDelegateStyles(delegate)
 	listModel := list.New(serviceItems, delegate, width, height)
 
 	listModel.SetShowHelp(false)
@@ -105,6 +103,8 @@ func New() Model {
 	}
 
 	splitView := components.NewSplitView(listModel, components.NewViewportPane())
+	// Store the delegate with proper focus styles (SetDelegates applies the styles)
+	splitView.SetDelegates(delegate)
 
 	model := Model{
 		splitView:          splitView,
@@ -166,7 +166,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, tea.Quit
 				}
 				if key.Matches(keyMsg, model.keybindings.switchTab) {
-					return model, nil
+					return model, tea.Batch(cmds...)
 				}
 			}
 		}
