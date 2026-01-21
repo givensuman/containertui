@@ -71,7 +71,7 @@ func (dialog SmartDialog) Init() tea.Cmd {
 	return nil
 }
 
-func (dialog SmartDialog) Update(msg tea.Msg) (SmartDialog, tea.Cmd) {
+func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		dialog.UpdateWindowDimensions(msg)
@@ -99,7 +99,65 @@ func (dialog SmartDialog) Update(msg tea.Msg) (SmartDialog, tea.Cmd) {
 	return dialog, nil
 }
 
-func (dialog SmartDialog) View() string {
+func (dialog SmartDialog) View() tea.View {
+	buttonViews := make([]string, 0, len(dialog.buttons))
+
+	defaultButtonStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Foreground(colors.Text()).
+		Background(colors.Muted())
+
+	activeSafeStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Bold(true).
+		Foreground(colors.Text()).
+		Background(colors.Primary())
+
+	activeDangerStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Bold(true).
+		Foreground(colors.Text()).
+		Background(colors.Error())
+
+	for index, button := range dialog.buttons {
+		var buttonStyle lipgloss.Style
+
+		if index == dialog.selectedButton {
+			if button.IsSafe {
+				buttonStyle = activeSafeStyle
+			} else {
+				buttonStyle = activeDangerStyle
+			}
+		} else {
+			buttonStyle = defaultButtonStyle
+		}
+
+		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
+	}
+
+	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+
+	currentButton := dialog.buttons[dialog.selectedButton]
+	renderStyle := dialog.style
+	if !currentButton.IsSafe {
+		renderStyle = renderStyle.BorderForeground(colors.Error())
+	}
+
+	content := renderStyle.Render(lipgloss.JoinVertical(
+		lipgloss.Center,
+		dialog.message,
+		"",
+		buttonsView,
+	))
+
+	return tea.NewView(content)
+}
+
+// ViewString returns the string representation of the dialog (for overlay rendering)
+func (dialog SmartDialog) ViewString() string {
 	buttonViews := make([]string, 0, len(dialog.buttons))
 
 	defaultButtonStyle := lipgloss.NewStyle().

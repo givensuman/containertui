@@ -5,30 +5,25 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
-	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
-)
-
-type sessionState int
-
-const (
-	viewMain sessionState = iota
-	viewOverlay
 )
 
 type MsgRefreshServices time.Time
 
 type detailsKeybindings struct {
-	Up     key.Binding
-	Down   key.Binding
-	Switch key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Switch     key.Binding
+	ToggleJSON key.Binding
+	CopyOutput key.Binding
 }
 
 func newDetailsKeybindings() detailsKeybindings {
@@ -44,6 +39,14 @@ func newDetailsKeybindings() detailsKeybindings {
 		Switch: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "switch focus"),
+		),
+		ToggleJSON: key.NewBinding(
+			key.WithKeys("J"),
+			key.WithHelp("J", "toggle JSON/YAML"),
+		),
+		CopyOutput: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy to clipboard"),
 		),
 	}
 }
@@ -62,54 +65,52 @@ func newKeybindings() *keybindings {
 }
 
 type Model struct {
-	base.Component
-	splitView          components.SplitView
+	components.ResourceView[string, ServiceItem]
 	keybindings        *keybindings
-	sessionState       sessionState
-	currentServiceName string
 	detailsKeybindings detailsKeybindings
+	currentServiceName string
+	currentFormat      string
 }
 
 func New() Model {
-	services, err := context.GetClient().GetServices()
-	if err != nil {
-		services = []client.Service{}
-	}
-	serviceItems := make([]list.Item, 0, len(services))
-	for _, service := range services {
-		serviceItems = append(serviceItems, ServiceItem{Service: service})
-	}
-
-	width, height := context.GetWindowSize()
-
-	delegate := list.NewDefaultDelegate()
-	listModel := list.New(serviceItems, delegate, width, height)
-
-	listModel.SetShowHelp(false)
-	listModel.SetShowTitle(false)
-	listModel.SetShowStatusBar(false)
-	listModel.SetFilteringEnabled(true)
-	listModel.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.Primary())
-	listModel.Styles.Filter.Cursor.Color = colors.Primary()
-	// listModel.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(colors.Primary())
-	// listModel.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(colors.Primary())
-
 	serviceKeybindings := newKeybindings()
-	listModel.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			serviceKeybindings.switchTab,
+
+	fetchServices := func() ([]ServiceItem, error) {
+		services, err := context.GetClient().GetServices()
+		if err != nil {
+			return []ServiceItem{}, nil
 		}
+		items := make([]ServiceItem, 0, len(services))
+		for _, service := range services {
+			items = append(items, ServiceItem{Service: service})
+		}
+		return items, nil
 	}
 
-	splitView := components.NewSplitView(listModel, components.NewViewportPane())
-	// Store the delegate with proper focus styles (SetDelegates applies the styles)
-	splitView.SetDelegates(delegate)
+	resourceView := components.NewResourceView[string, ServiceItem](
+		"Services",
+		fetchServices,
+		func(item ServiceItem) string { return item.Service.Name },
+		func(item ServiceItem) string { return item.Title() },
+		func(w, h int) {
+			// Window resize handled by base component
+		},
+	)
+
+	// Set custom delegate
+	delegate := newDefaultDelegate()
+	resourceView.SetDelegate(delegate)
 
 	model := Model{
-		splitView:          splitView,
+		ResourceView:       *resourceView,
 		keybindings:        serviceKeybindings,
-		sessionState:       viewMain,
 		detailsKeybindings: newDetailsKeybindings(),
+		currentFormat:      "",
+	}
+
+	// Add custom keybindings to help
+	model.ResourceView.AdditionalHelp = []key.Binding{
+		serviceKeybindings.switchTab,
 	}
 
 	return model
@@ -121,81 +122,99 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	model.WindowWidth = msg.Width
-	model.WindowHeight = msg.Height
-	model.splitView.SetSize(msg.Width, msg.Height)
-}
-
 func (model Model) Init() tea.Cmd {
-	return tickCmd()
+	return tea.Batch(model.ResourceView.Init(), tickCmd())
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Forward messages to ResourceView first
+	updatedView, viewCmd := model.ResourceView.Update(msg)
+	model.ResourceView = updatedView
+	cmds = append(cmds, viewCmd)
+
+	// Handle specific messages
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		model.UpdateWindowDimensions(msg)
+		model.WindowWidth = msg.Width
+		model.WindowHeight = msg.Height
+		model.ResourceView.UpdateWindowDimensions(msg)
 
 	case MsgRefreshServices:
 		cmds = append(cmds, tickCmd())
-		// Refresh services data
-		services, err := context.GetClient().GetServices()
-		if err == nil {
-			items := make([]list.Item, 0, len(services))
-			for _, s := range services {
-				items = append(items, ServiceItem{Service: s})
+		// Refresh the services list via ResourceView
+		cmds = append(cmds, model.ResourceView.Refresh())
+	}
+
+	// Main View Logic (only when no overlay)
+	if !model.ResourceView.IsOverlayVisible() && model.ResourceView.IsListFocused() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			if model.ResourceView.IsFiltering() {
+				break
 			}
-			cmd := model.splitView.List.SetItems(items)
-			cmds = append(cmds, cmd)
+
+			switch {
+			case key.Matches(msg, model.keybindings.switchTab):
+				return model, tea.Batch(cmds...) // Handled by parent
+			}
+		}
+	} else if !model.ResourceView.IsOverlayVisible() && !model.ResourceView.IsListFocused() {
+		// Detail pane is focused
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			switch {
+			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+				cmd := model.handleToggleFormat()
+				cmds = append(cmds, cmd)
+			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+				cmd := model.handleCopyToClipboard()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
 		}
 	}
 
-	// Forward messages to SplitView
-	updatedSplitView, splitCmd := model.splitView.Update(msg)
-	model.splitView = updatedSplitView
-	cmds = append(cmds, splitCmd)
-
-	// Handle keybindings when list is focused
-	if model.splitView.Focus == components.FocusList {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if model.splitView.List.FilterState() != list.Filtering {
-				if keyMsg.String() == "q" {
-					return model, tea.Quit
-				}
-				if key.Matches(keyMsg, model.keybindings.switchTab) {
-					return model, tea.Batch(cmds...)
-				}
-			}
-		}
-	}
-
-	// Check if selection changed to update details
-	selectedItem := model.splitView.List.SelectedItem()
-	if selectedItem != nil {
-		if serviceItem, ok := selectedItem.(ServiceItem); ok {
-			if serviceItem.Service.Name != model.currentServiceName {
-				model.currentServiceName = serviceItem.Service.Name
-				model.updateDetails(serviceItem.Service)
-			}
-		}
-	} else {
-		// No selection
-		if model.currentServiceName != "" {
-			model.currentServiceName = ""
-			if pane, ok := model.splitView.Detail.(*components.ViewportPane); ok {
-				pane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
-			}
-		}
+	// Update Detail Content
+	detailCmd := model.updateDetailContent()
+	if detailCmd != nil {
+		cmds = append(cmds, detailCmd)
 	}
 
 	return model, tea.Batch(cmds...)
 }
 
-func (model *Model) updateDetails(service client.Service) {
-	// Use the new panel builder with empty format (will use config default)
-	panelContent := builders.BuildServicePanel(service, 80, false, "")
+func (model *Model) updateDetailContent() tea.Cmd {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem == nil {
+		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
+		return nil
+	}
+
+	serviceName := selectedItem.Service.Name
+	if serviceName != model.currentServiceName {
+		model.currentServiceName = serviceName
+		model.refreshServiceDetails(selectedItem.Service)
+	}
+
+	return nil
+}
+
+func (model *Model) refreshServiceDetails(service client.Service) {
+	// Determine format to use
+	format := infopanel.GetOutputFormat()
+	if model.currentFormat != "" {
+		if model.currentFormat == "json" {
+			format = infopanel.FormatJSON
+		} else {
+			format = infopanel.FormatYAML
+		}
+	}
+
+	// Use the panel builder with selected format
+	panelContent := builders.BuildServicePanel(service, model.ResourceView.GetContentWidth(), false, format)
 
 	// Add compose file content if available
 	if service.ComposeFile != "" {
@@ -208,41 +227,98 @@ func (model *Model) updateDetails(service client.Service) {
 		}
 	}
 
-	if pane, ok := model.splitView.Detail.(*components.ViewportPane); ok {
-		pane.SetContent(panelContent)
+	model.ResourceView.SetContent(panelContent)
+}
+
+// handleCopyToClipboard copies the current service details to clipboard
+func (model *Model) handleCopyToClipboard() tea.Cmd {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem == nil {
+		return nil
 	}
+
+	// Determine which format to use
+	format := infopanel.GetOutputFormat()
+	if model.currentFormat != "" {
+		if model.currentFormat == "json" {
+			format = infopanel.FormatJSON
+		} else {
+			format = infopanel.FormatYAML
+		}
+	}
+
+	// Marshal the data without syntax highlighting
+	data, err := infopanel.MarshalToFormat(selectedItem.Service, format)
+	if err != nil {
+		return nil
+	}
+
+	// Copy to clipboard
+	if err := clipboard.WriteAll(string(data)); err != nil {
+		return nil
+	}
+
+	return nil
+}
+
+// handleToggleFormat toggles between JSON and YAML format
+func (model *Model) handleToggleFormat() tea.Cmd {
+	// Determine current effective format
+	currentFormat := model.currentFormat
+	if currentFormat == "" {
+		cfg := context.GetConfig()
+		currentFormat = cfg.InspectionFormat
+		if currentFormat == "" {
+			currentFormat = "yaml"
+		}
+	}
+
+	// Toggle to the opposite format
+	if currentFormat == "json" {
+		model.currentFormat = "yaml"
+	} else {
+		model.currentFormat = "json"
+	}
+
+	// Refresh content with new format
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil {
+		model.refreshServiceDetails(selectedItem.Service)
+	}
+
+	return nil
 }
 
 func (model Model) View() string {
-	return model.splitView.View()
+	return model.ResourceView.View()
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	switch model.splitView.Focus {
-	case components.FocusList:
-		return model.splitView.List.ShortHelp()
-	case components.FocusDetail:
+	if !model.ResourceView.IsListFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
 			model.detailsKeybindings.Switch,
+			model.detailsKeybindings.ToggleJSON,
+			model.detailsKeybindings.CopyOutput,
 		}
 	}
-	return nil
+	return model.ResourceView.ShortHelp()
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	switch model.splitView.Focus {
-	case components.FocusList:
-		return model.splitView.List.FullHelp()
-	case components.FocusDetail:
+	if !model.ResourceView.IsListFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
 				model.detailsKeybindings.Down,
 				model.detailsKeybindings.Switch,
 			},
+			{
+				model.detailsKeybindings.ToggleJSON,
+				model.detailsKeybindings.CopyOutput,
+			},
 		}
 	}
-	return nil
+	return model.ResourceView.FullHelp()
 }

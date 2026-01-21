@@ -2,27 +2,21 @@
 package containers
 
 import (
+	"fmt"
 	"os/exec"
 	"slices"
 
-	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
-)
-
-type sessionState int
-
-const (
-	viewMain sessionState = iota
-	viewOverlay
 )
 
 // MsgContainerInspection contains the inspection data for a container.
@@ -134,10 +128,7 @@ func newKeybindings() *keybindings {
 // Model represents the containers component state.
 type Model struct {
 	components.ResourceView[string, ContainerItem]
-	keybindings  *keybindings
-	sessionState sessionState
-
-	foreground interface{} // Can be DeleteConfirmation, *ContainerLogs, or FormDialog
+	keybindings *keybindings
 
 	currentContainerID string
 	inspection         types.ContainerJSON
@@ -201,7 +192,6 @@ func New() Model {
 	model := Model{
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
-		sessionState:       viewMain,
 		detailsKeybindings: newDetailsKeybindings(),
 		scrollPositions:    make(map[string]int),
 		currentFormat:      "", // Empty means use config default
@@ -228,18 +218,6 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.WindowWidth = msg.Width
 	model.WindowHeight = msg.Height
 	model.ResourceView.UpdateWindowDimensions(msg)
-
-	switch model.sessionState {
-	case viewOverlay:
-		switch foregroundModel := model.foreground.(type) {
-		case *ContainerLogs:
-			foregroundModel.setDimensions(msg.Width, msg.Height)
-			model.foreground = foregroundModel
-		case DeleteConfirmation:
-			foregroundModel.UpdateWindowDimensions(msg)
-			model.foreground = foregroundModel
-		}
-	}
 }
 
 func (model Model) Init() tea.Cmd {
@@ -247,138 +225,16 @@ func (model Model) Init() tea.Cmd {
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// 1. Forward messages to ResourceView first (handles dialog closing, resizing, etc.)
+	updatedView, cmd := model.ResourceView.Update(msg)
+	model.ResourceView = updatedView
 	var cmds []tea.Cmd
+	cmds = append(cmds, cmd)
 
-	switch model.sessionState {
-	case viewMain:
-		// Forward messages to ResourceView first
-		updatedView, viewCmd := model.ResourceView.Update(msg)
-		model.ResourceView = updatedView
-		cmds = append(cmds, viewCmd)
-
-		// Handle keybindings when list is focused
-		if model.ResourceView.IsListFocused() {
-			switch msg := msg.(type) {
-			case tea.KeyPressMsg:
-				if model.ResourceView.IsFiltering() {
-					break
-				}
-
-				// Don't intercept global navigation keys
-				if key.Matches(msg, model.keybindings.switchTab) {
-					return model, tea.Batch(cmds...)
-				}
-
-				switch {
-				case key.Matches(msg, model.keybindings.pauseContainer):
-					cmds = append(cmds, model.handlePauseContainers())
-				case key.Matches(msg, model.keybindings.unpauseContainer):
-					cmds = append(cmds, model.handleUnpauseContainers())
-				case key.Matches(msg, model.keybindings.startContainer):
-					cmds = append(cmds, model.handleStartContainers())
-				case key.Matches(msg, model.keybindings.stopContainer):
-					cmds = append(cmds, model.handleStopContainers())
-				case key.Matches(msg, model.keybindings.restartContainer):
-					cmds = append(cmds, model.handleRestartContainers())
-				case key.Matches(msg, model.keybindings.removeContainer):
-					cmds = append(cmds, model.handleRemoveContainers())
-				case key.Matches(msg, model.keybindings.showLogs):
-					if cmd := model.handleShowLogs(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				case key.Matches(msg, model.keybindings.execShell):
-					if cmd := model.handleExecShell(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				case key.Matches(msg, model.keybindings.toggleSelection):
-					model.handleToggleSelection()
-				case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-					model.handleToggleSelectionOfAll()
-				}
-			}
-		}
-
-		// Handle keybindings when detail pane is focused
-		if !model.ResourceView.IsListFocused() {
-			switch msg := msg.(type) {
-			case tea.KeyPressMsg:
-				switch {
-				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-					cmd := model.handleToggleFormat()
-					cmds = append(cmds, cmd)
-				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-					cmd := model.handleCopyToClipboard()
-					if cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				}
-			}
-		}
-
-		// Update Detail Content if selection changes
-		selectedItem := model.ResourceView.GetSelectedItem()
-		if selectedItem != nil {
-			if selectedItem.ID != model.currentContainerID {
-				// Save scroll position of previous container
-				model.saveScrollPosition()
-
-				model.currentContainerID = selectedItem.ID
-
-				// Capture ID for closure
-				id := selectedItem.ID
-				cmds = append(cmds, func() tea.Msg {
-					containerInfo, err := context.GetClient().InspectContainer(id)
-					return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
-				})
-			}
-		}
-
-	case viewOverlay:
-		// Update ResourceView for background resize but don't process keys
-		if _, ok := msg.(tea.WindowSizeMsg); ok {
-			updatedView, viewCmd := model.ResourceView.Update(msg)
-			model.ResourceView = updatedView
-			cmds = append(cmds, viewCmd)
-		}
-
-		if model.foreground != nil {
-			// Type switch to call Update on different foreground types
-			switch fg := model.foreground.(type) {
-			case DeleteConfirmation:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			case *ContainerLogs:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			case components.SmartDialog:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			case components.FormDialog:
-				updated, cmd := fg.Update(msg)
-				model.foreground = updated
-				cmds = append(cmds, cmd)
-			}
-		}
-	}
-
+	// 2. Handle custom messages
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		model.UpdateWindowDimensions(msg)
-
-	case MessageCloseOverlay:
-		model.sessionState = viewMain
-
-	case MessageOpenDeleteConfirmationDialog:
-		fg := newDeleteConfirmation(msg.requestedContainersToDelete...)
-		model.foreground = fg
-		model.sessionState = viewOverlay
-		cmds = append(cmds, fg.Init())
-
-	case MessageConfirmDelete:
-		cmds = append(cmds, model.handleConfirmationOfRemoveContainers())
 
 	case MessageContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
@@ -398,43 +254,105 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.restoreScrollPosition()
 	}
 
+	// 3. Handle ConfirmationMessage when overlay is visible
+	if model.ResourceView.IsOverlayVisible() {
+		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "DeleteContainer" {
+				containerIDs := confirmMsg.Action.Payload.([]string)
+				model.setWorkingState(containerIDs, true)
+				model.ResourceView.CloseOverlay()
+				return model, PerformContainerOperation(Remove, containerIDs)
+			}
+		}
+		// Don't process keybindings when overlay is visible
+		return model, tea.Batch(cmds...)
+	}
+
+	// 4. Handle keybindings when list is focused
+	if model.ResourceView.IsListFocused() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			if model.ResourceView.IsFiltering() {
+				break
+			}
+
+			// Don't intercept global navigation keys
+			if key.Matches(msg, model.keybindings.switchTab) {
+				return model, tea.Batch(cmds...)
+			}
+
+			switch {
+			case key.Matches(msg, model.keybindings.pauseContainer):
+				cmds = append(cmds, model.handlePauseContainers())
+			case key.Matches(msg, model.keybindings.unpauseContainer):
+				cmds = append(cmds, model.handleUnpauseContainers())
+			case key.Matches(msg, model.keybindings.startContainer):
+				cmds = append(cmds, model.handleStartContainers())
+			case key.Matches(msg, model.keybindings.stopContainer):
+				cmds = append(cmds, model.handleStopContainers())
+			case key.Matches(msg, model.keybindings.restartContainer):
+				cmds = append(cmds, model.handleRestartContainers())
+			case key.Matches(msg, model.keybindings.removeContainer):
+				model.handleRemoveContainers()
+			case key.Matches(msg, model.keybindings.showLogs):
+				if cmd := model.handleShowLogs(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, model.keybindings.execShell):
+				if cmd := model.handleExecShell(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, model.keybindings.toggleSelection):
+				model.handleToggleSelection()
+			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
+				model.handleToggleSelectionOfAll()
+			}
+		}
+	}
+
+	// 5. Handle keybindings when detail pane is focused
+	if !model.ResourceView.IsListFocused() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			switch {
+			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+				cmd := model.handleToggleFormat()
+				cmds = append(cmds, cmd)
+			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+				cmd := model.handleCopyToClipboard()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
+	}
+
+	// 6. Update Detail Content if selection changes
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil {
+		if selectedItem.ID != model.currentContainerID {
+			// Save scroll position of previous container
+			model.saveScrollPosition()
+
+			model.currentContainerID = selectedItem.ID
+
+			// Capture ID for closure
+			id := selectedItem.ID
+			cmds = append(cmds, func() tea.Msg {
+				containerInfo, err := context.GetClient().InspectContainer(id)
+				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
+			})
+		}
+	}
+
 	return model, tea.Batch(cmds...)
 }
 
 func (model Model) View() string {
-	if model.sessionState == viewOverlay && model.foreground != nil {
-		// Type switch to call View on different foreground types
-		var fgView string
-		switch fg := model.foreground.(type) {
-		case DeleteConfirmation:
-			fgView = fg.View()
-		case *ContainerLogs:
-			fgView = fg.View()
-		case components.SmartDialog:
-			fgView = fg.View()
-		case components.FormDialog:
-			fgView = fg.View()
-		}
-
-		return components.RenderOverlayString(
-			model.ResourceView.View(),
-			fgView,
-			model.WindowWidth,
-			model.WindowHeight,
-		)
-	}
-
 	return model.ResourceView.View()
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	if model.sessionState == viewOverlay {
-		if helpKeyMap, ok := model.foreground.(help.KeyMap); ok {
-			return helpKeyMap.ShortHelp()
-		}
-		return nil
-	}
-
 	// If detail pane is focused, show detail keybindings
 	if !model.ResourceView.IsListFocused() {
 		return []key.Binding{
@@ -560,10 +478,6 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	if model.sessionState == viewOverlay {
-		return nil
-	}
-
 	// If detail pane is focused, show detail keybindings
 	if !model.ResourceView.IsListFocused() {
 		return [][]key.Binding{
@@ -726,38 +640,51 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 	return nil
 }
 
-func (model *Model) handleRemoveContainers() tea.Cmd {
+func (model *Model) handleRemoveContainers() {
 	selectedIDs := model.ResourceView.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
-			return nil
+			return
 		}
 
-		var requestedContainersToDelete []*ContainerItem
+		// Build confirmation message with container names
+		var containerNames []string
 		items := model.ResourceView.GetItems()
-
 		for _, item := range items {
 			if slices.Contains(selectedIDs, item.ID) {
-				// Create a copy to take address safely
-				itm := item
-				requestedContainersToDelete = append(requestedContainersToDelete, &itm)
+				containerNames = append(containerNames, item.Name)
 			}
 		}
 
-		return func() tea.Msg {
-			return MessageOpenDeleteConfirmationDialog{requestedContainersToDelete}
+		message := fmt.Sprintf("Are you sure you want to delete %d container(s)?", len(containerNames))
+		if len(containerNames) <= 5 {
+			message += "\n\n"
+			for _, name := range containerNames {
+				message += fmt.Sprintf("• %s\n", name)
+			}
 		}
+
+		confirmDialog := components.NewSmartDialog(
+			message,
+			[]components.DialogButton{
+				{Label: "Cancel", IsSafe: true},
+				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: selectedIDs}},
+			},
+		)
+		model.ResourceView.SetOverlay(confirmDialog)
 	} else {
 		item := model.ResourceView.GetSelectedItem()
 		if item != nil && !item.isWorking {
-			// Create a copy to take address safely
-			itm := *item
-			return func() tea.Msg {
-				return MessageOpenDeleteConfirmationDialog{[]*ContainerItem{&itm}}
-			}
+			confirmDialog := components.NewSmartDialog(
+				fmt.Sprintf("Are you sure you want to delete container %s?", item.Name),
+				[]components.DialogButton{
+					{Label: "Cancel", IsSafe: true},
+					{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: []string{item.ID}}},
+				},
+			)
+			model.ResourceView.SetOverlay(confirmDialog)
 		}
 	}
-	return nil
 }
 
 func (model *Model) handleShowLogs() tea.Cmd {
@@ -804,21 +731,6 @@ func (model *Model) handleExecShell() tea.Cmd {
 		}
 		return nil
 	})
-}
-
-func (model *Model) handleConfirmationOfRemoveContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
-	if len(selectedIDs) > 0 {
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Remove, selectedIDs)
-	} else {
-		item := model.ResourceView.GetSelectedItem()
-		if item != nil {
-			model.setWorkingState([]string{item.ID}, true)
-			return PerformContainerOperation(Remove, []string{item.ID})
-		}
-	}
-	return nil
 }
 
 func (model *Model) handleToggleSelection() {

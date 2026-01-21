@@ -6,7 +6,28 @@ Improve informational panel.
 Add graphs to containers tab.
 Implement browse tab.
 Support other clients.
+Better color handling (lipgloss.AdaptiveColor), less usage of Muted()
+Scrollbar in informational panel/viewports
+Syntax highlighting in YAML/JSON of informational panel
 
 -- Other
 Reconsider usage of nerd fonts.
 Expand configuration options.
+Better Cobra commands for launching into tabs, possibly more.
+Overhaul CI/CD.
+
+-- Later
+Test in multiple terminal types
+Improve styling re: list items
+Decide what goes in informational panel
+  - ties into improve styling, top bit can be shown in list w/ icons and panel can be pure JSON/YAML
+
+-- Bugs
+Image tab dialogs not interactable
+All informational panels except Image tab exceed window height
+When filtering, prevent keypresses from doing things (like changing tabs)
+Volumes and networks filtering has artifacts like "[m"
+Keybindings falsely show tab key as means of changing tabs
+Fix synced spinners when stopping multiple containers
+"Pull image" functionality should update selected image; use spinner like containers
+YAML/JSON toggle is global; this is good but maybe needs better description

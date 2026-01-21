@@ -23,6 +23,11 @@ func (i ServiceItem) FilterValue() string {
 	return i.Service.Name
 }
 
+func newDefaultDelegate() list.DefaultDelegate {
+	delegate := list.NewDefaultDelegate()
+	return delegate
+}
+
 var (
 	_ list.Item        = (*ServiceItem)(nil)
 	_ list.DefaultItem = (*ServiceItem)(nil)

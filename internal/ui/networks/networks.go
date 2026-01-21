@@ -183,6 +183,14 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				if err == nil {
 					// Refresh list
 					return model, model.ResourceView.Refresh()
+				} else {
+					// Show error
+					errorDialog := components.NewSmartDialog(
+						fmt.Sprintf("Failed to remove network:\n\n%v", err),
+						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+					)
+					model.ResourceView.SetOverlay(errorDialog)
+					return model, nil
 				}
 			}
 			model.ResourceView.CloseOverlay()

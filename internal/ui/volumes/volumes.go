@@ -2,6 +2,8 @@
 package volumes
 
 import (
+	"fmt"
+
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -181,6 +183,14 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				if err == nil {
 					// Refresh list
 					return model, model.ResourceView.Refresh()
+				} else {
+					// Show error
+					errorDialog := components.NewSmartDialog(
+						fmt.Sprintf("Failed to remove volume:\n\n%v", err),
+						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+					)
+					model.ResourceView.SetOverlay(errorDialog)
+					return model, nil
 				}
 			}
 			model.ResourceView.CloseOverlay()
@@ -269,7 +279,7 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):
-				// TODO: Implement remove functionality
+				model.handleRemove()
 				return model, nil
 			}
 		}
@@ -297,6 +307,37 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func (model *Model) handleRemove() {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem == nil {
+		return
+	}
+
+	containersUsingVolume, _ := context.GetClient().GetContainersUsingVolume(selectedItem.Volume.Name)
+	if len(containersUsingVolume) > 0 {
+		warningDialog := components.NewSmartDialog(
+			fmt.Sprintf("Volume %s is used by %d containers (%v).\nCannot delete.",
+				selectedItem.Volume.Name, len(containersUsingVolume), containersUsingVolume),
+			[]components.DialogButton{
+				{Label: "OK", IsSafe: true},
+			},
+		)
+		model.ResourceView.SetOverlay(warningDialog)
+	} else {
+		confirmationDialog := components.NewSmartDialog(
+			fmt.Sprintf("Are you sure you want to delete volume %s?", selectedItem.Volume.Name),
+			[]components.DialogButton{
+				{Label: "Cancel", IsSafe: true},
+				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{
+					Type:    "DeleteVolume",
+					Payload: selectedItem.Volume.Name,
+				}},
+			},
+		)
+		model.ResourceView.SetOverlay(confirmationDialog)
+	}
 }
 
 func (model *Model) updateDetailContent() tea.Cmd {

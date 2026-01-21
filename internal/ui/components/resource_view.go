@@ -1,6 +1,8 @@
 package components
 
 import (
+	"fmt"
+
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -380,18 +382,15 @@ func (rv *ResourceView[ID, Item]) View() string {
 			fgView = viewer.View()
 		} else if viewer, ok := rv.Foreground.(interface{ View() string }); ok {
 			fgView = viewer.View()
-		} else if _, ok := rv.Foreground.(tea.Model); ok {
-			// tea.View in v2 is a struct, not string.
-			// RenderOverlay expects string for background and foreground.
-			// So we can't directly use tea.View in RenderOverlay's signature if it expects string.
-
-			// If we are here, we are using a tea.Model that is NOT a StringViewModel.
-			// This means we might be trying to render a full component in the overlay.
-			// RenderOverlay is designed for string-based overlays.
-
-			// For now, let's just return a placeholder error if we hit this,
-			// because our app mainly uses string view models for dialogs.
-			fgView = "Error: Overlay model does not support string view"
+		} else if viewer, ok := rv.Foreground.(interface{ ViewString() string }); ok {
+			// SmartDialog has ViewString() method that returns the string content
+			fgView = viewer.ViewString()
+		} else if model, ok := rv.Foreground.(tea.Model); ok {
+			// Last resort: try fmt.Sprint (likely won't work well)
+			view := model.View()
+			fgView = fmt.Sprint(view)
+		} else {
+			fgView = "Error: Overlay model has no View method"
 		}
 
 		// Since RenderOverlay returns tea.View, we assume RenderOverlay handles conversion internally

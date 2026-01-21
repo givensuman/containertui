@@ -5,25 +5,6 @@ import (
 	"github.com/givensuman/containertui/internal/context"
 )
 
-// MessageCloseOverlay indicates the overlay should display its background.
-type MessageCloseOverlay struct{}
-
-func CloseOverlay() tea.Cmd {
-	return func() tea.Msg {
-		return MessageCloseOverlay{}
-	}
-}
-
-// MessageOpenDeleteConfirmationDialog indicates the user
-// has requested to delete an item in the ContainerList.
-type MessageOpenDeleteConfirmationDialog struct {
-	requestedContainersToDelete []*ContainerItem
-}
-
-// MessageConfirmDelete indicates the user confirmed
-// they wish to delete an item in the ContainerList.
-type MessageConfirmDelete struct{}
-
 // MessageContainerOperationResult indicates the result of a container operation.
 type MessageContainerOperationResult struct {
 	Operation Operation

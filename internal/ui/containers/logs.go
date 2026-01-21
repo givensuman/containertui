@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	contxt "github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/ui/base"
 )
 
 // ContainerLogs displays and scrolls logs for a specific container.
@@ -94,7 +95,7 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 			if model.cancelChannel != nil {
 				close(model.cancelChannel)
 			}
-			return model, CloseOverlay()
+			return model, func() tea.Msg { return base.CloseDialogMessage{} }
 		case "up", "down", "pgup", "pgdown", "mouse wheel up", "mouse wheel down":
 			// Let viewport handle.
 			viewportModel, _ := model.viewport.Update(msg)
