@@ -8,7 +8,7 @@ import (
 // MessageContainerOperationResult indicates the result of a container operation.
 type MessageContainerOperationResult struct {
 	Operation Operation
-	IDs       []string
+	ID        string
 	Error     error
 }
 
@@ -23,24 +23,35 @@ const (
 	Remove
 )
 
-// PerformContainerOperation performs the specified operation on the given container IDs asynchronously.
-func PerformContainerOperation(operation Operation, containerIDs []string) tea.Cmd {
+// PerformContainerOperation performs the specified operation on a single container asynchronously.
+func PerformContainerOperation(operation Operation, containerID string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
+		client := context.GetClient()
 		switch operation {
 		case Pause:
-			err = context.GetClient().PauseContainers(containerIDs)
+			err = client.PauseContainer(containerID)
 		case Unpause:
-			err = context.GetClient().UnpauseContainers(containerIDs)
+			err = client.UnpauseContainer(containerID)
 		case Start:
-			err = context.GetClient().StartContainers(containerIDs)
+			err = client.StartContainer(containerID)
 		case Stop:
-			err = context.GetClient().StopContainers(containerIDs)
+			err = client.StopContainer(containerID)
 		case Restart:
-			err = context.GetClient().RestartContainers(containerIDs)
+			err = client.RestartContainer(containerID)
 		case Remove:
-			err = context.GetClient().RemoveContainers(containerIDs)
+			err = client.RemoveContainer(containerID)
 		}
-		return MessageContainerOperationResult{Operation: operation, IDs: containerIDs, Error: err}
+		return MessageContainerOperationResult{Operation: operation, ID: containerID, Error: err}
 	}
+}
+
+// PerformContainerOperations performs the specified operation on multiple containers asynchronously.
+// Returns a batch of commands, one for each container.
+func PerformContainerOperations(operation Operation, containerIDs []string) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, id := range containerIDs {
+		cmds = append(cmds, PerformContainerOperation(operation, id))
+	}
+	return tea.Batch(cmds...)
 }

@@ -259,9 +259,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteContainer" {
 				containerIDs := confirmMsg.Action.Payload.([]string)
-				model.setWorkingState(containerIDs, true)
+				spinnerCmd := model.setWorkingState(containerIDs, true)
 				model.ResourceView.CloseOverlay()
-				return model, PerformContainerOperation(Remove, containerIDs)
+				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))
 			}
 		}
 		// Don't process keybindings when overlay is visible
@@ -507,26 +507,8 @@ func (model *Model) getSelectedContainerIDs() []string {
 	return model.ResourceView.GetSelectedIDs()
 }
 
-func (model *Model) setWorkingState(containerIDs []string, working bool) {
-	items := model.ResourceView.GetItems()
-	var updatedItems []ContainerItem
-
-	for _, item := range items {
-		if slices.Contains(containerIDs, item.ID) {
-			item.isWorking = working
-			if working {
-				item.spinner = newSpinner()
-			}
-			updatedItems = append(updatedItems, item)
-		} else {
-			updatedItems = append(updatedItems, item)
-		}
-	}
-
-	// We need to update items in the list.
-	// Since ResourceView doesn't expose partial updates easily yet,
-	// we'll update the whole list or individual items if we can match indices.
-	// However, ResourceView is generic. Let's iterate and update.
+func (model *Model) setWorkingState(containerIDs []string, working bool) tea.Cmd {
+	var cmds []tea.Cmd
 
 	currentItems := model.ResourceView.GetItems()
 	for i, item := range currentItems {
@@ -534,10 +516,16 @@ func (model *Model) setWorkingState(containerIDs []string, working bool) {
 			item.isWorking = working
 			if working {
 				item.spinner = newSpinner()
+				// Start the spinner by returning a command that sends the first tick
+				cmds = append(cmds, func() tea.Msg {
+					return item.spinner.Tick()
+				})
 			}
 			model.ResourceView.SetItem(i, item)
 		}
 	}
+
+	return tea.Batch(cmds...)
 }
 
 func (model *Model) anySelectedWorking() bool {
@@ -560,13 +548,13 @@ func (model *Model) handlePauseContainers() tea.Cmd {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Pause, selectedIDs)
+		spinnerCmd := model.setWorkingState(selectedIDs, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Pause, selectedIDs))
 	} else {
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
-			model.setWorkingState([]string{selectedItem.ID}, true)
-			return PerformContainerOperation(Pause, []string{selectedItem.ID})
+			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Pause, selectedItem.ID))
 		}
 	}
 	return nil
@@ -578,13 +566,13 @@ func (model *Model) handleUnpauseContainers() tea.Cmd {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Unpause, selectedIDs)
+		spinnerCmd := model.setWorkingState(selectedIDs, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Unpause, selectedIDs))
 	} else {
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
-			model.setWorkingState([]string{selectedItem.ID}, true)
-			return PerformContainerOperation(Unpause, []string{selectedItem.ID})
+			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Unpause, selectedItem.ID))
 		}
 	}
 	return nil
@@ -596,13 +584,13 @@ func (model *Model) handleStartContainers() tea.Cmd {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Start, selectedIDs)
+		spinnerCmd := model.setWorkingState(selectedIDs, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Start, selectedIDs))
 	} else {
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
-			model.setWorkingState([]string{selectedItem.ID}, true)
-			return PerformContainerOperation(Start, []string{selectedItem.ID})
+			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Start, selectedItem.ID))
 		}
 	}
 	return nil
@@ -614,13 +602,13 @@ func (model *Model) handleStopContainers() tea.Cmd {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Stop, selectedIDs)
+		spinnerCmd := model.setWorkingState(selectedIDs, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Stop, selectedIDs))
 	} else {
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
-			model.setWorkingState([]string{selectedItem.ID}, true)
-			return PerformContainerOperation(Stop, []string{selectedItem.ID})
+			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Stop, selectedItem.ID))
 		}
 	}
 	return nil
@@ -632,13 +620,13 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 		if model.anySelectedWorking() {
 			return nil
 		}
-		model.setWorkingState(selectedIDs, true)
-		return PerformContainerOperation(Restart, selectedIDs)
+		spinnerCmd := model.setWorkingState(selectedIDs, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Restart, selectedIDs))
 	} else {
 		selectedItem := model.ResourceView.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
-			model.setWorkingState([]string{selectedItem.ID}, true)
-			return PerformContainerOperation(Restart, []string{selectedItem.ID})
+			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Restart, selectedItem.ID))
 		}
 	}
 	return nil
@@ -792,35 +780,24 @@ func (model *Model) handleToggleSelectionOfAll() {
 }
 
 func (model *Model) handleContainerOperationResult(msg MessageContainerOperationResult) tea.Cmd {
-	model.setWorkingState(msg.IDs, false)
+	// Stop spinner for this container
+	model.setWorkingState([]string{msg.ID}, false)
 
 	if msg.Error != nil {
 		return notifications.ShowError(msg.Error)
 	}
 
 	if msg.Operation == Remove {
-		// Remove items from list
-		// Since ResourceView doesn't have RemoveItem by ID easily, we need to find indices.
-		// NOTE: Removing items while iterating or by index requires care as indices shift.
-		// However, standard bubbletea list.Model handles RemoveItem safely if we do it one by one?
-		// Actually, let's refresh the list from source or filter it locally.
-
-		// Ideally we'd just re-fetch, but for instant feedback let's filter the current items.
+		// Remove item from list
 		currentItems := model.ResourceView.GetItems()
 		var newItems []ContainerItem
 		for _, item := range currentItems {
-			if !slices.Contains(msg.IDs, item.ID) {
+			if item.ID != msg.ID {
 				newItems = append(newItems, item)
 			}
 		}
 
-		// This is a bit of a hack since ResourceView encapsulates the list model.
-		// But ResourceView usually exposes SetItems.
-		// Let's assume ResourceView allows full replacement or we trigger a refresh.
-		// Since ResourceView is generic, we can just trigger a refresh if we had a Reload command.
-		// But here we want to update the local state.
-
-		// Let's assume for now we just trigger a refresh.
+		// Trigger a refresh to get updated container list
 		return model.ResourceView.Refresh()
 	}
 
@@ -832,18 +809,21 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 		newState = "running"
 	case Stop:
 		newState = "exited"
+	case Restart:
+		newState = "running"
 	case Remove:
 		return nil
 	default:
 		return nil
 	}
 
-	// Update states locally
+	// Update state locally for this container
 	items := model.ResourceView.GetItems()
 	for i, item := range items {
-		if slices.Contains(msg.IDs, item.ID) {
+		if item.ID == msg.ID {
 			item.State = newState
 			model.ResourceView.SetItem(i, item)
+			break
 		}
 	}
 

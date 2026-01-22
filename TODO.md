@@ -23,8 +23,5 @@ Decide what goes in informational panel
   - ties into improve styling, top bit can be shown in list w/ icons and panel can be pure JSON/YAML
 
 -- Bugs
-Volumes and networks filtering has artifacts like "[m"
-Keybindings falsely show tab key as means of changing tabs
 Fix synced spinners when stopping multiple containers
 "Pull image" functionality should update selected image; use spinner like containers
-YAML/JSON toggle is global; this is good but maybe needs better description
