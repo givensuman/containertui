@@ -2,12 +2,9 @@ package volumes
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 )
 
@@ -60,26 +57,10 @@ func (volumeItem VolumeItem) getTitleOrnament() string {
 }
 
 func (volumeItem VolumeItem) Title() string {
+	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := volumeItem.getTitleOrnament()
-
-	title := fmt.Sprintf("%s %s", titleOrnament, volumeItem.Volume.Name)
-	title = lipgloss.NewStyle().
-		Foreground(colors.Muted()).
-		Render(title)
-
 	statusIcon := volumeItem.getIsSelectedIcon()
-	var isSelectedColor color.Color
-	switch volumeItem.isSelected {
-	case true:
-		isSelectedColor = colors.Selected()
-	case false:
-		isSelectedColor = colors.Text()
-	}
-	statusIcon = lipgloss.NewStyle().
-		Foreground(isSelectedColor).
-		Render(statusIcon)
-
-	return fmt.Sprintf("%s %s", statusIcon, title)
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, volumeItem.Volume.Name)
 }
 
 func (volumeItem VolumeItem) Description() string {
@@ -87,5 +68,8 @@ func (volumeItem VolumeItem) Description() string {
 }
 
 func (volumeItem VolumeItem) FilterValue() string {
-	return volumeItem.Title()
+	// Return unstyled text for filtering to avoid ANSI code artifacts
+	titleOrnament := volumeItem.getTitleOrnament()
+	statusIcon := volumeItem.getIsSelectedIcon()
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, volumeItem.Volume.Name)
 }

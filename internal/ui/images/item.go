@@ -2,12 +2,9 @@ package images
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 )
 
@@ -59,11 +56,8 @@ func (imageItem ImageItem) getTitleOrnament() string {
 	return ""
 }
 
-func (imageItem ImageItem) FilterValue() string {
-	return imageItem.Title()
-}
-
 func (imageItem ImageItem) Title() string {
+	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var repoTag string
 	if len(imageItem.Image.RepoTags) > 0 {
 		repoTag = imageItem.Image.RepoTags[0]
@@ -72,25 +66,8 @@ func (imageItem ImageItem) Title() string {
 	}
 
 	titleOrnament := imageItem.getTitleOrnament()
-
-	title := fmt.Sprintf("%s %s", titleOrnament, repoTag)
-	title = lipgloss.NewStyle().
-		Foreground(colors.Muted()).
-		Render(title)
-
 	statusIcon := imageItem.getIsSelectedIcon()
-	var isSelectedColor color.Color
-	switch imageItem.isSelected {
-	case true:
-		isSelectedColor = colors.Selected()
-	case false:
-		isSelectedColor = colors.Text()
-	}
-	statusIcon = lipgloss.NewStyle().
-		Foreground(isSelectedColor).
-		Render(statusIcon)
-
-	return fmt.Sprintf("%s %s", statusIcon, title)
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, repoTag)
 }
 
 func (imageItem ImageItem) Description() string {
@@ -99,4 +76,17 @@ func (imageItem ImageItem) Description() string {
 		shortID = shortID[7:19] // Remove "sha256:" prefix and take first 12 chars.
 	}
 	return "   " + shortID
+}
+
+func (imageItem ImageItem) FilterValue() string {
+	// Return unstyled text for filtering to avoid ANSI code artifacts
+	var repoTag string
+	if len(imageItem.Image.RepoTags) > 0 {
+		repoTag = imageItem.Image.RepoTags[0]
+	} else {
+		repoTag = "<none>"
+	}
+	titleOrnament := imageItem.getTitleOrnament()
+	statusIcon := imageItem.getIsSelectedIcon()
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, repoTag)
 }

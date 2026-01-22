@@ -2,7 +2,6 @@ package containers
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
@@ -88,11 +87,8 @@ func newSpinner() spinner.Model {
 	return spinnerModel
 }
 
-func (containerItem ContainerItem) FilterValue() string {
-	return containerItem.Title()
-}
-
 func (containerItem ContainerItem) Title() string {
+	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var statusIcon string
 	if containerItem.isWorking {
 		statusIcon = containerItem.spinner.View()
@@ -100,40 +96,7 @@ func (containerItem ContainerItem) Title() string {
 		statusIcon = containerItem.getIsSelectedIcon()
 	}
 	titleOrnament := containerItem.getTitleOrnament()
-	title := fmt.Sprintf("%s %s",
-		titleOrnament,
-		containerItem.Name,
-	)
-
-	var titleColor color.Color
-	switch containerItem.State {
-	case "running":
-		titleColor = colors.Success()
-	case "paused":
-		titleColor = colors.Warning()
-	case "exited":
-		titleColor = colors.Muted()
-	default:
-		titleColor = colors.Muted()
-	}
-	title = lipgloss.NewStyle().
-		Foreground(titleColor).
-		Render(title)
-
-	if !containerItem.isWorking {
-		var isSelectedColor color.Color
-		switch containerItem.isSelected {
-		case true:
-			isSelectedColor = colors.Selected()
-		case false:
-			isSelectedColor = colors.Text()
-		}
-		statusIcon = lipgloss.NewStyle().
-			Foreground(isSelectedColor).
-			Render(statusIcon)
-	}
-
-	return fmt.Sprintf("%s %s", statusIcon, title)
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, containerItem.Name)
 }
 
 func (containerItem ContainerItem) Description() string {
@@ -142,4 +105,11 @@ func (containerItem ContainerItem) Description() string {
 		shortID = containerItem.ID[:12]
 	}
 	return "   " + shortID
+}
+
+func (containerItem ContainerItem) FilterValue() string {
+	// Return unstyled text for filtering to avoid ANSI code artifacts
+	statusIcon := containerItem.getIsSelectedIcon()
+	titleOrnament := containerItem.getTitleOrnament()
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, containerItem.Name)
 }

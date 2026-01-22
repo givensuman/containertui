@@ -23,9 +23,6 @@ Decide what goes in informational panel
   - ties into improve styling, top bit can be shown in list w/ icons and panel can be pure JSON/YAML
 
 -- Bugs
-Image tab dialogs not interactable
-All informational panels except Image tab exceed window height
-When filtering, prevent keypresses from doing things (like changing tabs)
 Volumes and networks filtering has artifacts like "[m"
 Keybindings falsely show tab key as means of changing tabs
 Fix synced spinners when stopping multiple containers

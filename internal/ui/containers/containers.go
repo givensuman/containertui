@@ -352,6 +352,10 @@ func (model Model) View() string {
 	return model.ResourceView.View()
 }
 
+func (model Model) IsFiltering() bool {
+	return model.ResourceView.IsFiltering()
+}
+
 func (model Model) ShortHelp() []key.Binding {
 	// If detail pane is focused, show detail keybindings
 	if !model.ResourceView.IsListFocused() {

@@ -117,10 +117,28 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, tea.Quit
 		}
 
-		var tabsCmd tea.Cmd
-		model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
-		if tabsCmd != nil {
-			cmds = append(cmds, tabsCmd)
+		// Check if the current view is filtering before processing tab switches
+		isFiltering := false
+		switch model.tabsModel.ActiveTab {
+		case tabs.Containers:
+			isFiltering = model.containersModel.IsFiltering()
+		case tabs.Images:
+			isFiltering = model.imagesModel.IsFiltering()
+		case tabs.Volumes:
+			isFiltering = model.volumesModel.IsFiltering()
+		case tabs.Networks:
+			isFiltering = model.networksModel.IsFiltering()
+		case tabs.Services:
+			isFiltering = model.servicesModel.IsFiltering()
+		}
+
+		// Only process tab switching keypresses if not filtering
+		if !isFiltering {
+			var tabsCmd tea.Cmd
+			model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
+			if tabsCmd != nil {
+				cmds = append(cmds, tabsCmd)
+			}
 		}
 
 		if msg.String() == "?" {

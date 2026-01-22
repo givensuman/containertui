@@ -2,12 +2,9 @@ package networks
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/context"
 )
 
@@ -60,26 +57,10 @@ func (networkItem NetworkItem) getTitleOrnament() string {
 }
 
 func (networkItem NetworkItem) Title() string {
+	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := networkItem.getTitleOrnament()
-
-	title := fmt.Sprintf("%s %s", titleOrnament, networkItem.Network.Name)
-	title = lipgloss.NewStyle().
-		Foreground(colors.Muted()).
-		Render(title)
-
 	statusIcon := networkItem.getIsSelectedIcon()
-	var isSelectedColor color.Color
-	switch networkItem.isSelected {
-	case true:
-		isSelectedColor = colors.Selected()
-	case false:
-		isSelectedColor = colors.Text()
-	}
-	statusIcon = lipgloss.NewStyle().
-		Foreground(isSelectedColor).
-		Render(statusIcon)
-
-	return fmt.Sprintf("%s %s", statusIcon, title)
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, networkItem.Network.Name)
 }
 
 func (networkItem NetworkItem) Description() string {
@@ -91,5 +72,8 @@ func (networkItem NetworkItem) Description() string {
 }
 
 func (networkItem NetworkItem) FilterValue() string {
-	return networkItem.Title()
+	// Return unstyled text for filtering to avoid ANSI code artifacts
+	titleOrnament := networkItem.getTitleOrnament()
+	statusIcon := networkItem.getIsSelectedIcon()
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, networkItem.Network.Name)
 }

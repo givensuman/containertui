@@ -466,6 +466,10 @@ func (model *Model) View() string {
 	return model.ResourceView.View()
 }
 
+func (model *Model) IsFiltering() bool {
+	return model.ResourceView.IsFiltering()
+}
+
 func (model *Model) ShortHelp() []key.Binding {
 	if !model.ResourceView.IsListFocused() {
 		return []key.Binding{
