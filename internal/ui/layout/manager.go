@@ -86,11 +86,11 @@ func (lm LayoutManager) CalculateMasterDetail(style lipgloss.Style) (Dimensions,
 
 	detail := Dimensions{
 		Width:         detailWidth,
-		Height:        height - 1,
+		Height:        height,
 		OffsetX:       masterWidth + gap,
 		OffsetY:       0,
 		ContentWidth:  detailWidth - frameH,
-		ContentHeight: height - 1 - frameV,
+		ContentHeight: height - frameV,
 	}
 
 	return master, detail

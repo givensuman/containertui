@@ -34,8 +34,10 @@ type ViewportPane struct {
 }
 
 func NewViewportPane() *ViewportPane {
+	vp := viewport.New()
+	vp.SoftWrap = true // Enable text wrapping for long lines
 	return &ViewportPane{
-		Viewport: viewport.New(),
+		Viewport: vp,
 	}
 }
 
@@ -50,6 +52,8 @@ func (v *ViewportPane) Update(msg tea.Msg) (Pane, tea.Cmd) {
 }
 
 func (v *ViewportPane) View() string {
+	// Let the viewport handle text wrapping internally
+	// lipgloss.Place() in SplitView will constrain the final output dimensions
 	return v.Viewport.View()
 }
 
@@ -196,8 +200,11 @@ func (s *SplitView) SetSize(width, height int) {
 
 	// Resize Detail Pane
 	// The detail view has a border (2) and padding (2)
+	// Border: 1 top + 1 bottom = 2
+	// Padding: 1 top + 1 bottom = 2
+	// Total vertical frame: 4
 	contentW := detailLayout.Width - 4
-	contentH := detailLayout.Height - 2
+	contentH := detailLayout.Height - 4
 
 	if contentW < 0 {
 		contentW = 0
@@ -217,19 +224,42 @@ func (s SplitView) View() string {
 	listView := s.style.Render(s.List.View())
 
 	// 2. Render Detail Wrapper (Border + Focus color)
+	// Use lipgloss.Place to strictly constrain the viewport to exact dimensions
 	borderColor := colors.Muted()
 	if s.Focus == FocusDetail {
 		borderColor = colors.Primary()
 	}
 
+	// Get viewport output (with text wrapping enabled via SoftWrap)
+	viewportContent := s.Detail.View()
+
+	// Calculate the exact dimensions for content after accounting for border and padding
+	// Border adds 2 to width and 2 to height
+	// Padding adds 2 to width and 2 to height (inside the border)
+	// Total: width - 4, height - 4
+	contentWidth := detailLayout.Width - 4
+	contentHeight := detailLayout.Height - 4
+
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
+
+	// Use lipgloss.Place to strictly constrain content to exact dimensions
+	// The viewport wraps text at contentWidth, so Place will preserve wrapped lines
+	// and truncate any height overflow
+	placedContent := lipgloss.Place(contentWidth, contentHeight, lipgloss.Left, lipgloss.Top, viewportContent)
+
+	// Apply border and padding WITHOUT setting explicit Width/Height
+	// This lets the border wrap the placed content exactly
 	detailStyle := lipgloss.NewStyle().
-		Width(detailLayout.Width - 2). // -2 for the border itself
-		Height(detailLayout.Height).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(1) // Padding inside the border
 
-	detailView := detailStyle.Render(s.Detail.View())
+	detailView := detailStyle.Render(placedContent)
 
 	// 3. Join
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
