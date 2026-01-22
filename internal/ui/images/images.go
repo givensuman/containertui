@@ -116,8 +116,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("c", "create container"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "tab", "shift+tab"),
-			key.WithHelp("1-4/tab", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 	}
 }
