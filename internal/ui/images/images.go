@@ -372,9 +372,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				imageID := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveImage(imageID)
 				if err == nil {
-					// We need to refresh list.
-					// ResourceView has Refresh() command but for immediate feedback we might want local update.
-					// Refresh() is safer.
+					// Close the overlay and refresh list
+					model.ResourceView.CloseOverlay()
 					return model, model.ResourceView.Refresh()
 				} else {
 					// Show error

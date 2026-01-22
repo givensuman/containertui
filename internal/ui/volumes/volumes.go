@@ -181,7 +181,8 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				volumeName := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveVolume(volumeName)
 				if err == nil {
-					// Refresh list
+					// Close the overlay and refresh list
+					model.ResourceView.CloseOverlay()
 					return model, model.ResourceView.Refresh()
 				} else {
 					// Show error
