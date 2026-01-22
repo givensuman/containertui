@@ -13,37 +13,34 @@ import (
 	"github.com/givensuman/containertui/internal/ui/layout"
 )
 
-// FormField represents a single field in a form.
 type FormField struct {
 	Label       string
 	Placeholder string
 	Value       string
-	Validator   func(string) error // nil = no validation, returns error if invalid
+	Validator   func(string) error
 	Required    bool
 }
 
-// FormDialog is a modal dialog with multiple text input fields.
 type FormDialog struct {
 	base.Component
-	title          string
-	fields         []FormField
-	textInputs     []textinput.Model
-	focusIndex     int
-	submitLabel    string
-	actionType     string // Type for ConfirmationMessage
-	actionMetadata map[string]interface{}
-	style          lipgloss.Style
-	width          int
-	height         int
-	errorMessage   string
+	title        string
+	fields       []FormField
+	textInputs   []textinput.Model
+	focusIndex   int
+	submitLabel  string
+	action       base.SmartDialogAction
+	style        lipgloss.Style
+	width        int
+	height       int
+	errorMessage string
 }
 
-// FormDialog implements StringViewModel and ComponentModel
-// var _ StringViewModel = (*FormDialog)(nil)
-// var _ ComponentModel = (*FormDialog)(nil)
+var (
+	_ base.ComponentModel = (*FormDialog)(nil)
+	_ fmt.Stringer        = (*FormDialog)(nil)
+)
 
-// NewFormDialog creates a new form dialog with the specified fields.
-func NewFormDialog(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]interface{}) FormDialog {
+func NewFormDialog(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]any) FormDialog {
 	width, height := context.GetWindowSize()
 
 	style := lipgloss.NewStyle().
@@ -73,21 +70,24 @@ func NewFormDialog(title string, fields []FormField, action base.SmartDialogActi
 	}
 
 	if metadata == nil {
-		metadata = make(map[string]interface{})
+		metadata = make(map[string]any)
+	}
+
+	if action.Payload == nil {
+		action.Payload = metadata
 	}
 
 	return FormDialog{
-		title:          title,
-		fields:         fields,
-		textInputs:     textInputs,
-		focusIndex:     0,
-		submitLabel:    "Submit",
-		actionType:     action.Type,
-		actionMetadata: metadata,
-		style:          style,
-		width:          width,
-		height:         height,
-		errorMessage:   "",
+		title:        title,
+		fields:       fields,
+		textInputs:   textInputs,
+		focusIndex:   0,
+		submitLabel:  "Submit",
+		action:       action,
+		style:        style,
+		width:        width,
+		height:       height,
+		errorMessage: "",
 	}
 }
 
@@ -109,7 +109,7 @@ func (dialog FormDialog) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (dialog FormDialog) Update(msg tea.Msg) (FormDialog, tea.Cmd) {
+func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -138,28 +138,26 @@ func (dialog FormDialog) Update(msg tea.Msg) (FormDialog, tea.Cmd) {
 			return dialog, textinput.Blink
 
 		case "enter":
-			// Validate and submit
 			if err := dialog.validate(); err != nil {
 				dialog.errorMessage = err.Error()
 				return dialog, nil
 			}
 
-			// Collect field values
 			values := make(map[string]string)
 			for i, field := range dialog.fields {
 				values[field.Label] = dialog.textInputs[i].Value()
 			}
 
-			// Add values to metadata
-			dialog.actionMetadata["values"] = values
+			action := dialog.action
+			if payload, ok := action.Payload.(map[string]any); ok {
+				payload["values"] = values
+				action.Payload = payload
+			} else {
+				action.Payload = map[string]any{"values": values}
+			}
 
 			return dialog, func() tea.Msg {
-				return base.ConfirmationMessage{
-					Action: base.SmartDialogAction{
-						Type:    dialog.actionType,
-						Payload: dialog.actionMetadata,
-					},
-				}
+				return base.SmartConfirmationMessage{Action: action}
 			}
 		}
 	}
@@ -192,10 +190,9 @@ func (dialog FormDialog) validate() error {
 	return nil
 }
 
-func (dialog FormDialog) View() string {
+func (dialog FormDialog) View() tea.View {
 	var b strings.Builder
 
-	// Title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(colors.Primary()).
@@ -203,13 +200,11 @@ func (dialog FormDialog) View() string {
 	b.WriteString(titleStyle.Render(dialog.title))
 	b.WriteString("\n\n")
 
-	// Fields
 	labelStyle := lipgloss.NewStyle().
 		Foreground(colors.Text()).
 		Bold(true)
 
 	for i, field := range dialog.fields {
-		// Label
 		label := field.Label
 		if field.Required {
 			label += " *"
@@ -217,7 +212,6 @@ func (dialog FormDialog) View() string {
 		b.WriteString(labelStyle.Render(label))
 		b.WriteString("\n")
 
-		// Text input
 		inputStyle := lipgloss.NewStyle()
 		if i == dialog.focusIndex {
 			inputStyle = inputStyle.Foreground(colors.Primary())
@@ -228,7 +222,6 @@ func (dialog FormDialog) View() string {
 		b.WriteString("\n\n")
 	}
 
-	// Error message
 	if dialog.errorMessage != "" {
 		errorStyle := lipgloss.NewStyle().
 			Foreground(colors.Error()).
@@ -237,7 +230,54 @@ func (dialog FormDialog) View() string {
 		b.WriteString("\n\n")
 	}
 
-	// Help text
+	helpStyle := lipgloss.NewStyle().
+		Foreground(colors.Muted()).
+		Italic(true)
+	b.WriteString(helpStyle.Render("Tab: next field • Enter: submit • Esc: cancel"))
+
+	return tea.NewView(dialog.style.Render(b.String()))
+}
+
+func (dialog FormDialog) String() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colors.Primary()).
+		MarginBottom(1)
+	b.WriteString(titleStyle.Render(dialog.title))
+	b.WriteString("\n\n")
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(colors.Text()).
+		Bold(true)
+
+	for i, field := range dialog.fields {
+		label := field.Label
+		if field.Required {
+			label += " *"
+		}
+		b.WriteString(labelStyle.Render(label))
+		b.WriteString("\n")
+
+		inputStyle := lipgloss.NewStyle()
+		if i == dialog.focusIndex {
+			inputStyle = inputStyle.Foreground(colors.Primary())
+		} else {
+			inputStyle = inputStyle.Foreground(colors.Muted())
+		}
+		b.WriteString(inputStyle.Render(dialog.textInputs[i].View()))
+		b.WriteString("\n\n")
+	}
+
+	if dialog.errorMessage != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(colors.Error()).
+			Bold(true)
+		b.WriteString(errorStyle.Render("Error: " + dialog.errorMessage))
+		b.WriteString("\n\n")
+	}
+
 	helpStyle := lipgloss.NewStyle().
 		Foreground(colors.Muted()).
 		Italic(true)

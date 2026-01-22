@@ -108,8 +108,6 @@ func (containerItem ContainerItem) Description() string {
 }
 
 func (containerItem ContainerItem) FilterValue() string {
-	// Return unstyled text for filtering to avoid ANSI code artifacts
-	statusIcon := containerItem.getIsSelectedIcon()
-	titleOrnament := containerItem.getTitleOrnament()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, containerItem.Name)
+	// Return the same value as Title() since we removed styling
+	return containerItem.Title()
 }

@@ -79,14 +79,6 @@ func (imageItem ImageItem) Description() string {
 }
 
 func (imageItem ImageItem) FilterValue() string {
-	// Return unstyled text for filtering to avoid ANSI code artifacts
-	var repoTag string
-	if len(imageItem.Image.RepoTags) > 0 {
-		repoTag = imageItem.Image.RepoTags[0]
-	} else {
-		repoTag = "<none>"
-	}
-	titleOrnament := imageItem.getTitleOrnament()
-	statusIcon := imageItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, repoTag)
+	// Return the same value as Title() since we removed styling
+	return imageItem.Title()
 }

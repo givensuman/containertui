@@ -78,10 +78,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		model.tabsModel, _ = model.tabsModel.Update(msg)
 
-		contentHeight := msg.Height - 4
-		if contentHeight < 0 {
-			contentHeight = 0
-		}
+		contentHeight := max(0, msg.Height - 4)
 
 		contentMsg := tea.WindowSizeMsg{
 			Width:  msg.Width,

@@ -411,9 +411,6 @@ func (clientWrapper *ClientWrapper) GetServices() ([]Service, error) {
 				if configFiles != "" {
 					files := strings.Split(configFiles, ",")
 					if len(files) > 0 {
-						// The label might contain multiple files, we take the first one?
-						// Or check workingDir?
-						// Often config_files is absolute path.
 						composeFile = files[0]
 					}
 				}

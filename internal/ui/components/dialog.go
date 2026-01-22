@@ -1,6 +1,8 @@
 package components
 
 import (
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
@@ -9,14 +11,12 @@ import (
 	"github.com/givensuman/containertui/internal/ui/layout"
 )
 
-// DialogButton defines a button in the dialog
 type DialogButton struct {
 	Label  string
-	Action base.SmartDialogAction // Empty action means Cancel/Close
-	IsSafe bool                   // True = Primary/Safe color, False = Danger/Red
+	Action any
 }
 
-type SmartDialog struct {
+type Dialog struct {
 	base.Component
 	style          lipgloss.Style
 	message        string
@@ -26,12 +26,12 @@ type SmartDialog struct {
 	height         int
 }
 
-// SmartDialog implements StringViewModel and ComponentModel
-// var _ StringViewModel = (*SmartDialog)(nil)
-// var _ ComponentModel = (*SmartDialog)(nil)
+var (
+	_ base.ComponentModel = (*Dialog)(nil)
+	_ fmt.Stringer        = (*Dialog)(nil)
+)
 
-// NewSmartDialog creates a generic confirmation or warning dialog.
-func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
+func NewDialog(message string, buttons []DialogButton) Dialog {
 	width, height := context.GetWindowSize()
 
 	style := lipgloss.NewStyle().
@@ -45,10 +45,10 @@ func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
 	if len(buttons) == 0 {
-		buttons = []DialogButton{{Label: "Cancel", IsSafe: true}}
+		buttons = []DialogButton{{Label: "Cancel", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
 	}
 
-	return SmartDialog{
+	return Dialog{
 		style:          style,
 		message:        message,
 		buttons:        buttons,
@@ -58,7 +58,7 @@ func NewSmartDialog(message string, buttons []DialogButton) SmartDialog {
 	}
 }
 
-func (dialog *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
+func (dialog *Dialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.width = msg.Width
 	dialog.height = msg.Height
 
@@ -67,11 +67,11 @@ func (dialog *SmartDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 }
 
-func (dialog SmartDialog) Init() tea.Cmd {
+func (dialog Dialog) Init() tea.Cmd {
 	return nil
 }
 
-func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (dialog Dialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		dialog.UpdateWindowDimensions(msg)
@@ -89,17 +89,27 @@ func (dialog SmartDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			selectedButton := dialog.buttons[dialog.selectedButton]
-			if selectedButton.Action.Type == "" {
+
+			switch action := selectedButton.Action.(type) {
+			case base.DialogAction[any]:
+				if action.Type == base.CloseDialog {
+					return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
+				}
+				return dialog, func() tea.Msg { return base.ConfirmationMessage[any]{Action: action} }
+
+			case base.SmartDialogAction:
+				return dialog, func() tea.Msg { return base.SmartConfirmationMessage{Action: action} }
+
+			default:
 				return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
 			}
-			return dialog, func() tea.Msg { return base.ConfirmationMessage{Action: selectedButton.Action} }
 		}
 	}
 
 	return dialog, nil
 }
 
-func (dialog SmartDialog) View() tea.View {
+func (dialog Dialog) View() tea.View {
 	buttonViews := make([]string, 0, len(dialog.buttons))
 
 	defaultButtonStyle := lipgloss.NewStyle().
@@ -108,31 +118,18 @@ func (dialog SmartDialog) View() tea.View {
 		Foreground(colors.Text()).
 		Background(colors.Muted())
 
-	activeSafeStyle := lipgloss.NewStyle().
+	hoveredButtonStyle := lipgloss.NewStyle().
 		Padding(0, 1).
 		Margin(0, 1).
 		Bold(true).
 		Foreground(colors.Text()).
 		Background(colors.Primary())
 
-	activeDangerStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Margin(0, 1).
-		Bold(true).
-		Foreground(colors.Text()).
-		Background(colors.Error())
-
 	for index, button := range dialog.buttons {
-		var buttonStyle lipgloss.Style
+		buttonStyle := defaultButtonStyle
 
 		if index == dialog.selectedButton {
-			if button.IsSafe {
-				buttonStyle = activeSafeStyle
-			} else {
-				buttonStyle = activeDangerStyle
-			}
-		} else {
-			buttonStyle = defaultButtonStyle
+			buttonStyle = hoveredButtonStyle
 		}
 
 		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
@@ -140,13 +137,7 @@ func (dialog SmartDialog) View() tea.View {
 
 	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
 
-	currentButton := dialog.buttons[dialog.selectedButton]
-	renderStyle := dialog.style
-	if !currentButton.IsSafe {
-		renderStyle = renderStyle.BorderForeground(colors.Error())
-	}
-
-	content := renderStyle.Render(lipgloss.JoinVertical(
+	content := dialog.style.Render(lipgloss.JoinVertical(
 		lipgloss.Center,
 		dialog.message,
 		"",
@@ -156,8 +147,7 @@ func (dialog SmartDialog) View() tea.View {
 	return tea.NewView(content)
 }
 
-// ViewString returns the string representation of the dialog (for overlay rendering)
-func (dialog SmartDialog) ViewString() string {
+func (dialog Dialog) String() string {
 	buttonViews := make([]string, 0, len(dialog.buttons))
 
 	defaultButtonStyle := lipgloss.NewStyle().
@@ -166,31 +156,18 @@ func (dialog SmartDialog) ViewString() string {
 		Foreground(colors.Text()).
 		Background(colors.Muted())
 
-	activeSafeStyle := lipgloss.NewStyle().
+	hoveredButtonStyle := lipgloss.NewStyle().
 		Padding(0, 1).
 		Margin(0, 1).
 		Bold(true).
 		Foreground(colors.Text()).
 		Background(colors.Primary())
 
-	activeDangerStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Margin(0, 1).
-		Bold(true).
-		Foreground(colors.Text()).
-		Background(colors.Error())
-
 	for index, button := range dialog.buttons {
-		var buttonStyle lipgloss.Style
+		buttonStyle := defaultButtonStyle
 
 		if index == dialog.selectedButton {
-			if button.IsSafe {
-				buttonStyle = activeSafeStyle
-			} else {
-				buttonStyle = activeDangerStyle
-			}
-		} else {
-			buttonStyle = defaultButtonStyle
+			buttonStyle = hoveredButtonStyle
 		}
 
 		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
@@ -198,13 +175,7 @@ func (dialog SmartDialog) ViewString() string {
 
 	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
 
-	currentButton := dialog.buttons[dialog.selectedButton]
-	renderStyle := dialog.style
-	if !currentButton.IsSafe {
-		renderStyle = renderStyle.BorderForeground(colors.Error())
-	}
-
-	return renderStyle.Render(lipgloss.JoinVertical(
+	return dialog.style.Render(lipgloss.JoinVertical(
 		lipgloss.Center,
 		dialog.message,
 		"",

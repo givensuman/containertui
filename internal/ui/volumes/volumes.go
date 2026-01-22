@@ -3,6 +3,7 @@ package volumes
 
 import (
 	"fmt"
+	"slices"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -176,7 +177,7 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
 	if model.ResourceView.IsOverlayVisible() {
-		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
+		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteVolume" {
 				volumeName := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveVolume(volumeName)
@@ -186,9 +187,9 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 					return model, model.ResourceView.Refresh()
 				} else {
 					// Show error
-					errorDialog := components.NewSmartDialog(
+					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove volume:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+						[]components.DialogButton{{Label: "OK"}},
 					)
 					model.ResourceView.SetOverlay(errorDialog)
 					return model, nil
@@ -215,68 +216,11 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				return model, tea.Batch(cmds...) // Handled by parent
 
 			case key.Matches(msg, model.keybindings.toggleSelection):
-				selectedItem := model.ResourceView.GetSelectedItem()
-				if selectedItem != nil {
-					model.ResourceView.ToggleSelection(selectedItem.Volume.Name)
-
-					// Update the visual state of the item
-					index := model.ResourceView.GetSelectedIndex()
-					selectedItem.isSelected = !selectedItem.isSelected
-					model.ResourceView.SetItem(index, *selectedItem)
-				}
+				model.handleToggleSelection()
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				// Check if we need to select all or deselect all
-				items := model.ResourceView.GetItems()
-				selectedIDs := model.ResourceView.GetSelectedIDs()
-
-				shouldSelectAll := false
-				for _, item := range items {
-					found := false
-					for _, id := range selectedIDs {
-						if id == item.Volume.Name {
-							found = true
-							break
-						}
-					}
-					if !found {
-						shouldSelectAll = true
-						break
-					}
-				}
-
-				if shouldSelectAll {
-					// Select all
-					for i, item := range items {
-						found := false
-						for _, id := range selectedIDs {
-							if id == item.Volume.Name {
-								found = true
-								break
-							}
-						}
-						if !found {
-							model.ResourceView.ToggleSelection(item.Volume.Name)
-						}
-						// Visual update
-						item.isSelected = true
-						model.ResourceView.SetItem(i, item)
-					}
-				} else {
-					// Deselect all
-					for i, item := range items {
-						for _, id := range selectedIDs {
-							if id == item.Volume.Name {
-								model.ResourceView.ToggleSelection(item.Volume.Name)
-								break
-							}
-						}
-						// Visual update
-						item.isSelected = false
-						model.ResourceView.SetItem(i, item)
-					}
-				}
+				model.handleToggleSelectionOfAll()
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):
@@ -310,6 +254,52 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
+func (model *Model) handleToggleSelection() {
+	selectedItem := model.ResourceView.GetSelectedItem()
+	if selectedItem != nil {
+		model.ResourceView.ToggleSelection(selectedItem.Volume.Name)
+
+		// Update the visual state of the item
+		index := model.ResourceView.GetSelectedIndex()
+		selectedItem.isSelected = !selectedItem.isSelected
+		model.ResourceView.SetItem(index, *selectedItem)
+	}
+}
+
+func (model *Model) handleToggleSelectionOfAll() {
+	// Check if we need to select all or deselect all
+	items := model.ResourceView.GetItems()
+	selectedIDs := model.ResourceView.GetSelectedIDs()
+
+	shouldSelectAll := false
+	for _, item := range items {
+		if !slices.Contains(selectedIDs, item.Volume.Name) {
+			shouldSelectAll = true
+			break
+		}
+	}
+
+	if shouldSelectAll {
+		// Select all
+		for i, item := range items {
+			if !slices.Contains(selectedIDs, item.Volume.Name) {
+				model.ResourceView.ToggleSelection(item.Volume.Name)
+			}
+			// Visual update
+			item.isSelected = true
+			model.ResourceView.SetItem(i, item)
+		}
+	} else {
+		// Deselect all
+		for i, item := range items {
+			model.ResourceView.ToggleSelection(item.Volume.Name)
+			// Visual update
+			item.isSelected = false
+			model.ResourceView.SetItem(i, item)
+		}
+	}
+}
+
 func (model *Model) handleRemove() {
 	selectedItem := model.ResourceView.GetSelectedItem()
 	if selectedItem == nil {
@@ -318,20 +308,20 @@ func (model *Model) handleRemove() {
 
 	containersUsingVolume, _ := context.GetClient().GetContainersUsingVolume(selectedItem.Volume.Name)
 	if len(containersUsingVolume) > 0 {
-		warningDialog := components.NewSmartDialog(
+		warningDialog := components.NewDialog(
 			fmt.Sprintf("Volume %s is used by %d containers (%v).\nCannot delete.",
 				selectedItem.Volume.Name, len(containersUsingVolume), containersUsingVolume),
 			[]components.DialogButton{
-				{Label: "OK", IsSafe: true},
+				{Label: "OK"},
 			},
 		)
 		model.ResourceView.SetOverlay(warningDialog)
 	} else {
-		confirmationDialog := components.NewSmartDialog(
+		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete volume %s?", selectedItem.Volume.Name),
 			[]components.DialogButton{
-				{Label: "Cancel", IsSafe: true},
-				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{
+				{Label: "Cancel"},
+				{Label: "Delete", Action: base.SmartDialogAction{
 					Type:    "DeleteVolume",
 					Payload: selectedItem.Volume.Name,
 				}},

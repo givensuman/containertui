@@ -3,6 +3,7 @@ package images
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -328,9 +329,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case MsgPullComplete:
 		if msg.Err != nil {
 			// Show error dialog
-			errorDialog := components.NewSmartDialog(
+			errorDialog := components.NewDialog(
 				fmt.Sprintf("Failed to pull image:\n\n%v", msg.Err),
-				[]components.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK"}},
 			)
 			model.ResourceView.SetOverlay(errorDialog)
 		} else {
@@ -349,16 +350,16 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case MsgCreateContainerComplete:
 		if msg.Err != nil {
 			// Show error dialog
-			errorDialog := components.NewSmartDialog(
+			errorDialog := components.NewDialog(
 				fmt.Sprintf("Failed to create container:\n\n%v", msg.Err),
-				[]components.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK"}},
 			)
 			model.ResourceView.SetOverlay(errorDialog)
 		} else {
 			// Success - show success message
-			successDialog := components.NewSmartDialog(
+			successDialog := components.NewDialog(
 				fmt.Sprintf("Container created successfully!\n\nContainer ID: %s", msg.ContainerID[:12]),
-				[]components.DialogButton{{Label: "OK", IsSafe: true}},
+				[]components.DialogButton{{Label: "OK"}},
 			)
 			model.ResourceView.SetOverlay(successDialog)
 		}
@@ -367,7 +368,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
 	if model.ResourceView.IsOverlayVisible() {
-		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
+		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteImage" {
 				imageID := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveImage(imageID)
@@ -377,21 +378,21 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, model.ResourceView.Refresh()
 				} else {
 					// Show error
-					errorDialog := components.NewSmartDialog(
+					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove image:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+						[]components.DialogButton{{Label: "OK"}},
 					)
 					model.ResourceView.SetOverlay(errorDialog)
 					return model, nil
 				}
 			} else if confirmMsg.Action.Type == "PullImageAction" {
 				// Extract image name from form values
-				payload := confirmMsg.Action.Payload.(map[string]interface{})
+				payload := confirmMsg.Action.Payload.(map[string]any)
 				formValues := payload["values"].(map[string]string)
 				imageName := formValues["Image"]
 
 				// Show progress dialog
-				progressDialog := components.NewSmartDialog(
+				progressDialog := components.NewDialog(
 					fmt.Sprintf("Pulling image: %s\n\nThis may take a few moments...", imageName),
 					[]components.DialogButton{}, // No buttons while pulling
 				)
@@ -404,7 +405,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			} else if confirmMsg.Action.Type == "CreateContainerAction" {
 				// Extract form values and image ID
-				payload := confirmMsg.Action.Payload.(map[string]interface{})
+				payload := confirmMsg.Action.Payload.(map[string]any)
 				imageID := payload["imageID"].(string)
 				formValues := payload["values"].(map[string]string)
 
@@ -426,7 +427,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				// Show progress dialog
-				progressDialog := components.NewSmartDialog(
+				progressDialog := components.NewDialog(
 					"Creating container...",
 					[]components.DialogButton{}, // No buttons while creating
 				)
@@ -526,7 +527,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 						},
 						base.SmartDialogAction{
 							Type:    "CreateContainerAction",
-							Payload: map[string]interface{}{"imageID": selectedItem.Image.ID},
+							Payload: map[string]any{"imageID": selectedItem.Image.ID},
 						},
 						nil,
 					)
@@ -593,14 +594,7 @@ func (model *Model) handleToggleSelectionOfAll() {
 
 	shouldSelectAll := false
 	for _, item := range items {
-		found := false
-		for _, id := range selectedIDs {
-			if id == item.Image.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(selectedIDs, item.Image.ID) {
 			shouldSelectAll = true
 			break
 		}
@@ -609,14 +603,7 @@ func (model *Model) handleToggleSelectionOfAll() {
 	if shouldSelectAll {
 		// Select all
 		for i, item := range items {
-			found := false
-			for _, id := range selectedIDs {
-				if id == item.Image.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(selectedIDs, item.Image.ID) {
 				model.ResourceView.ToggleSelection(item.Image.ID)
 			}
 			item.isSelected = true
@@ -640,19 +627,19 @@ func (model *Model) handleRemove() {
 
 	containersUsingImage, _ := context.GetClient().GetContainersUsingImage(selectedItem.Image.ID)
 	if len(containersUsingImage) > 0 {
-		warningDialog := components.NewSmartDialog(
+		warningDialog := components.NewDialog(
 			fmt.Sprintf("Image %s is used by %d containers (%v).\nCannot delete.", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
 			[]components.DialogButton{
-				{Label: "OK", IsSafe: true},
+				{Label: "OK"},
 			},
 		)
 		model.ResourceView.SetOverlay(warningDialog)
 	} else {
-		confirmationDialog := components.NewSmartDialog(
+		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete image %s?", selectedItem.Image.ID[:12]),
 			[]components.DialogButton{
-				{Label: "Cancel", IsSafe: true},
-				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteImage", Payload: selectedItem.Image.ID}},
+				{Label: "Cancel"},
+				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteImage", Payload: selectedItem.Image.ID}},
 			},
 		)
 		model.ResourceView.SetOverlay(confirmationDialog)

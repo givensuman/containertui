@@ -254,9 +254,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.restoreScrollPosition()
 	}
 
-	// 3. Handle ConfirmationMessage when overlay is visible
 	if model.ResourceView.IsOverlayVisible() {
-		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
+		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteContainer" {
 				containerIDs := confirmMsg.Action.Payload.([]string)
 				spinnerCmd := model.setWorkingState(containerIDs, true)
@@ -264,7 +263,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))
 			}
 		}
-		// Don't process keybindings when overlay is visible
 		return model, tea.Batch(cmds...)
 	}
 
@@ -656,22 +654,22 @@ func (model *Model) handleRemoveContainers() {
 			}
 		}
 
-		confirmDialog := components.NewSmartDialog(
+		confirmDialog := components.NewDialog(
 			message,
 			[]components.DialogButton{
-				{Label: "Cancel", IsSafe: true},
-				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: selectedIDs}},
+				{Label: "Cancel"},
+				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: selectedIDs}},
 			},
 		)
 		model.ResourceView.SetOverlay(confirmDialog)
 	} else {
 		item := model.ResourceView.GetSelectedItem()
 		if item != nil && !item.isWorking {
-			confirmDialog := components.NewSmartDialog(
+			confirmDialog := components.NewDialog(
 				fmt.Sprintf("Are you sure you want to delete container %s?", item.Name),
 				[]components.DialogButton{
-					{Label: "Cancel", IsSafe: true},
-					{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: []string{item.ID}}},
+					{Label: "Cancel"},
+					{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: []string{item.ID}}},
 				},
 			)
 			model.ResourceView.SetOverlay(confirmDialog)
@@ -728,19 +726,19 @@ func (model *Model) handleExecShell() tea.Cmd {
 func (model *Model) handleToggleSelection() {
 	selectedItem := model.ResourceView.GetSelectedItem()
 	if selectedItem != nil && !selectedItem.isWorking {
-		model.ResourceView.ToggleSelection(selectedItem.ID)
+		model.ResourceView.HandleToggleSelection()
 
 		// Update the visual state of the item
 		index := model.ResourceView.GetSelectedIndex()
-		selectedItem.isSelected = !selectedItem.isSelected
-		model.ResourceView.SetItem(index, *selectedItem)
+		if item := model.ResourceView.GetSelectedItem(); item != nil {
+			item.isSelected = model.ResourceView.Selections.IsSelected(item.ID)
+			model.ResourceView.SetItem(index, *item)
+		}
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
-	// First check if we need to select all or deselect all
-	// Logic: If any non-working item is unselected, select all. Otherwise deselect all.
-
+	// Check if any non-working items exist that are not selected
 	items := model.ResourceView.GetItems()
 	selectedIDs := model.ResourceView.GetSelectedIDs()
 
@@ -757,14 +755,11 @@ func (model *Model) handleToggleSelectionOfAll() {
 	if shouldSelectAll {
 		// Select all non-working items
 		for i, item := range items {
-			if !item.isWorking {
-				if !slices.Contains(selectedIDs, item.ID) {
-					model.ResourceView.ToggleSelection(item.ID)
-				}
-				// Visual update
-				item.isSelected = true
-				model.ResourceView.SetItem(i, item)
+			if !item.isWorking && !slices.Contains(selectedIDs, item.ID) {
+				model.ResourceView.ToggleSelection(item.ID)
 			}
+			item.isSelected = model.ResourceView.Selections.IsSelected(item.ID)
+			model.ResourceView.SetItem(i, item)
 		}
 	} else {
 		// Deselect all
@@ -772,7 +767,6 @@ func (model *Model) handleToggleSelectionOfAll() {
 			if slices.Contains(selectedIDs, item.ID) {
 				model.ResourceView.ToggleSelection(item.ID)
 			}
-			// Visual update
 			item.isSelected = false
 			model.ResourceView.SetItem(i, item)
 		}

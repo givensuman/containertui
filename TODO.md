@@ -23,5 +23,4 @@ Decide what goes in informational panel
   - ties into improve styling, top bit can be shown in list w/ icons and panel can be pure JSON/YAML
 
 -- Bugs
-Fix synced spinners when stopping multiple containers
 "Pull image" functionality should update selected image; use spinner like containers

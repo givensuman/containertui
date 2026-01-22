@@ -42,7 +42,7 @@ func GetOutputFormat() OutputFormat {
 
 // MarshalToFormat converts a struct to YAML or JSON format.
 // For YAML, it first marshals to JSON (respecting JSON tags), then converts to YAML.
-func MarshalToFormat(data interface{}, format OutputFormat) (string, error) {
+func MarshalToFormat(data any, format OutputFormat) (string, error) {
 	switch format {
 	case FormatYAML:
 		return marshalToYAML(data)
@@ -55,7 +55,7 @@ func MarshalToFormat(data interface{}, format OutputFormat) (string, error) {
 
 // marshalToYAML converts data to YAML format.
 // Uses JSON as intermediate format to respect JSON struct tags.
-func marshalToYAML(data interface{}) (string, error) {
+func marshalToYAML(data any) (string, error) {
 	// First marshal to JSON to respect JSON tags
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
@@ -63,7 +63,7 @@ func marshalToYAML(data interface{}) (string, error) {
 	}
 
 	// Then unmarshal JSON to generic map/slice structure
-	var intermediate interface{}
+	var intermediate any
 	if err := json.Unmarshal(jsonBytes, &intermediate); err != nil {
 		return "", fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
@@ -78,7 +78,7 @@ func marshalToYAML(data interface{}) (string, error) {
 }
 
 // marshalToJSON converts data to pretty-printed JSON format.
-func marshalToJSON(data interface{}) (string, error) {
+func marshalToJSON(data any) (string, error) {
 	jsonBytes, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal to JSON: %w", err)

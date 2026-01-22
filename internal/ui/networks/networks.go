@@ -176,7 +176,7 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
 	if model.ResourceView.IsOverlayVisible() {
-		if confirmMsg, ok := msg.(base.ConfirmationMessage); ok {
+		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteNetwork" {
 				networkID := confirmMsg.Action.Payload.(string)
 				err := context.GetClient().RemoveNetwork(networkID)
@@ -186,9 +186,9 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 					return model, model.ResourceView.Refresh()
 				} else {
 					// Show error
-					errorDialog := components.NewSmartDialog(
+					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove network:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK", IsSafe: true}},
+						[]components.DialogButton{{Label: "OK"}},
 					)
 					model.ResourceView.SetOverlay(errorDialog)
 					return model, nil
@@ -289,19 +289,19 @@ func (model *Model) handleRemove() {
 
 	containersUsingNetwork, _ := context.GetClient().GetContainersUsingNetwork(selectedItem.Network.ID)
 	if len(containersUsingNetwork) > 0 {
-		warningDialog := components.NewSmartDialog(
+		warningDialog := components.NewDialog(
 			fmt.Sprintf("Network %s is used by %d containers (%v).\nCannot delete.", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
 			[]components.DialogButton{
-				{Label: "OK", IsSafe: true},
+				{Label: "OK"},
 			},
 		)
 		model.ResourceView.SetOverlay(warningDialog)
 	} else {
-		confirmationDialog := components.NewSmartDialog(
+		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete network %s?", selectedItem.Network.Name),
 			[]components.DialogButton{
-				{Label: "Cancel", IsSafe: true},
-				{Label: "Delete", IsSafe: false, Action: base.SmartDialogAction{Type: "DeleteNetwork", Payload: selectedItem.Network.ID}},
+				{Label: "Cancel"},
+				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteNetwork", Payload: selectedItem.Network.ID}},
 			},
 		)
 		model.ResourceView.SetOverlay(confirmationDialog)

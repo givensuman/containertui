@@ -68,8 +68,6 @@ func (volumeItem VolumeItem) Description() string {
 }
 
 func (volumeItem VolumeItem) FilterValue() string {
-	// Return unstyled text for filtering to avoid ANSI code artifacts
-	titleOrnament := volumeItem.getTitleOrnament()
-	statusIcon := volumeItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, volumeItem.Volume.Name)
+	// Return the same value as Title() since we removed styling
+	return volumeItem.Title()
 }

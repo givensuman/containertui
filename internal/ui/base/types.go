@@ -14,23 +14,45 @@ type ComponentModel interface {
 	UpdateWindowDimensions(msg tea.WindowSizeMsg)
 }
 
-// StringViewModel is for child components that render to strings (not top-level tea.View)
 type StringViewModel interface {
-	Init() tea.Cmd
-	Update(tea.Msg) (tea.Model, tea.Cmd) // Updated return signature to match implementations usually returning concrete types
 	View() string
 }
 
-// Dialog-related messages
+type Action int
 
-// SmartDialogAction defines the action to take upon confirmation
+const (
+	CloseDialog Action = iota
+	DeleteContainer
+	DeleteImage
+	NavigateToContainer
+)
+
+// DialogAction defines the action to take upon confirmation
+type DialogAction[T any] struct {
+	Type    Action
+	Payload T // Data required for the action
+}
+
+func NewDialogAction[T any](actionType Action, payload T) DialogAction[T] {
+	return DialogAction[T]{
+		Type:    actionType,
+		Payload: payload,
+	}
+}
+
+// SmartDialogAction uses string-based action types for flexible dialog handling
 type SmartDialogAction struct {
-	Type    string // "DeleteContainer", "DeleteImage", "NavigateToContainer"
-	Payload any    // Data required for the action (e.g. IDs)
+	Type    string
+	Payload any
 }
 
 // ConfirmationMessage is sent when an action is confirmed
-type ConfirmationMessage struct {
+type ConfirmationMessage[T any] struct {
+	Action DialogAction[T]
+}
+
+// SmartConfirmationMessage is sent when a SmartDialog action is confirmed
+type SmartConfirmationMessage struct {
 	Action SmartDialogAction
 }
 

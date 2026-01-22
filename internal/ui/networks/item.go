@@ -72,8 +72,6 @@ func (networkItem NetworkItem) Description() string {
 }
 
 func (networkItem NetworkItem) FilterValue() string {
-	// Return unstyled text for filtering to avoid ANSI code artifacts
-	titleOrnament := networkItem.getTitleOrnament()
-	statusIcon := networkItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, networkItem.Network.Name)
+	// Return the same value as Title() since we removed styling
+	return networkItem.Title()
 }
