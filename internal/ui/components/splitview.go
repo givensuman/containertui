@@ -42,29 +42,36 @@ func renderBorderWithTitle(content, title string, width, height int, borderColor
 		return rendered
 	}
 
-	// Build a custom top border with the title
-	// The width of the border is: 1 (left corner) + content width + 2 (left padding) + 2 (right padding) + 1 (right corner)
-	// Which simplifies to: width + 4
-	borderWidth := width + 4
+	// Get the actual width of the rendered first line (using lipgloss.Width to handle ANSI codes)
+	actualWidth := lipgloss.Width(lines[0])
 
 	leftCorner := border.TopLeft
 	rightCorner := border.TopRight
 	borderChar := border.Top
 
-	// Available space between corners
-	availableWidth := borderWidth - len(leftCorner) - len(rightCorner)
+	// Available space between corners (using visual width)
+	availableWidth := actualWidth - lipgloss.Width(leftCorner) - lipgloss.Width(rightCorner)
 
 	// Build title with prefix: "─Title"
 	titleWithPrefix := borderChar + title
-	titleLen := len(titleWithPrefix)
+	titleWidth := lipgloss.Width(titleWithPrefix)
 
-	if titleLen > availableWidth {
+	if titleWidth > availableWidth {
 		// Title too long, truncate it
-		maxTitleLen := availableWidth - len(borderChar) - 3 // -3 for "..."
+		// We need to be careful with string slicing for multi-byte characters
+		maxTitleLen := availableWidth - lipgloss.Width(borderChar) - 3 // -3 for "..."
 		if maxTitleLen > 0 {
-			title = title[:maxTitleLen] + "..."
+			// Truncate title to fit
+			truncated := title
+			for lipgloss.Width(truncated) > maxTitleLen {
+				if len(truncated) == 0 {
+					break
+				}
+				truncated = truncated[:len(truncated)-1]
+			}
+			title = truncated + "..."
 			titleWithPrefix = borderChar + title
-			titleLen = len(titleWithPrefix)
+			titleWidth = lipgloss.Width(titleWithPrefix)
 		} else {
 			// Not enough space, skip title
 			return rendered
@@ -72,7 +79,7 @@ func renderBorderWithTitle(content, title string, width, height int, borderColor
 	}
 
 	// Calculate remaining dashes
-	remainingDashes := availableWidth - titleLen
+	remainingDashes := availableWidth - titleWidth
 	if remainingDashes < 0 {
 		remainingDashes = 0
 	}
@@ -83,9 +90,7 @@ func renderBorderWithTitle(content, title string, width, height int, borderColor
 	// Apply the border color to the new top line
 	styledTopLine := lipgloss.NewStyle().Foreground(borderColor).Render(newTopLine)
 
-	// Replace the first line (strip ANSI codes from the old first line to measure it properly)
-	// Since the rendered output has colors, we need to be careful
-	// For simplicity, we just replace the entire first line
+	// Replace the first line
 	lines[0] = styledTopLine
 
 	return strings.Join(lines, "\n")
