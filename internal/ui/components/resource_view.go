@@ -110,6 +110,14 @@ func (rv *ResourceView[ID, Item]) IsListFocused() bool {
 	return rv.SplitView.Focus == FocusList
 }
 
+func (rv *ResourceView[ID, Item]) IsDetailFocused() bool {
+	return rv.SplitView.Focus == FocusDetail
+}
+
+func (rv *ResourceView[ID, Item]) IsExtraFocused() bool {
+	return rv.SplitView.Focus == FocusExtra
+}
+
 func (rv *ResourceView[ID, Item]) IsFiltering() bool {
 	return rv.SplitView.List.FilterState() == list.Filtering
 }

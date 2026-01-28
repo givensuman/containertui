@@ -277,6 +277,11 @@ func New() Model {
 		},
 	)
 
+	// Add extra pane below detail pane
+	extraPane := components.NewViewportPane()
+	extraPane.SetContent("Hello World")
+	resourceView.SplitView.SetExtraPane(extraPane, 0.3) // 30% of height
+
 	// Set custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
@@ -540,17 +545,20 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 	} else {
-		// Detail pane is focused
+		// Detail or extra pane is focused
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			switch {
-			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-				cmd := model.handleToggleFormat()
-				cmds = append(cmds, cmd)
-			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-				cmd := model.handleCopyToClipboard()
-				if cmd != nil {
+			// Only handle these actions when detail pane is focused (not extra)
+			if model.ResourceView.IsDetailFocused() {
+				switch {
+				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+					cmd := model.handleToggleFormat()
 					cmds = append(cmds, cmd)
+				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+					cmd := model.handleCopyToClipboard()
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
 				}
 			}
 		}
@@ -775,8 +783,8 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	// If detail pane is focused, show detail keybindings
-	if !model.ResourceView.IsListFocused() {
+	// If detail or extra pane is focused, show detail keybindings
+	if model.ResourceView.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -784,13 +792,19 @@ func (model Model) ShortHelp() []key.Binding {
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
 		}
+	} else if model.ResourceView.IsExtraFocused() {
+		return []key.Binding{
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
+			model.detailsKeybindings.Switch,
+		}
 	}
 	return model.ResourceView.ShortHelp()
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	// If detail pane is focused, show detail keybindings
-	if !model.ResourceView.IsListFocused() {
+	// If detail or extra pane is focused, show detail keybindings
+	if model.ResourceView.IsDetailFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -800,6 +814,14 @@ func (model Model) FullHelp() [][]key.Binding {
 			{
 				model.detailsKeybindings.ToggleJSON,
 				model.detailsKeybindings.CopyOutput,
+			},
+		}
+	} else if model.ResourceView.IsExtraFocused() {
+		return [][]key.Binding{
+			{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
 			},
 		}
 	}
