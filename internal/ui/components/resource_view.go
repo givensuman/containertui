@@ -197,6 +197,22 @@ func (rv *ResourceView[ID, Item]) SetContent(content string) {
 	}
 }
 
+func (rv *ResourceView[ID, Item]) SetExtraContent(content string) {
+	if rv.SplitView.Extra != nil {
+		if vp, ok := rv.SplitView.Extra.(*ViewportPane); ok {
+			vp.SetContent(content)
+		}
+	}
+}
+
+func (rv *ResourceView[ID, Item]) SetDetailTitle(title string) {
+	rv.SplitView.SetDetailTitle(title)
+}
+
+func (rv *ResourceView[ID, Item]) SetExtraTitle(title string) {
+	rv.SplitView.SetExtraTitle(title)
+}
+
 func (rv *ResourceView[ID, Item]) HandleToggleSelection() {
 	index := rv.SplitView.List.Index()
 	selectedItem := rv.SplitView.List.SelectedItem()

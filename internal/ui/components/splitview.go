@@ -1,6 +1,9 @@
 package components
 
 import (
+	"image/color"
+	"strings"
+
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -10,6 +13,83 @@ import (
 	"github.com/givensuman/containertui/internal/ui/layout"
 	"github.com/givensuman/containertui/internal/ui/styles"
 )
+
+// renderBorderWithTitle renders content with a border that has an embedded title in the top border.
+// The title is left-aligned in the top border line.
+func renderBorderWithTitle(content, title string, width, height int, borderColor color.Color, focused bool) string {
+	border := lipgloss.RoundedBorder()
+
+	// Place the content
+	placedContent := lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, content)
+
+	// Create the base style with border
+	style := lipgloss.NewStyle().
+		Border(border).
+		BorderForeground(borderColor).
+		Padding(1)
+
+	// Render the bordered content
+	rendered := style.Render(placedContent)
+
+	// If no title, return as-is
+	if title == "" {
+		return rendered
+	}
+
+	// Split the rendered output into lines
+	lines := strings.Split(rendered, "\n")
+	if len(lines) == 0 {
+		return rendered
+	}
+
+	// Build a custom top border with the title
+	// The width of the border is: 1 (left corner) + content width + 2 (left padding) + 2 (right padding) + 1 (right corner)
+	// Which simplifies to: width + 4
+	borderWidth := width + 4
+
+	leftCorner := border.TopLeft
+	rightCorner := border.TopRight
+	borderChar := border.Top
+
+	// Available space between corners
+	availableWidth := borderWidth - len(leftCorner) - len(rightCorner)
+
+	// Build title with prefix: "─Title"
+	titleWithPrefix := borderChar + title
+	titleLen := len(titleWithPrefix)
+
+	if titleLen > availableWidth {
+		// Title too long, truncate it
+		maxTitleLen := availableWidth - len(borderChar) - 3 // -3 for "..."
+		if maxTitleLen > 0 {
+			title = title[:maxTitleLen] + "..."
+			titleWithPrefix = borderChar + title
+			titleLen = len(titleWithPrefix)
+		} else {
+			// Not enough space, skip title
+			return rendered
+		}
+	}
+
+	// Calculate remaining dashes
+	remainingDashes := availableWidth - titleLen
+	if remainingDashes < 0 {
+		remainingDashes = 0
+	}
+
+	// Construct the new top line
+	newTopLine := leftCorner + titleWithPrefix + strings.Repeat(borderChar, remainingDashes) + rightCorner
+
+	// Apply the border color to the new top line
+	styledTopLine := lipgloss.NewStyle().Foreground(borderColor).Render(newTopLine)
+
+	// Replace the first line (strip ANSI codes from the old first line to measure it properly)
+	// Since the rendered output has colors, we need to be careful
+	// For simplicity, we just replace the entire first line
+	lines[0] = styledTopLine
+
+	return strings.Join(lines, "\n")
+}
 
 type FocusState int
 
@@ -168,7 +248,9 @@ type SplitView struct {
 	unfocusedDelegate  list.DefaultDelegate
 	hasCachedDelegates bool
 
-	extraRatio float64 // Ratio of height for Extra pane (0 means no extra pane)
+	extraRatio  float64 // Ratio of height for Extra pane (0 means no extra pane)
+	detailTitle string  // Title for detail pane border
+	extraTitle  string  // Title for extra pane border
 }
 
 func NewSplitView(list list.Model, detail Pane) SplitView {
@@ -188,6 +270,14 @@ func (s *SplitView) SetExtraPane(extra Pane, heightRatio float64) {
 		heightRatio = 0.3 // default to 30% of height
 	}
 	s.extraRatio = heightRatio
+}
+
+func (s *SplitView) SetDetailTitle(title string) {
+	s.detailTitle = title
+}
+
+func (s *SplitView) SetExtraTitle(title string) {
+	s.extraTitle = title
 }
 
 func (s *SplitView) SetDelegates(baseDelegate list.DefaultDelegate) {
@@ -393,14 +483,7 @@ func (s SplitView) View() string {
 		}
 
 		detailContent := s.Detail.View()
-		placedDetailContent := lipgloss.Place(contentWidth, detailContentHeight, lipgloss.Left, lipgloss.Top, detailContent)
-
-		detailStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(detailBorderColor).
-			Padding(1)
-
-		detailView := detailStyle.Render(placedDetailContent)
+		detailView := renderBorderWithTitle(detailContent, s.detailTitle, contentWidth, detailContentHeight, detailBorderColor, s.Focus == FocusDetail)
 
 		// Render extra pane
 		extraBorderColor := colors.Muted()
@@ -409,14 +492,7 @@ func (s SplitView) View() string {
 		}
 
 		extraContent := s.Extra.View()
-		placedExtraContent := lipgloss.Place(contentWidth, extraContentHeight, lipgloss.Left, lipgloss.Top, extraContent)
-
-		extraStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(extraBorderColor).
-			Padding(1)
-
-		extraView := extraStyle.Render(placedExtraContent)
+		extraView := renderBorderWithTitle(extraContent, s.extraTitle, contentWidth, extraContentHeight, extraBorderColor, s.Focus == FocusExtra)
 
 		// Stack detail and extra vertically
 		rightColumn := lipgloss.JoinVertical(lipgloss.Left, detailView, extraView)
@@ -437,14 +513,7 @@ func (s SplitView) View() string {
 			contentHeight = 0
 		}
 
-		placedContent := lipgloss.Place(contentWidth, contentHeight, lipgloss.Left, lipgloss.Top, viewportContent)
-
-		detailStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor).
-			Padding(1)
-
-		detailView := detailStyle.Render(placedContent)
+		detailView := renderBorderWithTitle(viewportContent, s.detailTitle, contentWidth, contentHeight, borderColor, s.Focus == FocusDetail)
 
 		return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 	}

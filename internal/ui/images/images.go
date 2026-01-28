@@ -282,6 +282,10 @@ func New() Model {
 	extraPane.SetContent("Hello World")
 	resourceView.SplitView.SetExtraPane(extraPane, 0.3) // 30% of height
 
+	// Set titles for the panes
+	resourceView.SplitView.SetDetailTitle("Inspect")
+	resourceView.SplitView.SetExtraTitle("Hello World")
+
 	// Set custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
