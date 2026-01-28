@@ -229,10 +229,11 @@ func BuildImagePanel(image types.ImageInspect, width int, format infopanel.Outpu
 	}
 
 	// Connected Resources - containers using this image
-	usedBy, err := context.GetClient().GetContainersUsingImage(image.ID)
-	if err == nil && len(usedBy) > 0 {
-		output.WriteString(formatSummaryField("Used By", formatBulletList(usedBy)))
-	}
+	// Temporarily disabled
+	// usedBy, err := context.GetClient().GetContainersUsingImage(image.ID)
+	// if err == nil && len(usedBy) > 0 {
+	// 	output.WriteString(formatSummaryField("Used By", formatBulletList(usedBy)))
+	// }
 
 	// Full details separator
 	output.WriteString("\n\nFull details:\n\n")
