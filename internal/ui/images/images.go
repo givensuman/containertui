@@ -279,12 +279,12 @@ func New() Model {
 
 	// Add extra pane below detail pane
 	extraPane := components.NewViewportPane()
-	extraPane.SetContent("Hello World")
+	extraPane.SetContent("")                            // Will be populated when an image is selected
 	resourceView.SplitView.SetExtraPane(extraPane, 0.3) // 30% of height
 
 	// Set titles for the panes
 	resourceView.SplitView.SetDetailTitle("Inspect")
-	resourceView.SplitView.SetExtraTitle("Hello World")
+	resourceView.SplitView.SetExtraTitle("Used By")
 
 	// Set custom delegate
 	delegate := newDefaultDelegate()
@@ -662,6 +662,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.ResourceView.GetSelectedItem()
 	if selectedItem == nil {
 		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
+		model.ResourceView.SetExtraContent("") // Clear extra pane when no image selected
 		return nil
 	}
 
@@ -729,6 +730,40 @@ func (model *Model) refreshInspectionContent() {
 	// Build content with current format
 	content := builders.BuildImagePanel(model.inspection, model.ResourceView.GetContentWidth(), format)
 	model.ResourceView.SetContent(content)
+
+	// Update "Used By" panel
+	model.updateUsedByPanel()
+}
+
+// updateUsedByPanel updates the extra pane with containers using this image
+func (model *Model) updateUsedByPanel() {
+	if model.inspection.ID == "" {
+		model.ResourceView.SetExtraContent("")
+		return
+	}
+
+	// Fetch containers using this image
+	usedBy, err := context.GetClient().GetContainersUsingImage(model.inspection.ID)
+	if err != nil {
+		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
+		return
+	}
+
+	if len(usedBy) == 0 {
+		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this image"))
+		return
+	}
+
+	// Build a formatted list of containers
+	var output strings.Builder
+	for i, containerName := range usedBy {
+		if i > 0 {
+			output.WriteString("\n")
+		}
+		output.WriteString(fmt.Sprintf("• %s", containerName))
+	}
+
+	model.ResourceView.SetExtraContent(output.String())
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
