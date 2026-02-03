@@ -52,6 +52,19 @@ func (lm LayoutManager) CalculateFullscreen(style lipgloss.Style) Dimensions {
 	return lm.Calculate(RatioFullscreen, style)
 }
 
+func (lm LayoutManager) CalculateSmall(style lipgloss.Style) Dimensions {
+	return lm.Calculate(RatioSmall, style)
+}
+
+func (lm LayoutManager) CalculateMedium(style lipgloss.Style) Dimensions {
+	return lm.Calculate(RatioMedium, style)
+}
+
+func (lm LayoutManager) CalculateLarge(style lipgloss.Style) Dimensions {
+	return lm.Calculate(RatioLarge, style)
+}
+
+// CalculateModal is an alias for CalculateMedium for backwards compatibility
 func (lm LayoutManager) CalculateModal(style lipgloss.Style) Dimensions {
 	return lm.Calculate(RatioModal, style)
 }

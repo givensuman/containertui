@@ -23,16 +23,18 @@ type FormField struct {
 
 type FormDialog struct {
 	base.Component
-	title        string
-	fields       []FormField
-	textInputs   []textinput.Model
-	focusIndex   int
-	submitLabel  string
-	action       base.SmartDialogAction
-	style        lipgloss.Style
-	width        int
-	height       int
-	errorMessage string
+	title          string
+	fields         []FormField
+	textInputs     []textinput.Model
+	focusIndex     int
+	action         base.SmartDialogAction
+	style          lipgloss.Style
+	width          int
+	height         int
+	errorMessage   string
+	dialogSize     DialogSize
+	selectedButton int
+	onButtons      bool // true when navigating buttons, false when on form fields
 }
 
 var (
@@ -40,27 +42,24 @@ var (
 	_ fmt.Stringer        = (*FormDialog)(nil)
 )
 
+// NewFormDialog creates a new form dialog with default medium size
 func NewFormDialog(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]any) FormDialog {
+	return NewFormDialogWithSize(title, fields, action, metadata, DialogSizeMedium)
+}
+
+// NewFormDialogWithSize creates a new form dialog with custom size
+func NewFormDialogWithSize(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]any, size DialogSize) FormDialog {
 	width, height := context.GetWindowSize()
-
-	style := lipgloss.NewStyle().
-		Padding(1, 2).
-		Border(lipgloss.RoundedBorder(), true, true).
-		BorderForeground(colors.Primary()).
-		Align(lipgloss.Left)
-
-	layoutManager := layout.NewLayoutManager(width, height)
-	modalDimensions := layoutManager.CalculateModal(style)
-	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
 
 	// Initialize text inputs
 	textInputs := make([]textinput.Model, len(fields))
+
+	// We'll set width after creating the style
 	for i, field := range fields {
 		ti := textinput.New()
 		ti.Placeholder = field.Placeholder
 		ti.SetValue(field.Value)
 		ti.CharLimit = 256
-		ti.SetWidth(modalDimensions.Width - 6) // Account for padding and borders
 
 		if i == 0 {
 			ti.Focus()
@@ -77,32 +76,58 @@ func NewFormDialog(title string, fields []FormField, action base.SmartDialogActi
 		action.Payload = metadata
 	}
 
-	return FormDialog{
-		title:        title,
-		fields:       fields,
-		textInputs:   textInputs,
-		focusIndex:   0,
-		submitLabel:  "Submit",
-		action:       action,
-		style:        style,
-		width:        width,
-		height:       height,
-		errorMessage: "",
+	dialog := FormDialog{
+		title:          title,
+		fields:         fields,
+		textInputs:     textInputs,
+		focusIndex:     0,
+		action:         action,
+		width:          width,
+		height:         height,
+		errorMessage:   "",
+		dialogSize:     size,
+		selectedButton: 0,
+		onButtons:      false,
+	}
+
+	dialog.updateStyle()
+	return dialog
+}
+
+// updateStyle applies the current dialog size to the style
+func (dialog *FormDialog) updateStyle() {
+	// Form dialogs always use primary color border
+	dialog.style = lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder(), true, true).
+		BorderForeground(colors.Primary())
+
+	// Calculate dimensions based on size
+	layoutManager := layout.NewLayoutManager(dialog.width, dialog.height)
+	var dimensions layout.Dimensions
+	switch dialog.dialogSize {
+	case DialogSizeSmall:
+		dimensions = layoutManager.CalculateSmall(dialog.style)
+	case DialogSizeMedium:
+		dimensions = layoutManager.CalculateMedium(dialog.style)
+	case DialogSizeLarge:
+		dimensions = layoutManager.CalculateLarge(dialog.style)
+	default:
+		dimensions = layoutManager.CalculateMedium(dialog.style)
+	}
+
+	dialog.style = dialog.style.Width(dimensions.Width).Height(dimensions.Height)
+
+	// Update text input widths based on content width
+	for i := range dialog.textInputs {
+		dialog.textInputs[i].SetWidth(dimensions.ContentWidth - 4) // Account for some padding
 	}
 }
 
 func (dialog *FormDialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.width = msg.Width
 	dialog.height = msg.Height
-
-	layoutManager := layout.NewLayoutManager(msg.Width, msg.Height)
-	modalDimensions := layoutManager.CalculateModal(dialog.style)
-	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
-
-	// Update text input widths
-	for i := range dialog.textInputs {
-		dialog.textInputs[i].SetWidth(modalDimensions.Width - 6)
-	}
+	dialog.updateStyle()
 }
 
 func (dialog FormDialog) Init() tea.Cmd {
@@ -122,50 +147,118 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
 
 		case "tab", "down":
-			// Move to next field
-			dialog.textInputs[dialog.focusIndex].Blur()
-			dialog.focusIndex = (dialog.focusIndex + 1) % len(dialog.textInputs)
-			dialog.textInputs[dialog.focusIndex].Focus()
-			dialog.errorMessage = "" // Clear error when changing fields
-			return dialog, textinput.Blink
+			if dialog.onButtons {
+				// Cycle between Cancel and Submit buttons
+				dialog.selectedButton = (dialog.selectedButton + 1) % 2
+			} else {
+				// Move to next field or to buttons if at last field
+				if dialog.focusIndex < len(dialog.textInputs)-1 {
+					dialog.textInputs[dialog.focusIndex].Blur()
+					dialog.focusIndex++
+					dialog.textInputs[dialog.focusIndex].Focus()
+					dialog.errorMessage = ""
+					return dialog, textinput.Blink
+				} else {
+					// Move to buttons
+					dialog.textInputs[dialog.focusIndex].Blur()
+					dialog.onButtons = true
+					dialog.selectedButton = 0
+					dialog.errorMessage = ""
+				}
+			}
 
 		case "shift+tab", "up":
-			// Move to previous field
-			dialog.textInputs[dialog.focusIndex].Blur()
-			dialog.focusIndex = (dialog.focusIndex - 1 + len(dialog.textInputs)) % len(dialog.textInputs)
-			dialog.textInputs[dialog.focusIndex].Focus()
-			dialog.errorMessage = "" // Clear error when changing fields
-			return dialog, textinput.Blink
+			if dialog.onButtons {
+				if dialog.selectedButton > 0 {
+					// Cycle buttons backwards
+					dialog.selectedButton--
+				} else {
+					// Go back to last field
+					dialog.onButtons = false
+					dialog.focusIndex = len(dialog.textInputs) - 1
+					dialog.textInputs[dialog.focusIndex].Focus()
+					return dialog, textinput.Blink
+				}
+			} else {
+				// Move to previous field
+				if dialog.focusIndex > 0 {
+					dialog.textInputs[dialog.focusIndex].Blur()
+					dialog.focusIndex--
+					dialog.textInputs[dialog.focusIndex].Focus()
+					dialog.errorMessage = ""
+					return dialog, textinput.Blink
+				}
+			}
 
 		case "enter":
-			if err := dialog.validate(); err != nil {
-				dialog.errorMessage = err.Error()
-				return dialog, nil
-			}
+			if dialog.onButtons {
+				// Handle button press
+				if dialog.selectedButton == 0 {
+					// Cancel
+					return dialog, func() tea.Msg { return base.CloseDialogMessage{} }
+				} else {
+					// Submit
+					if err := dialog.validate(); err != nil {
+						dialog.errorMessage = err.Error()
+						// Return to form fields
+						dialog.onButtons = false
+						dialog.focusIndex = 0
+						dialog.textInputs[dialog.focusIndex].Focus()
+						return dialog, textinput.Blink
+					}
 
-			values := make(map[string]string)
-			for i, field := range dialog.fields {
-				values[field.Label] = dialog.textInputs[i].Value()
-			}
+					values := make(map[string]string)
+					for i, field := range dialog.fields {
+						values[field.Label] = dialog.textInputs[i].Value()
+					}
 
-			action := dialog.action
-			if payload, ok := action.Payload.(map[string]any); ok {
-				payload["values"] = values
-				action.Payload = payload
+					action := dialog.action
+					if payload, ok := action.Payload.(map[string]any); ok {
+						payload["values"] = values
+						action.Payload = payload
+					} else {
+						action.Payload = map[string]any{"values": values}
+					}
+
+					return dialog, func() tea.Msg {
+						return base.SmartConfirmationMessage{Action: action}
+					}
+				}
 			} else {
-				action.Payload = map[string]any{"values": values}
+				// Enter on field moves to next field or buttons
+				if dialog.focusIndex < len(dialog.textInputs)-1 {
+					dialog.textInputs[dialog.focusIndex].Blur()
+					dialog.focusIndex++
+					dialog.textInputs[dialog.focusIndex].Focus()
+					dialog.errorMessage = ""
+					return dialog, textinput.Blink
+				} else {
+					// Move to buttons
+					dialog.textInputs[dialog.focusIndex].Blur()
+					dialog.onButtons = true
+					dialog.selectedButton = 1 // Default to Submit
+					dialog.errorMessage = ""
+				}
 			}
 
-			return dialog, func() tea.Msg {
-				return base.SmartConfirmationMessage{Action: action}
+		case "left", "h":
+			if dialog.onButtons {
+				dialog.selectedButton = (dialog.selectedButton - 1 + 2) % 2
+			}
+
+		case "right", "l":
+			if dialog.onButtons {
+				dialog.selectedButton = (dialog.selectedButton + 1) % 2
 			}
 		}
 	}
 
-	// Update the focused text input
-	var cmd tea.Cmd
-	dialog.textInputs[dialog.focusIndex], cmd = dialog.textInputs[dialog.focusIndex].Update(msg)
-	cmds = append(cmds, cmd)
+	// Update the focused text input only if we're on form fields
+	if !dialog.onButtons {
+		var cmd tea.Cmd
+		dialog.textInputs[dialog.focusIndex], cmd = dialog.textInputs[dialog.focusIndex].Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	return dialog, tea.Batch(cmds...)
 }
@@ -190,12 +283,54 @@ func (dialog FormDialog) validate() error {
 	return nil
 }
 
+// renderButtons renders the form dialog buttons
+func (dialog FormDialog) renderButtons() string {
+	defaultButtonStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Foreground(colors.Text()).
+		Background(colors.Muted())
+
+	hoveredButtonStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 1).
+		Bold(true).
+		Foreground(colors.Text()).
+		Background(colors.Primary())
+
+	cancelStyle := defaultButtonStyle
+	submitStyle := defaultButtonStyle
+
+	if dialog.onButtons {
+		if dialog.selectedButton == 0 {
+			cancelStyle = hoveredButtonStyle
+		} else {
+			submitStyle = hoveredButtonStyle
+		}
+	}
+
+	cancelButton := cancelStyle.Render("Cancel")
+	submitButton := submitStyle.Render("Submit")
+
+	return lipgloss.JoinHorizontal(lipgloss.Center, cancelButton, submitButton)
+}
+
 func (dialog FormDialog) View() tea.View {
+	// Get the content width for centering
+	contentWidth := dialog.style.GetWidth()
+	if contentWidth > 0 {
+		frameSize := dialog.style.GetHorizontalFrameSize()
+		contentWidth = contentWidth - frameSize
+	}
+
 	var b strings.Builder
 
+	// Center the title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(colors.Primary()).
+		Width(contentWidth).
+		Align(lipgloss.Center).
 		MarginBottom(1)
 	b.WriteString(titleStyle.Render(dialog.title))
 	b.WriteString("\n\n")
@@ -213,7 +348,7 @@ func (dialog FormDialog) View() tea.View {
 		b.WriteString("\n")
 
 		inputStyle := lipgloss.NewStyle()
-		if i == dialog.focusIndex {
+		if i == dialog.focusIndex && !dialog.onButtons {
 			inputStyle = inputStyle.Foreground(colors.Primary())
 		} else {
 			inputStyle = inputStyle.Foreground(colors.Muted())
@@ -230,20 +365,30 @@ func (dialog FormDialog) View() tea.View {
 		b.WriteString("\n\n")
 	}
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(colors.Muted()).
-		Italic(true)
-	b.WriteString(helpStyle.Render("Tab: next field • Enter: submit • Esc: cancel"))
+	// Center the buttons
+	buttonsView := dialog.renderButtons()
+	buttonsStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
+	b.WriteString(buttonsStyle.Render(buttonsView))
 
 	return tea.NewView(dialog.style.Render(b.String()))
 }
 
 func (dialog FormDialog) String() string {
+	// Get the content width for centering
+	contentWidth := dialog.style.GetWidth()
+	if contentWidth > 0 {
+		frameSize := dialog.style.GetHorizontalFrameSize()
+		contentWidth = contentWidth - frameSize
+	}
+
 	var b strings.Builder
 
+	// Center the title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(colors.Primary()).
+		Width(contentWidth).
+		Align(lipgloss.Center).
 		MarginBottom(1)
 	b.WriteString(titleStyle.Render(dialog.title))
 	b.WriteString("\n\n")
@@ -261,7 +406,7 @@ func (dialog FormDialog) String() string {
 		b.WriteString("\n")
 
 		inputStyle := lipgloss.NewStyle()
-		if i == dialog.focusIndex {
+		if i == dialog.focusIndex && !dialog.onButtons {
 			inputStyle = inputStyle.Foreground(colors.Primary())
 		} else {
 			inputStyle = inputStyle.Foreground(colors.Muted())
@@ -278,10 +423,10 @@ func (dialog FormDialog) String() string {
 		b.WriteString("\n\n")
 	}
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(colors.Muted()).
-		Italic(true)
-	b.WriteString(helpStyle.Render("Tab: next field • Enter: submit • Esc: cancel"))
+	// Center the buttons
+	buttonsView := dialog.renderButtons()
+	buttonsStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
+	b.WriteString(buttonsStyle.Render(buttonsView))
 
 	return dialog.style.Render(b.String())
 }

@@ -16,6 +16,23 @@ type DialogButton struct {
 	Action any
 }
 
+type DialogType int
+
+const (
+	DialogTypeInfo DialogType = iota
+	DialogTypeSuccess
+	DialogTypeWarning
+	DialogTypeError
+)
+
+type DialogSize int
+
+const (
+	DialogSizeSmall DialogSize = iota
+	DialogSizeMedium
+	DialogSizeLarge
+)
+
 type Dialog struct {
 	base.Component
 	style          lipgloss.Style
@@ -24,6 +41,8 @@ type Dialog struct {
 	selectedButton int
 	width          int
 	height         int
+	dialogType     DialogType
+	dialogSize     DialogSize
 }
 
 var (
@@ -31,40 +50,110 @@ var (
 	_ fmt.Stringer        = (*Dialog)(nil)
 )
 
+// NewDialog creates a new dialog with default medium size and info type
 func NewDialog(message string, buttons []DialogButton) Dialog {
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeInfo)
+}
+
+// NewDialogWithOptions creates a new dialog with custom size and type
+func NewDialogWithOptions(message string, buttons []DialogButton, size DialogSize, dialogType DialogType) Dialog {
 	width, height := context.GetWindowSize()
 
-	style := lipgloss.NewStyle().
-		Padding(1).
-		Border(lipgloss.RoundedBorder(), true, true).
-		BorderForeground(colors.Primary()).
-		Align(lipgloss.Center)
-
-	layoutManager := layout.NewLayoutManager(width, height)
-	modalDimensions := layoutManager.CalculateModal(style)
-	style = style.Width(modalDimensions.Width).Height(modalDimensions.Height)
-
 	if len(buttons) == 0 {
-		buttons = []DialogButton{{Label: "Cancel", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
+		buttons = []DialogButton{{Label: "OK", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
 	}
 
-	return Dialog{
-		style:          style,
+	dialog := Dialog{
 		message:        message,
 		buttons:        buttons,
 		selectedButton: 0,
 		width:          width,
 		height:         height,
+		dialogType:     dialogType,
+		dialogSize:     size,
 	}
+
+	dialog.updateStyle()
+	return dialog
+}
+
+// Helper constructors for common dialog types
+func NewInfoDialog(message string, buttons []DialogButton) Dialog {
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeInfo)
+}
+
+func NewSuccessDialog(message string) Dialog {
+	buttons := []DialogButton{{Label: "OK", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeSuccess)
+}
+
+func NewWarningDialog(message string, buttons []DialogButton) Dialog {
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeWarning)
+}
+
+func NewErrorDialog(message string) Dialog {
+	buttons := []DialogButton{{Label: "OK", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeError)
+}
+
+func NewConfirmDialog(message string, onConfirm any) Dialog {
+	buttons := []DialogButton{
+		{Label: "Cancel", Action: base.NewDialogAction[any](base.CloseDialog, nil)},
+		{Label: "Confirm", Action: onConfirm},
+	}
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeInfo)
+}
+
+func NewDeleteDialog(message string, onDelete any) Dialog {
+	buttons := []DialogButton{
+		{Label: "Cancel", Action: base.NewDialogAction[any](base.CloseDialog, nil)},
+		{Label: "Delete", Action: onDelete},
+	}
+	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeWarning)
+}
+
+// updateStyle applies the current dialog type and size to the style
+func (dialog *Dialog) updateStyle() {
+	// Get border color based on dialog type
+	var borderColor = colors.Primary()
+	switch dialog.dialogType {
+	case DialogTypeSuccess:
+		borderColor = colors.Success()
+	case DialogTypeWarning:
+		borderColor = colors.Warning()
+	case DialogTypeError:
+		borderColor = colors.Error()
+	case DialogTypeInfo:
+		borderColor = colors.Primary()
+	}
+
+	// Create base style
+	dialog.style = lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder(), true, true).
+		BorderForeground(borderColor)
+
+	// Calculate dimensions based on size
+	layoutManager := layout.NewLayoutManager(dialog.width, dialog.height)
+	var dimensions layout.Dimensions
+	switch dialog.dialogSize {
+	case DialogSizeSmall:
+		dimensions = layoutManager.CalculateSmall(dialog.style)
+	case DialogSizeMedium:
+		dimensions = layoutManager.CalculateMedium(dialog.style)
+	case DialogSizeLarge:
+		dimensions = layoutManager.CalculateLarge(dialog.style)
+	default:
+		dimensions = layoutManager.CalculateMedium(dialog.style)
+	}
+
+	dialog.style = dialog.style.Width(dimensions.Width).Height(dimensions.Height)
 }
 
 func (dialog *Dialog) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	dialog.width = msg.Width
 	dialog.height = msg.Height
-
-	layoutManager := layout.NewLayoutManager(msg.Width, msg.Height)
-	modalDimensions := layoutManager.CalculateModal(dialog.style)
-	dialog.style = dialog.style.Width(modalDimensions.Width).Height(modalDimensions.Height)
+	dialog.updateStyle()
 }
 
 func (dialog Dialog) Init() tea.Cmd {
@@ -109,7 +198,8 @@ func (dialog Dialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return dialog, nil
 }
 
-func (dialog Dialog) View() tea.View {
+// renderButtons renders the dialog buttons
+func (dialog Dialog) renderButtons() string {
 	buttonViews := make([]string, 0, len(dialog.buttons))
 
 	defaultButtonStyle := lipgloss.NewStyle().
@@ -135,50 +225,51 @@ func (dialog Dialog) View() tea.View {
 		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
 	}
 
-	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+	return lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+}
+
+func (dialog Dialog) View() tea.View {
+	buttonsView := dialog.renderButtons()
+
+	// Get the content width (dialog width minus borders and padding)
+	contentWidth := dialog.style.GetWidth()
+	if contentWidth > 0 {
+		frameSize := dialog.style.GetHorizontalFrameSize()
+		contentWidth = contentWidth - frameSize
+	}
+
+	// Center the message and buttons within the content width
+	messageStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
+	buttonsStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
 
 	content := dialog.style.Render(lipgloss.JoinVertical(
-		lipgloss.Center,
-		dialog.message,
+		lipgloss.Left,
+		messageStyle.Render(dialog.message),
 		"",
-		buttonsView,
+		buttonsStyle.Render(buttonsView),
 	))
 
 	return tea.NewView(content)
 }
 
 func (dialog Dialog) String() string {
-	buttonViews := make([]string, 0, len(dialog.buttons))
+	buttonsView := dialog.renderButtons()
 
-	defaultButtonStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Margin(0, 1).
-		Foreground(colors.Text()).
-		Background(colors.Muted())
-
-	hoveredButtonStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Margin(0, 1).
-		Bold(true).
-		Foreground(colors.Text()).
-		Background(colors.Primary())
-
-	for index, button := range dialog.buttons {
-		buttonStyle := defaultButtonStyle
-
-		if index == dialog.selectedButton {
-			buttonStyle = hoveredButtonStyle
-		}
-
-		buttonViews = append(buttonViews, buttonStyle.Render(button.Label))
+	// Get the content width (dialog width minus borders and padding)
+	contentWidth := dialog.style.GetWidth()
+	if contentWidth > 0 {
+		frameSize := dialog.style.GetHorizontalFrameSize()
+		contentWidth = contentWidth - frameSize
 	}
 
-	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttonViews...)
+	// Center the message and buttons within the content width
+	messageStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
+	buttonsStyle := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
 
 	return dialog.style.Render(lipgloss.JoinVertical(
-		lipgloss.Center,
-		dialog.message,
+		lipgloss.Left,
+		messageStyle.Render(dialog.message),
 		"",
-		buttonsView,
+		buttonsStyle.Render(buttonsView),
 	))
 }
