@@ -352,6 +352,8 @@ func (rv *ResourceView[ID, Item]) View() string {
 			fgView = viewer.View()
 		} else if viewer, ok := rv.Foreground.(interface{ ViewString() string }); ok {
 			fgView = viewer.ViewString()
+		} else if viewer, ok := rv.Foreground.(interface{ String() string }); ok {
+			fgView = viewer.String()
 		} else if model, ok := rv.Foreground.(tea.Model); ok {
 			view := model.View()
 			fgView = fmt.Sprint(view)
