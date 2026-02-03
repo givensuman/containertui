@@ -3,6 +3,7 @@ package networks
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -126,6 +127,15 @@ func New() *Model {
 		},
 	)
 
+	// Add extra pane below detail pane
+	extraPane := components.NewViewportPane()
+	extraPane.SetContent("")                            // Will be populated when a network is selected
+	resourceView.SplitView.SetExtraPane(extraPane, 0.3) // 30% of height
+
+	// Set titles for the panes
+	resourceView.SplitView.SetDetailTitle("Inspect")
+	resourceView.SplitView.SetExtraTitle("Used By")
+
 	// Set custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
@@ -228,17 +238,20 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 		}
 	} else {
-		// Detail pane is focused
+		// Detail or extra pane is focused
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			switch {
-			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-				cmd := model.handleToggleFormat()
-				cmds = append(cmds, cmd)
-			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-				cmd := model.handleCopyToClipboard()
-				if cmd != nil {
+			// Only handle these actions when detail pane is focused (not extra)
+			if model.ResourceView.IsDetailFocused() {
+				switch {
+				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+					cmd := model.handleToggleFormat()
 					cmds = append(cmds, cmd)
+				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+					cmd := model.handleCopyToClipboard()
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
 				}
 			}
 		}
@@ -312,6 +325,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.ResourceView.GetSelectedItem()
 	if selectedItem == nil {
 		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
+		model.ResourceView.SetExtraContent("") // Clear extra pane when no network selected
 		return nil
 	}
 
@@ -379,6 +393,40 @@ func (model *Model) refreshInspectionContent() {
 	// Build content with current format
 	content := builders.BuildNetworkPanel(model.inspection, model.ResourceView.GetContentWidth(), format)
 	model.ResourceView.SetContent(content)
+
+	// Update "Used By" panel
+	model.updateUsedByPanel()
+}
+
+// updateUsedByPanel updates the extra pane with containers using this network
+func (model *Model) updateUsedByPanel() {
+	if model.inspection.ID == "" {
+		model.ResourceView.SetExtraContent("")
+		return
+	}
+
+	// Fetch containers using this network
+	usedBy, err := context.GetClient().GetContainersUsingNetwork(model.inspection.ID)
+	if err != nil {
+		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
+		return
+	}
+
+	if len(usedBy) == 0 {
+		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this network"))
+		return
+	}
+
+	// Build a formatted list of containers
+	var output strings.Builder
+	for i, containerName := range usedBy {
+		if i > 0 {
+			output.WriteString("\n")
+		}
+		output.WriteString(fmt.Sprintf("• %s", containerName))
+	}
+
+	model.ResourceView.SetExtraContent(output.String())
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
@@ -434,7 +482,8 @@ func (model *Model) removeNetworkFromList(id string) {
 }
 
 func (model *Model) ShortHelp() []key.Binding {
-	if !model.ResourceView.IsListFocused() {
+	// If detail or extra pane is focused, show detail keybindings
+	if model.ResourceView.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -442,15 +491,37 @@ func (model *Model) ShortHelp() []key.Binding {
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
 		}
+	} else if model.ResourceView.IsExtraFocused() {
+		return []key.Binding{
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
+			model.detailsKeybindings.Switch,
+		}
 	}
 	return model.ResourceView.ShortHelp()
 }
 
 func (model *Model) FullHelp() [][]key.Binding {
-	if !model.ResourceView.IsListFocused() {
+	// If detail or extra pane is focused, show detail keybindings
+	if model.ResourceView.IsDetailFocused() {
 		return [][]key.Binding{
-			{model.detailsKeybindings.Up, model.detailsKeybindings.Down, model.detailsKeybindings.Switch},
-			{model.detailsKeybindings.ToggleJSON, model.detailsKeybindings.CopyOutput},
+			{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
+			},
+			{
+				model.detailsKeybindings.ToggleJSON,
+				model.detailsKeybindings.CopyOutput,
+			},
+		}
+	} else if model.ResourceView.IsExtraFocused() {
+		return [][]key.Binding{
+			{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
+			},
 		}
 	}
 	return model.ResourceView.FullHelp()
