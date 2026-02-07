@@ -11,7 +11,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
@@ -77,7 +77,7 @@ func New() Model {
 	serviceKeybindings := newKeybindings()
 
 	fetchServices := func() ([]ServiceItem, error) {
-		services, err := context.GetClient().GetServices(stdcontext.Background())
+		services, err := state.GetClient().GetServices(stdcontext.Background())
 		if err != nil {
 			return []ServiceItem{}, nil
 		}
@@ -267,7 +267,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	// Determine current effective format
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
-		cfg := context.GetConfig()
+		cfg := state.GetConfig()
 		currentFormat = cfg.InspectionFormat
 		if currentFormat == "" {
 			currentFormat = "yaml"

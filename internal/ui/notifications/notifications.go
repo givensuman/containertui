@@ -14,14 +14,16 @@ const (
 	Info Level = iota
 	Error
 	Success
+	Progress
 )
 
 type Notification struct {
-	ID        int64
-	Message   string
-	Level     Level
-	Timestamp time.Time
-	Duration  time.Duration
+	ID         int64
+	Message    string
+	Level      Level
+	Timestamp  time.Time
+	Duration   time.Duration
+	Persistent bool // If true, won't auto-dismiss
 }
 
 type Model struct {
@@ -32,9 +34,11 @@ type Model struct {
 }
 
 type AddNotificationMsg struct {
-	Message  string
-	Level    Level
-	Duration time.Duration
+	Message    string
+	Level      Level
+	Duration   time.Duration
+	Persistent bool
+	ID         int64 // Optional: if set, replaces notification with this ID
 }
 
 type RemoveNotificationMsg struct {
@@ -56,17 +60,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case AddNotificationMsg:
-		id := m.nextID
-		m.nextID++
-		n := Notification{
-			ID:        id,
-			Message:   msg.Message,
-			Level:     msg.Level,
-			Timestamp: time.Now(),
-			Duration:  msg.Duration,
+		id := msg.ID
+		if id == 0 {
+			id = m.nextID
+			m.nextID++
 		}
-		m.notifications = append(m.notifications, n)
-		cmds = append(cmds, tick(id, msg.Duration))
+
+		// Check if we should replace existing notification with same ID
+		replaced := false
+		for i, n := range m.notifications {
+			if n.ID == id {
+				m.notifications[i] = Notification{
+					ID:         id,
+					Message:    msg.Message,
+					Level:      msg.Level,
+					Timestamp:  time.Now(),
+					Duration:   msg.Duration,
+					Persistent: msg.Persistent,
+				}
+				replaced = true
+				break
+			}
+		}
+
+		if !replaced {
+			n := Notification{
+				ID:         id,
+				Message:    msg.Message,
+				Level:      msg.Level,
+				Timestamp:  time.Now(),
+				Duration:   msg.Duration,
+				Persistent: msg.Persistent,
+			}
+			m.notifications = append(m.notifications, n)
+		}
+
+		// Only set auto-dismiss if not persistent
+		if !msg.Persistent && msg.Duration > 0 {
+			cmds = append(cmds, tick(id, msg.Duration))
+		}
 
 	case RemoveNotificationMsg:
 		var newNotifs []Notification
@@ -96,9 +128,10 @@ func tick(id int64, d time.Duration) tea.Cmd {
 func ShowInfo(msg string) tea.Cmd {
 	return func() tea.Msg {
 		return AddNotificationMsg{
-			Message:  msg,
-			Level:    Info,
-			Duration: 5 * time.Second,
+			Message:    msg,
+			Level:      Info,
+			Duration:   5 * time.Second,
+			Persistent: false,
 		}
 	}
 }
@@ -106,9 +139,10 @@ func ShowInfo(msg string) tea.Cmd {
 func ShowError(err error) tea.Cmd {
 	return func() tea.Msg {
 		return AddNotificationMsg{
-			Message:  err.Error(),
-			Level:    Error,
-			Duration: 10 * time.Second,
+			Message:    err.Error(),
+			Level:      Error,
+			Duration:   10 * time.Second,
+			Persistent: false,
 		}
 	}
 }
@@ -116,10 +150,32 @@ func ShowError(err error) tea.Cmd {
 func ShowSuccess(msg string) tea.Cmd {
 	return func() tea.Msg {
 		return AddNotificationMsg{
-			Message:  msg,
-			Level:    Success,
-			Duration: 5 * time.Second,
+			Message:    msg,
+			Level:      Success,
+			Duration:   5 * time.Second,
+			Persistent: false,
 		}
+	}
+}
+
+// ShowProgress shows a persistent progress notification that must be manually dismissed
+// Returns the notification ID so it can be updated or removed later
+func ShowProgress(msg string, id int64) tea.Cmd {
+	return func() tea.Msg {
+		return AddNotificationMsg{
+			Message:    msg,
+			Level:      Progress,
+			Duration:   0,
+			Persistent: true,
+			ID:         id,
+		}
+	}
+}
+
+// DismissNotification removes a notification by ID
+func DismissNotification(id int64) tea.Cmd {
+	return func() tea.Msg {
+		return RemoveNotificationMsg{ID: id}
 	}
 }
 
@@ -149,11 +205,23 @@ var (
 			MarginBottom(1).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#56E095"))
+
+	progressStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFF")).
+			Background(lipgloss.Color("#E0A856")). // Orange/amber
+			Padding(0, 2).
+			MarginBottom(1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#E0A856"))
 )
 
 func (m Model) View() tea.View {
+	return tea.NewView(m.ViewString())
+}
+
+func (m Model) ViewString() string {
 	if len(m.notifications) == 0 {
-		return tea.NewView("")
+		return ""
 	}
 
 	var content string
@@ -169,10 +237,12 @@ func (m Model) View() tea.View {
 			style = errorStyle
 		case Success:
 			style = successStyle
+		case Progress:
+			style = progressStyle
 		}
 
 		content = lipgloss.JoinVertical(lipgloss.Left, content, style.Render(n.Message))
 	}
 
-	return tea.NewView(content)
+	return content
 }

@@ -10,7 +10,8 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/containers"
 	"github.com/givensuman/containertui/internal/ui/images"
 	"github.com/givensuman/containertui/internal/ui/networks"
@@ -36,7 +37,7 @@ type Model struct {
 }
 
 func NewModel() Model {
-	width, height := context.GetWindowSize()
+	width, height := state.GetWindowSize()
 
 	tabsModel := tabs.New()
 	containersModel := containers.New()
@@ -80,7 +81,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		model.width = msg.Width
 		model.height = msg.Height
-		context.SetWindowSize(msg.Width, msg.Height)
+		state.SetWindowSize(msg.Width, msg.Height)
 
 		var tabsCmd tea.Cmd
 		model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
@@ -158,8 +159,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, tea.Quit
 		}
 
-		// Only process tab switching keypresses if not filtering
-		if !isFiltering {
+		// Only process tab switching keypresses if not filtering and no overlay is visible
+		if !isFiltering && !hasOverlay {
 			var tabsCmd tea.Cmd
 			model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
 			if tabsCmd != nil {
@@ -252,6 +253,63 @@ type helpProvider interface {
 	FullHelp() [][]key.Binding
 }
 
+// overlayNotifications overlays notifications on top of the content without pushing it down
+func (model Model) overlayNotifications(content string) string {
+	notificationsContent := model.notificationsModel.ViewString()
+	if notificationsContent == "" {
+		return content
+	}
+
+	// Style notifications with padding
+	notifStyle := lipgloss.NewStyle().
+		PaddingTop(1).
+		PaddingRight(2)
+	styledNotifications := notifStyle.Render(notificationsContent)
+
+	// Manual overlay approach: split content into lines and overlay notifications on top-right
+	contentLines := strings.Split(content, "\n")
+	notifLines := strings.Split(styledNotifications, "\n")
+
+	if len(contentLines) == 0 {
+		return styledNotifications
+	}
+
+	// Get the width of the content (from first line or window width)
+	contentWidth := lipgloss.Width(contentLines[0])
+
+	// Overlay notifications on the first N lines
+	for i := 0; i < len(notifLines) && i < len(contentLines); i++ {
+		lineWidth := lipgloss.Width(contentLines[i])
+		notifLineWidth := lipgloss.Width(notifLines[i])
+
+		// Calculate position to place notification at top-right
+		// If the line is shorter than needed, pad it
+		if lineWidth < contentWidth {
+			contentLines[i] = contentLines[i] + lipgloss.NewStyle().
+				Width(contentWidth-lineWidth).
+				Render("")
+		}
+
+		// Calculate where to place the notification (right-aligned)
+		overlayStart := contentWidth - notifLineWidth
+		if overlayStart < 0 {
+			overlayStart = 0
+		}
+
+		// Split the content line and insert notification
+		if overlayStart < len(contentLines[i]) {
+			// Get the part before notification and the notification itself
+			before := []rune(contentLines[i])[:overlayStart]
+			contentLines[i] = string(before) + notifLines[i]
+		} else {
+			// Just append if the line is too short
+			contentLines[i] = contentLines[i] + notifLines[i]
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, contentLines...)
+}
+
 func (model Model) View() tea.View {
 	var view tea.View
 	// Both tabs and content views return tea.View
@@ -279,7 +337,7 @@ func (model Model) View() tea.View {
 		// However, lipgloss.JoinVertical expects strings.
 		// If model.X.View() returns tea.View, fmt.Sprint(v) might not give the content.
 		// But in v2, tea.View is an interface or struct?
-		// Actually, tea.NewView returns a tea.View struct which might have unexported fields.
+		// Actually, tea.View in v2 is a struct which might have unexported fields.
 		// Let's check if we can get the string content.
 		// tea.View in v2 is a struct with `func (v View) String() string`?
 		// No, tea.View is a struct.
@@ -327,6 +385,9 @@ func (model Model) View() tea.View {
 	}
 
 	fullView := lipgloss.JoinVertical(lipgloss.Top, tabsView, contentViewStr)
+
+	// Apply notification overlay helper
+	fullView = model.overlayNotifications(fullView)
 
 	if helpView == "" {
 		view = tea.NewView(fullView)

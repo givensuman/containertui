@@ -6,7 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/layout"
 )
@@ -57,7 +57,7 @@ func NewDialog(message string, buttons []DialogButton) Dialog {
 
 // NewDialogWithOptions creates a new dialog with custom size and type
 func NewDialogWithOptions(message string, buttons []DialogButton, size DialogSize, dialogType DialogType) Dialog {
-	width, height := context.GetWindowSize()
+	width, height := state.GetWindowSize()
 
 	if len(buttons) == 0 {
 		buttons = []DialogButton{{Label: "OK", Action: base.NewDialogAction[any](base.CloseDialog, nil)}}
@@ -110,6 +110,12 @@ func NewDeleteDialog(message string, onDelete any) Dialog {
 		{Label: "Delete", Action: onDelete},
 	}
 	return NewDialogWithOptions(message, buttons, DialogSizeMedium, DialogTypeWarning)
+}
+
+// NewProgressDialog creates a dialog for showing progress operations
+// It has no buttons and is typically closed programmatically when the operation completes
+func NewProgressDialog(message string) Dialog {
+	return NewDialogWithOptions(message, []DialogButton{}, DialogSizeSmall, DialogTypeInfo)
 }
 
 // updateStyle applies the current dialog type and size to the style

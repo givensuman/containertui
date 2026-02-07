@@ -6,7 +6,7 @@ import (
 
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/config"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -72,19 +72,19 @@ func main() {
 				}
 			}
 
-			context.SetConfig(cfg)
+			state.SetConfig(cfg)
 
 			// Initialize the shared Docker client
-			if err := context.InitializeClient(); err != nil {
+			if err := state.InitializeClient(); err != nil {
 				return fmt.Errorf("failed to initialize Docker client: %w", err)
 			}
 			defer func() {
-				if err := context.CloseClient(); err != nil {
+				if err := state.CloseClient(); err != nil {
 					log.Printf("error closing Docker client: %v", err)
 				}
 			}()
 
-			context.InitializeLog()
+			state.InitializeLog()
 
 			// Start the UI
 			if err := ui.Start(); err != nil {

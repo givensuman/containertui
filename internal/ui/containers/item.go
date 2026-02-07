@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 type ContainerItem struct {
@@ -25,7 +25,7 @@ var (
 )
 
 func (containerItem ContainerItem) getIsSelectedIcon() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch containerItem.isSelected {
 		case true:
@@ -46,7 +46,7 @@ func (containerItem ContainerItem) getIsSelectedIcon() string {
 }
 
 func (containerItem ContainerItem) getTitleOrnament() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.

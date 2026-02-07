@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,7 +24,7 @@ const (
 // GetOutputFormat returns the configured output format for inspection data.
 // Defaults to YAML if not configured.
 func GetOutputFormat() OutputFormat {
-	cfg := context.GetConfig()
+	cfg := state.GetConfig()
 	if cfg == nil {
 		return FormatYAML
 	}
@@ -88,7 +88,7 @@ func marshalToJSON(data any) (string, error) {
 
 // ColorizeYAML applies syntax highlighting to YAML text using theme colors.
 func ColorizeYAML(text string) string {
-	cfg := context.GetConfig()
+	cfg := state.GetConfig()
 	if cfg == nil {
 		return text
 	}
@@ -174,7 +174,7 @@ func ColorizeYAML(text string) string {
 
 // ColorizeJSON applies syntax highlighting to JSON text using theme colors.
 func ColorizeJSON(text string) string {
-	cfg := context.GetConfig()
+	cfg := state.GetConfig()
 	if cfg == nil {
 		return text
 	}

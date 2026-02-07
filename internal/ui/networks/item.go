@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 type NetworkItem struct {
@@ -25,7 +25,7 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (networkItem NetworkItem) getIsSelectedIcon() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch networkItem.isSelected {
 		case true:
@@ -46,7 +46,7 @@ func (networkItem NetworkItem) getIsSelectedIcon() string {
 }
 
 func (networkItem NetworkItem) getTitleOrnament() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.

@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 type VolumeItem struct {
@@ -25,7 +25,7 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (volumeItem VolumeItem) getIsSelectedIcon() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch volumeItem.isSelected {
 		case true:
@@ -46,7 +46,7 @@ func (volumeItem VolumeItem) getIsSelectedIcon() string {
 }
 
 func (volumeItem VolumeItem) getTitleOrnament() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.

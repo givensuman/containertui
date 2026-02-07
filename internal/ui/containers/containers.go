@@ -13,7 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
@@ -30,6 +30,9 @@ type MsgContainerInspection struct {
 
 // MsgRestoreScroll is sent to restore scroll position after content is set
 type MsgRestoreScroll struct{}
+
+// MsgRefreshContainers is sent periodically to refresh the container list
+type MsgRefreshContainers time.Time
 
 type detailsKeybindings struct {
 	Up         key.Binding
@@ -161,7 +164,7 @@ func New() Model {
 
 	// Initialize ResourceView
 	fetchContainers := func() ([]ContainerItem, error) {
-		containers, err := context.GetClient().GetContainers(stdcontext.Background())
+		containers, err := state.GetClient().GetContainers(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -222,8 +225,14 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.ResourceView.UpdateWindowDimensions(msg)
 }
 
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second*3, func(t time.Time) tea.Msg {
+		return MsgRefreshContainers(t)
+	})
+}
+
 func (model Model) Init() tea.Cmd {
-	return model.ResourceView.Init()
+	return tea.Batch(model.ResourceView.Init(), tickCmd())
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -237,6 +246,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		model.UpdateWindowDimensions(msg)
+
+	case MsgRefreshContainers:
+		// Schedule next refresh
+		cmds = append(cmds, tickCmd())
+		// Refresh the containers list via ResourceView
+		cmds = append(cmds, model.Refresh())
 
 	case MessageContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
@@ -339,7 +354,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Capture ID for closure
 			id := selectedItem.ID
 			cmds = append(cmds, func() tea.Msg {
-				containerInfo, err := context.GetClient().InspectContainer(stdcontext.Background(), id)
+				containerInfo, err := state.GetClient().InspectContainer(stdcontext.Background(), id)
 				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
 			})
 		}
@@ -461,7 +476,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	// Determine current effective format
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
-		cfg := context.GetConfig()
+		cfg := state.GetConfig()
 		currentFormat = cfg.InspectionFormat
 		if currentFormat == "" {
 			currentFormat = "yaml"
@@ -805,9 +820,29 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 		return notifications.ShowError(msg.Error)
 	}
 
+	// Show success notification
+	var successMsg string
+	switch msg.Operation {
+	case Remove:
+		successMsg = fmt.Sprintf("Container removed: %s", msg.ID[:12])
+	case Start:
+		successMsg = fmt.Sprintf("Container started: %s", msg.ID[:12])
+	case Stop:
+		successMsg = fmt.Sprintf("Container stopped: %s", msg.ID[:12])
+	case Restart:
+		successMsg = fmt.Sprintf("Container restarted: %s", msg.ID[:12])
+	case Pause:
+		successMsg = fmt.Sprintf("Container paused: %s", msg.ID[:12])
+	case Unpause:
+		successMsg = fmt.Sprintf("Container unpaused: %s", msg.ID[:12])
+	}
+
 	if msg.Operation == Remove {
 		// Trigger a refresh to get updated container list
-		return model.Refresh()
+		return tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			model.Refresh(),
+		)
 	}
 
 	var newState string
@@ -836,5 +871,5 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 		}
 	}
 
-	return nil
+	return notifications.ShowSuccess(successMsg)
 }

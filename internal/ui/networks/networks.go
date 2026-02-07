@@ -13,7 +13,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
@@ -107,7 +107,7 @@ func New() *Model {
 	networkKeybindings := newKeybindings()
 
 	fetchNetworks := func() ([]NetworkItem, error) {
-		networkList, err := context.GetClient().GetNetworks(stdcontext.Background())
+		networkList, err := state.GetClient().GetNetworks(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -190,19 +190,18 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteNetwork" {
 				networkID := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
 				if err == nil {
 					// Close the overlay and refresh list
 					model.CloseOverlay()
-					return model, model.Refresh()
-				} else {
-					// Show error
-					errorDialog := components.NewDialog(
-						fmt.Sprintf("Failed to remove network:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK"}},
+					return model, tea.Batch(
+						notifications.ShowSuccess(fmt.Sprintf("Network removed: %s", networkID[:12])),
+						model.Refresh(),
 					)
-					model.SetOverlay(errorDialog)
-					return model, nil
+				} else {
+					// Show error notification
+					model.CloseOverlay()
+					return model, notifications.ShowError(err)
 				}
 			}
 			model.CloseOverlay()
@@ -301,7 +300,7 @@ func (model *Model) handleRemove() {
 		return
 	}
 
-	containersUsingNetwork, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
+	containersUsingNetwork, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -352,7 +351,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentNetworkID = networkID
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			networkInfo, err := context.GetClient().InspectNetwork(stdcontext.Background(), networkID)
+			networkInfo, err := state.GetClient().InspectNetwork(stdcontext.Background(), networkID)
 			return MsgNetworkInspection{ID: networkID, Network: networkInfo, Err: err}
 		}
 	}
@@ -418,7 +417,7 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this network
-	usedBy, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), model.inspection.ID)
+	usedBy, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
@@ -472,7 +471,7 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 func (model *Model) handleToggleFormat() tea.Cmd {
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
-		cfg := context.GetConfig()
+		cfg := state.GetConfig()
 		currentFormat = cfg.InspectionFormat
 		if currentFormat == "" {
 			currentFormat = "yaml"

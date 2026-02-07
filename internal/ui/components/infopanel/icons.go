@@ -2,7 +2,7 @@
 package infopanel
 
 import (
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 // IconSet contains icons for various resources and states.
@@ -103,7 +103,7 @@ var (
 // GetIcons returns the appropriate icon set based on the configuration.
 // If --no-nerd-fonts is set, returns text-based icons, otherwise returns nerd font icons.
 func GetIcons() IconSet {
-	cfg := context.GetConfig()
+	cfg := state.GetConfig()
 	if cfg != nil && bool(cfg.NoNerdFonts) {
 		return textIcons
 	}

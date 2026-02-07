@@ -3,7 +3,7 @@ package containers
 import (
 	stdcontext "context"
 	tea "charm.land/bubbletea/v2"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 // MessageContainerOperationResult indicates the result of a container operation.
@@ -28,7 +28,7 @@ const (
 func PerformContainerOperation(operation Operation, containerID string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
-		client := context.GetClient()
+		client := state.GetClient()
 		switch operation {
 		case Pause:
 			err = client.PauseContainer(stdcontext.Background(), containerID)

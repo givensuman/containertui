@@ -1,5 +1,5 @@
-// Package context provides a context for shared application state.
-package context
+// Package state provides shared application state management.
+package state
 
 import (
 	"sync"

@@ -14,7 +14,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
@@ -108,7 +108,7 @@ func New() *Model {
 	volumeKeybindings := newKeybindings()
 
 	fetchVolumes := func() ([]VolumeItem, error) {
-		volumeList, err := context.GetClient().GetVolumes(stdcontext.Background())
+		volumeList, err := state.GetClient().GetVolumes(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -191,19 +191,18 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteVolume" {
 				volumeName := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
+				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
 				if err == nil {
 					// Close the overlay and refresh list
 					model.CloseOverlay()
-					return model, model.Refresh()
-				} else {
-					// Show error
-					errorDialog := components.NewDialog(
-						fmt.Sprintf("Failed to remove volume:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK"}},
+					return model, tea.Batch(
+						notifications.ShowSuccess(fmt.Sprintf("Volume removed: %s", volumeName)),
+						model.Refresh(),
 					)
-					model.SetOverlay(errorDialog)
-					return model, nil
+				} else {
+					// Show error notification
+					model.CloseOverlay()
+					return model, notifications.ShowError(err)
 				}
 			}
 			model.CloseOverlay()
@@ -320,7 +319,7 @@ func (model *Model) handleRemove() {
 		return
 	}
 
-	containersUsingVolume, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), selectedItem.Volume.Name)
+	containersUsingVolume, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), selectedItem.Volume.Name)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -375,7 +374,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentVolumeName = volumeName
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			volumeInfo, err := context.GetClient().InspectVolume(stdcontext.Background(), volumeName)
+			volumeInfo, err := state.GetClient().InspectVolume(stdcontext.Background(), volumeName)
 			return MsgVolumeInspection{Name: volumeName, Volume: volumeInfo, Err: err}
 		}
 	}
@@ -441,7 +440,7 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this volume
-	usedBy, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), model.inspection.Name)
+	usedBy, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), model.inspection.Name)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
@@ -495,7 +494,7 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 func (model *Model) handleToggleFormat() tea.Cmd {
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
-		cfg := context.GetConfig()
+		cfg := state.GetConfig()
 		currentFormat = cfg.InspectionFormat
 		if currentFormat == "" {
 			currentFormat = "yaml"

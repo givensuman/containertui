@@ -63,3 +63,9 @@ type CloseDialogMessage struct{}
 type MsgFocusChanged struct {
 	IsDetailsFocused bool
 }
+
+// MsgContainerCreated is sent when a container is created from another tab
+// to trigger a refresh of the Containers tab
+type MsgContainerCreated struct {
+	ContainerID string
+}

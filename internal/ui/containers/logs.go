@@ -8,7 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	contxt "github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 )
 
@@ -37,7 +37,7 @@ func (model *ContainerLogs) streamLogsCmd() tea.Cmd {
 	cancelChannel := model.cancelChannel
 	ctx := model.logCtx
 	return func() tea.Msg {
-		reader, err := contxt.GetClient().OpenLogs(ctx, containerID)
+		reader, err := state.GetClient().OpenLogs(ctx, containerID)
 		if err != nil {
 			return logsLoadedMsg{lines: nil, err: err}
 		}

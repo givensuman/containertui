@@ -15,7 +15,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
@@ -257,7 +257,7 @@ func New() Model {
 	imageKeybindings := newKeybindings()
 
 	fetchImages := func() ([]ImageItem, error) {
-		imageList, err := context.GetClient().GetImages(stdcontext.Background())
+		imageList, err := state.GetClient().GetImages(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -358,22 +358,23 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return model, model.Refresh()
 
 	case MsgCreateContainerComplete:
+		// Close the progress dialog
+		model.CloseOverlay()
+
 		if msg.Err != nil {
-			// Show error dialog
-			errorDialog := components.NewDialog(
-				fmt.Sprintf("Failed to create container:\n\n%v", msg.Err),
-				[]components.DialogButton{{Label: "OK"}},
-			)
-			model.SetOverlay(errorDialog)
-		} else {
-			// Success - show success message
-			successDialog := components.NewDialog(
-				fmt.Sprintf("Container created successfully!\n\nContainer ID: %s", msg.ContainerID[:12]),
-				[]components.DialogButton{{Label: "OK"}},
-			)
-			model.SetOverlay(successDialog)
+			// Show error notification
+			return model, notifications.ShowError(msg.Err)
 		}
-		return model, nil
+
+		// Success - show success notification
+		successMsg := fmt.Sprintf("Container created: %s", msg.ContainerID[:12])
+		// Emit container created message to trigger refresh
+		return model, tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			func() tea.Msg {
+				return base.MsgContainerCreated{ContainerID: msg.ContainerID}
+			},
+		)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -382,19 +383,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			switch confirmMsg.Action.Type {
 			case "DeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveImage(stdcontext.Background(), imageID)
+				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID)
 				if err == nil {
-					// Close the overlay and refresh list
 					model.CloseOverlay()
-					return model, model.Refresh()
-				} else {
-					// Show error
-					errorDialog := components.NewDialog(
-						fmt.Sprintf("Failed to remove image:\n\n%v", err),
-						[]components.DialogButton{{Label: "OK"}},
+					return model, tea.Batch(
+						notifications.ShowSuccess(fmt.Sprintf("Image removed: %s", imageID[:12])),
+						model.Refresh(),
 					)
-					model.SetOverlay(errorDialog)
-					return model, nil
+				} else {
+					// Show error notification
+					model.CloseOverlay()
+					return model, notifications.ShowError(err)
 				}
 			case "PullImageAction":
 				// Extract image name from form values
@@ -411,7 +410,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				// Start pull in goroutine
 				return model, func() tea.Msg {
-					err := context.GetClient().PullImage(stdcontext.Background(), imageName, nil)
+					err := state.GetClient().PullImage(stdcontext.Background(), imageName, nil)
 					return MsgPullComplete{ImageName: imageName, Err: err}
 				}
 			case "CreateContainerAction":
@@ -437,16 +436,16 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					Network:   "bridge",
 				}
 
-				// Show progress dialog
-				progressDialog := components.NewDialog(
-					"Creating container...",
-					[]components.DialogButton{}, // No buttons while creating
-				)
+				// Close the form overlay and show progress dialog
+				model.CloseOverlay()
+
+				// Show progress dialog (like image pull)
+				progressDialog := components.NewProgressDialog("Creating container...\n\nThis may take a few moments...")
 				model.SetOverlay(progressDialog)
 
 				// Create container
 				return model, func() tea.Msg {
-					containerID, err := context.GetClient().CreateContainer(stdcontext.Background(), config)
+					containerID, err := state.GetClient().CreateContainer(stdcontext.Background(), config)
 					if err != nil {
 						return MsgCreateContainerComplete{Err: err}
 					}
@@ -639,7 +638,7 @@ func (model *Model) handleRemove() {
 		return
 	}
 
-	containersUsingImage, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), selectedItem.Image.ID)
+	containersUsingImage, err := state.GetClient().GetContainersUsingImage(stdcontext.Background(), selectedItem.Image.ID)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -690,7 +689,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentImageID = imageID
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			imageInfo, err := context.GetClient().InspectImage(stdcontext.Background(), imageID)
+			imageInfo, err := state.GetClient().InspectImage(stdcontext.Background(), imageID)
 			return MsgImageInspection{ID: imageID, Image: imageInfo, Err: err}
 		}
 	}
@@ -756,7 +755,7 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this image
-	usedBy, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), model.inspection.ID)
+	usedBy, err := state.GetClient().GetContainersUsingImage(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
@@ -814,7 +813,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	// Determine current effective format
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
-		cfg := context.GetConfig()
+		cfg := state.GetConfig()
 		currentFormat = cfg.InspectionFormat
 		if currentFormat == "" {
 			currentFormat = "yaml"

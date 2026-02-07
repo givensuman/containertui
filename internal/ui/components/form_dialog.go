@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/layout"
 )
@@ -49,7 +49,7 @@ func NewFormDialog(title string, fields []FormField, action base.SmartDialogActi
 
 // NewFormDialogWithSize creates a new form dialog with custom size
 func NewFormDialogWithSize(title string, fields []FormField, action base.SmartDialogAction, metadata map[string]any, size DialogSize) FormDialog {
-	width, height := context.GetWindowSize()
+	width, height := state.GetWindowSize()
 
 	// Initialize text inputs
 	textInputs := make([]textinput.Model, len(fields))

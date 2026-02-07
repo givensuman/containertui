@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/go-connections/nat"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
 
@@ -231,7 +231,7 @@ func BuildImagePanel(image types.ImageInspect, width int, format infopanel.Outpu
 
 	// Connected Resources - containers using this image
 	// Temporarily disabled
-	// usedBy, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), image.ID)
+	// usedBy, err := state.GetClient().GetContainersUsingImage(stdcontext.Background(), image.ID)
 	// if err == nil && len(usedBy) > 0 {
 	// 	output.WriteString(formatSummaryField("Used By", formatBulletList(usedBy)))
 	// }
@@ -287,7 +287,7 @@ func BuildNetworkPanel(network types.NetworkResource, width int, format infopane
 	}
 
 	// Connected Resources - containers using this network
-	usedBy, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), network.ID)
+	usedBy, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), network.ID)
 	if err == nil && len(usedBy) > 0 {
 		// Build container list with IPs
 		var containerLines []string
@@ -362,7 +362,7 @@ func BuildVolumePanel(vol volume.Volume, width int, format infopanel.OutputForma
 	}
 
 	// Connected Resources - containers using this volume
-	usedBy, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), vol.Name)
+	usedBy, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), vol.Name)
 	if err == nil && len(usedBy) > 0 {
 		output.WriteString(formatSummaryField("Mounted By", formatBulletList(usedBy)))
 	}

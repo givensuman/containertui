@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 type ImageItem struct {
@@ -25,7 +25,7 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (imageItem ImageItem) getIsSelectedIcon() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch imageItem.isSelected {
 		case true:
@@ -46,7 +46,7 @@ func (imageItem ImageItem) getIsSelectedIcon() string {
 }
 
 func (imageItem ImageItem) getTitleOrnament() string {
-	switch context.GetConfig().NoNerdFonts {
+	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.

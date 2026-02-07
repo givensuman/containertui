@@ -5,7 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/config"
-	"github.com/givensuman/containertui/internal/context"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 func TestANSIColors(t *testing.T) {
@@ -18,7 +18,7 @@ func TestANSIColors(t *testing.T) {
 }
 
 func TestColorFunctions(t *testing.T) {
-	context.SetConfig(config.DefaultConfig())
+	state.SetConfig(config.DefaultConfig())
 
 	yellow := Yellow()
 	if yellow == nil {
@@ -116,7 +116,7 @@ func TestColorOverrides(t *testing.T) {
 	cfg.Theme.Success = "#a6e3a1"
 	cfg.Theme.Warning = "#f9e2af"
 	cfg.Theme.Error = "#f38ba8"
-	context.SetConfig(cfg)
+	state.SetConfig(cfg)
 
 	primary := Primary()
 	if primary != lipgloss.Color("#89b4fa") {
