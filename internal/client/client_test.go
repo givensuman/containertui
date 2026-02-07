@@ -1,7 +1,9 @@
 package client
 
 import (
+	"context"
 	"testing"
+	"time"
 )
 
 func TestNewClient(t *testing.T) {
@@ -53,7 +55,10 @@ func TestGetContainers(t *testing.T) {
 		}
 	}()
 
-	containers, err := client.GetContainers()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	containers, err := client.GetContainers(ctx)
 	if err != nil {
 		t.Fatalf("failed to get containers: %v", err)
 	}
@@ -75,8 +80,65 @@ func TestGetContainerState(t *testing.T) {
 		}
 	}()
 
-	state, err := client.GetContainerState("nonexistent")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	state, err := client.GetContainerState(ctx, "nonexistent")
 	if err == nil && state != "unknown" {
 		t.Errorf("expected 'unknown' for nonexistent container, got %s", state)
+	}
+}
+
+func TestMultiError(t *testing.T) {
+	tests := []struct {
+		name     string
+		errors   []OperationError
+		hasError bool
+		errCount int
+	}{
+		{
+			name:     "no errors",
+			errors:   []OperationError{},
+			hasError: false,
+			errCount: 0,
+		},
+		{
+			name: "single error",
+			errors: []OperationError{
+				{ID: "container1", Err: context.DeadlineExceeded},
+			},
+			hasError: true,
+			errCount: 1,
+		},
+		{
+			name: "multiple errors",
+			errors: []OperationError{
+				{ID: "container1", Err: context.DeadlineExceeded},
+				{ID: "container2", Err: context.Canceled},
+			},
+			hasError: true,
+			errCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			me := MultiError{Errors: tt.errors}
+			if me.HasErrors() != tt.hasError {
+				t.Errorf("HasErrors() = %v, want %v", me.HasErrors(), tt.hasError)
+			}
+			if len(me.Errors) != tt.errCount {
+				t.Errorf("error count = %v, want %v", len(me.Errors), tt.errCount)
+			}
+			if tt.hasError {
+				if me.ToError() == nil {
+					t.Error("ToError() returned nil for errors")
+				}
+			} else {
+				if me.ToError() != nil {
+					t.Error("ToError() returned non-nil for no errors")
+				}
+			}
+		})
 	}
 }

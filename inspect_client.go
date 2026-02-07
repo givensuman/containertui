@@ -1,3 +1,8 @@
+// inspect_client.go is a development utility for inspecting the Docker client API.
+// This file is used during development to explore available methods on the Docker client.
+// It can be removed in production builds or kept for debugging purposes.
+//
+// To use: go run inspect_client.go
 package main
 
 import (

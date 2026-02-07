@@ -276,7 +276,7 @@ func (dialog FormDialog) validate() error {
 		// Run custom validator if present and value is not empty
 		if field.Validator != nil && strings.TrimSpace(value) != "" {
 			if err := field.Validator(value); err != nil {
-				return fmt.Errorf("%s: %v", field.Label, err)
+				return fmt.Errorf("%s: %w", field.Label, err)
 			}
 		}
 	}

@@ -2,6 +2,7 @@
 package volumes
 
 import (
+	stdcontext "context"
 	"fmt"
 	"slices"
 	"strings"
@@ -107,7 +108,7 @@ func New() *Model {
 	volumeKeybindings := newKeybindings()
 
 	fetchVolumes := func() ([]VolumeItem, error) {
-		volumeList, err := context.GetClient().GetVolumes()
+		volumeList, err := context.GetClient().GetVolumes(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +151,7 @@ func New() *Model {
 	}
 
 	// Add custom keybindings to help
-	model.ResourceView.AdditionalHelp = []key.Binding{
+	model.AdditionalHelp = []key.Binding{
 		volumeKeybindings.toggleSelection,
 		volumeKeybindings.toggleSelectionOfAll,
 		volumeKeybindings.remove,
@@ -160,7 +161,7 @@ func New() *Model {
 }
 
 func (model *Model) Init() tea.Cmd {
-	return nil
+	return model.ResourceView.Init()
 }
 
 func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
@@ -186,26 +187,26 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
-	if model.ResourceView.IsOverlayVisible() {
+	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteVolume" {
 				volumeName := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveVolume(volumeName)
+				err := context.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
 				if err == nil {
 					// Close the overlay and refresh list
-					model.ResourceView.CloseOverlay()
-					return model, model.ResourceView.Refresh()
+					model.CloseOverlay()
+					return model, model.Refresh()
 				} else {
 					// Show error
 					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove volume:\n\n%v", err),
 						[]components.DialogButton{{Label: "OK"}},
 					)
-					model.ResourceView.SetOverlay(errorDialog)
+					model.SetOverlay(errorDialog)
 					return model, nil
 				}
 			}
-			model.ResourceView.CloseOverlay()
+			model.CloseOverlay()
 			return model, nil
 		}
 
@@ -214,10 +215,10 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	// 3. Main View Logic
-	if model.ResourceView.IsListFocused() {
+	if model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if model.ResourceView.IsFiltering() {
+			if model.IsFiltering() {
 				break
 			}
 
@@ -243,7 +244,7 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
-			if model.ResourceView.IsDetailFocused() {
+			if model.IsDetailFocused() {
 				switch {
 				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
 					cmd := model.handleToggleFormat()
@@ -268,21 +269,21 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 }
 
 func (model *Model) handleToggleSelection() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
-		model.ResourceView.ToggleSelection(selectedItem.Volume.Name)
+		model.ToggleSelection(selectedItem.Volume.Name)
 
 		// Update the visual state of the item
-		index := model.ResourceView.GetSelectedIndex()
+		index := model.GetSelectedIndex()
 		selectedItem.isSelected = !selectedItem.isSelected
-		model.ResourceView.SetItem(index, *selectedItem)
+		model.SetItem(index, *selectedItem)
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
 	// Check if we need to select all or deselect all
-	items := model.ResourceView.GetItems()
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	items := model.GetItems()
+	selectedIDs := model.GetSelectedIDs()
 
 	shouldSelectAll := false
 	for _, item := range items {
@@ -296,30 +297,41 @@ func (model *Model) handleToggleSelectionOfAll() {
 		// Select all
 		for i, item := range items {
 			if !slices.Contains(selectedIDs, item.Volume.Name) {
-				model.ResourceView.ToggleSelection(item.Volume.Name)
+				model.ToggleSelection(item.Volume.Name)
 			}
 			// Visual update
 			item.isSelected = true
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	} else {
 		// Deselect all
 		for i, item := range items {
-			model.ResourceView.ToggleSelection(item.Volume.Name)
+			model.ToggleSelection(item.Volume.Name)
 			// Visual update
 			item.isSelected = false
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	}
 }
 
 func (model *Model) handleRemove() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return
 	}
 
-	containersUsingVolume, _ := context.GetClient().GetContainersUsingVolume(selectedItem.Volume.Name)
+	containersUsingVolume, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), selectedItem.Volume.Name)
+	if err != nil {
+		// If we can't check usage, show error and don't proceed with deletion
+		errorDialog := components.NewDialog(
+			fmt.Sprintf("Failed to check volume usage: %v\nCannot safely delete volume.", err),
+			[]components.DialogButton{
+				{Label: "OK"},
+			},
+		)
+		model.SetOverlay(errorDialog)
+		return
+	}
 	if len(containersUsingVolume) > 0 {
 		warningDialog := components.NewDialog(
 			fmt.Sprintf("Volume %s is used by %d containers (%v).\nCannot delete.",
@@ -328,7 +340,7 @@ func (model *Model) handleRemove() {
 				{Label: "OK"},
 			},
 		)
-		model.ResourceView.SetOverlay(warningDialog)
+		model.SetOverlay(warningDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete volume %s?", selectedItem.Volume.Name),
@@ -340,15 +352,15 @@ func (model *Model) handleRemove() {
 				}},
 			},
 		)
-		model.ResourceView.SetOverlay(confirmationDialog)
+		model.SetOverlay(confirmationDialog)
 	}
 }
 
 func (model *Model) updateDetailContent() tea.Cmd {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No volume selected."))
-		model.ResourceView.SetExtraContent("") // Clear extra pane when no volume selected
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No volume selected."))
+		model.SetExtraContent("") // Clear extra pane when no volume selected
 		return nil
 	}
 
@@ -363,7 +375,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentVolumeName = volumeName
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			volumeInfo, err := context.GetClient().InspectVolume(volumeName)
+			volumeInfo, err := context.GetClient().InspectVolume(stdcontext.Background(), volumeName)
 			return MsgVolumeInspection{Name: volumeName, Volume: volumeInfo, Err: err}
 		}
 	}
@@ -395,7 +407,7 @@ func (model *Model) restoreScrollPosition() {
 
 // getViewport returns the viewport from the detail pane if available
 func (model *Model) getViewport() *viewport.Model {
-	if vp, ok := model.ResourceView.SplitView.Detail.(*components.ViewportPane); ok {
+	if vp, ok := model.SplitView.Detail.(*components.ViewportPane); ok {
 		return &vp.Viewport
 	}
 	return nil
@@ -414,8 +426,8 @@ func (model *Model) refreshInspectionContent() {
 	}
 
 	// Build content with current format
-	content := builders.BuildVolumePanel(model.inspection, model.ResourceView.GetContentWidth(), format)
-	model.ResourceView.SetContent(content)
+	content := builders.BuildVolumePanel(model.inspection, model.GetContentWidth(), format)
+	model.SetContent(content)
 
 	// Update "Used By" panel
 	model.updateUsedByPanel()
@@ -424,19 +436,19 @@ func (model *Model) refreshInspectionContent() {
 // updateUsedByPanel updates the extra pane with containers using this volume
 func (model *Model) updateUsedByPanel() {
 	if model.inspection.Name == "" {
-		model.ResourceView.SetExtraContent("")
+		model.SetExtraContent("")
 		return
 	}
 
 	// Fetch containers using this volume
-	usedBy, err := context.GetClient().GetContainersUsingVolume(model.inspection.Name)
+	usedBy, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), model.inspection.Name)
 	if err != nil {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
 	}
 
 	if len(usedBy) == 0 {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this volume"))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this volume"))
 		return
 	}
 
@@ -449,7 +461,7 @@ func (model *Model) updateUsedByPanel() {
 		output.WriteString(fmt.Sprintf("• %s", containerName))
 	}
 
-	model.ResourceView.SetExtraContent(output.String())
+	model.SetExtraContent(output.String())
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
@@ -510,7 +522,7 @@ func (model *Model) IsFiltering() bool {
 
 func (model *Model) ShortHelp() []key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -518,7 +530,7 @@ func (model *Model) ShortHelp() []key.Binding {
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -530,7 +542,7 @@ func (model *Model) ShortHelp() []key.Binding {
 
 func (model *Model) FullHelp() [][]key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -542,7 +554,7 @@ func (model *Model) FullHelp() [][]key.Binding {
 				model.detailsKeybindings.CopyOutput,
 			},
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

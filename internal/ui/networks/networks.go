@@ -2,6 +2,7 @@
 package networks
 
 import (
+	stdcontext "context"
 	"fmt"
 	"strings"
 
@@ -106,7 +107,7 @@ func New() *Model {
 	networkKeybindings := newKeybindings()
 
 	fetchNetworks := func() ([]NetworkItem, error) {
-		networkList, err := context.GetClient().GetNetworks()
+		networkList, err := context.GetClient().GetNetworks(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +150,7 @@ func New() *Model {
 	}
 
 	// Add custom keybindings to help
-	model.ResourceView.AdditionalHelp = []key.Binding{
+	model.AdditionalHelp = []key.Binding{
 		networkKeybindings.toggleSelection,
 		networkKeybindings.toggleSelectionOfAll,
 		networkKeybindings.remove,
@@ -159,7 +160,7 @@ func New() *Model {
 }
 
 func (model *Model) Init() tea.Cmd {
-	return nil
+	return model.ResourceView.Init()
 }
 
 func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
@@ -185,26 +186,26 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
-	if model.ResourceView.IsOverlayVisible() {
+	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteNetwork" {
 				networkID := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveNetwork(networkID)
+				err := context.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
 				if err == nil {
 					// Close the overlay and refresh list
-					model.ResourceView.CloseOverlay()
-					return model, model.ResourceView.Refresh()
+					model.CloseOverlay()
+					return model, model.Refresh()
 				} else {
 					// Show error
 					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove network:\n\n%v", err),
 						[]components.DialogButton{{Label: "OK"}},
 					)
-					model.ResourceView.SetOverlay(errorDialog)
+					model.SetOverlay(errorDialog)
 					return model, nil
 				}
 			}
-			model.ResourceView.CloseOverlay()
+			model.CloseOverlay()
 			return model, nil
 		}
 
@@ -213,10 +214,10 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	// 3. Main View Logic
-	if model.ResourceView.IsListFocused() {
+	if model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if model.ResourceView.IsFiltering() {
+			if model.IsFiltering() {
 				break
 			}
 
@@ -242,7 +243,7 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
-			if model.ResourceView.IsDetailFocused() {
+			if model.IsDetailFocused() {
 				switch {
 				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
 					cmd := model.handleToggleFormat()
@@ -275,32 +276,43 @@ func (model *Model) IsFiltering() bool {
 }
 
 func (model *Model) handleToggleSelection() {
-	model.ResourceView.HandleToggleSelection()
+	model.HandleToggleSelection()
 
-	index := model.ResourceView.GetSelectedIndex()
-	if selectedItem := model.ResourceView.GetSelectedItem(); selectedItem != nil {
-		selectedItem.isSelected = model.ResourceView.Selections.IsSelected(selectedItem.Network.ID)
-		model.ResourceView.SetItem(index, *selectedItem)
+	index := model.GetSelectedIndex()
+	if selectedItem := model.GetSelectedItem(); selectedItem != nil {
+		selectedItem.isSelected = model.Selections.IsSelected(selectedItem.Network.ID)
+		model.SetItem(index, *selectedItem)
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
-	model.ResourceView.HandleToggleAll()
+	model.HandleToggleAll()
 
-	items := model.ResourceView.GetItems()
+	items := model.GetItems()
 	for i, item := range items {
-		item.isSelected = model.ResourceView.Selections.IsSelected(item.Network.ID)
-		model.ResourceView.SetItem(i, item)
+		item.isSelected = model.Selections.IsSelected(item.Network.ID)
+		model.SetItem(i, item)
 	}
 }
 
 func (model *Model) handleRemove() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return
 	}
 
-	containersUsingNetwork, _ := context.GetClient().GetContainersUsingNetwork(selectedItem.Network.ID)
+	containersUsingNetwork, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
+	if err != nil {
+		// If we can't check usage, show error and don't proceed with deletion
+		errorDialog := components.NewDialog(
+			fmt.Sprintf("Failed to check network usage: %v\nCannot safely delete network.", err),
+			[]components.DialogButton{
+				{Label: "OK"},
+			},
+		)
+		model.SetOverlay(errorDialog)
+		return
+	}
 	if len(containersUsingNetwork) > 0 {
 		warningDialog := components.NewDialog(
 			fmt.Sprintf("Network %s is used by %d containers (%v).\nCannot delete.", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
@@ -308,7 +320,7 @@ func (model *Model) handleRemove() {
 				{Label: "OK"},
 			},
 		)
-		model.ResourceView.SetOverlay(warningDialog)
+		model.SetOverlay(warningDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete network %s?", selectedItem.Network.Name),
@@ -317,15 +329,15 @@ func (model *Model) handleRemove() {
 				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteNetwork", Payload: selectedItem.Network.ID}},
 			},
 		)
-		model.ResourceView.SetOverlay(confirmationDialog)
+		model.SetOverlay(confirmationDialog)
 	}
 }
 
 func (model *Model) updateDetailContent() tea.Cmd {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
-		model.ResourceView.SetExtraContent("") // Clear extra pane when no network selected
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
+		model.SetExtraContent("") // Clear extra pane when no network selected
 		return nil
 	}
 
@@ -340,7 +352,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentNetworkID = networkID
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			networkInfo, err := context.GetClient().InspectNetwork(networkID)
+			networkInfo, err := context.GetClient().InspectNetwork(stdcontext.Background(), networkID)
 			return MsgNetworkInspection{ID: networkID, Network: networkInfo, Err: err}
 		}
 	}
@@ -372,7 +384,7 @@ func (model *Model) restoreScrollPosition() {
 
 // getViewport returns the viewport from the detail pane if available
 func (model *Model) getViewport() *viewport.Model {
-	if vp, ok := model.ResourceView.SplitView.Detail.(*components.ViewportPane); ok {
+	if vp, ok := model.SplitView.Detail.(*components.ViewportPane); ok {
 		return &vp.Viewport
 	}
 	return nil
@@ -391,8 +403,8 @@ func (model *Model) refreshInspectionContent() {
 	}
 
 	// Build content with current format
-	content := builders.BuildNetworkPanel(model.inspection, model.ResourceView.GetContentWidth(), format)
-	model.ResourceView.SetContent(content)
+	content := builders.BuildNetworkPanel(model.inspection, model.GetContentWidth(), format)
+	model.SetContent(content)
 
 	// Update "Used By" panel
 	model.updateUsedByPanel()
@@ -401,19 +413,19 @@ func (model *Model) refreshInspectionContent() {
 // updateUsedByPanel updates the extra pane with containers using this network
 func (model *Model) updateUsedByPanel() {
 	if model.inspection.ID == "" {
-		model.ResourceView.SetExtraContent("")
+		model.SetExtraContent("")
 		return
 	}
 
 	// Fetch containers using this network
-	usedBy, err := context.GetClient().GetContainersUsingNetwork(model.inspection.ID)
+	usedBy, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
 	}
 
 	if len(usedBy) == 0 {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this network"))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this network"))
 		return
 	}
 
@@ -426,7 +438,7 @@ func (model *Model) updateUsedByPanel() {
 		output.WriteString(fmt.Sprintf("• %s", containerName))
 	}
 
-	model.ResourceView.SetExtraContent(output.String())
+	model.SetExtraContent(output.String())
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
@@ -477,13 +489,9 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
-func (model *Model) removeNetworkFromList(id string) {
-	// Replaced by Refresh
-}
-
 func (model *Model) ShortHelp() []key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -491,7 +499,7 @@ func (model *Model) ShortHelp() []key.Binding {
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -503,7 +511,7 @@ func (model *Model) ShortHelp() []key.Binding {
 
 func (model *Model) FullHelp() [][]key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -515,7 +523,7 @@ func (model *Model) FullHelp() [][]key.Binding {
 				model.detailsKeybindings.CopyOutput,
 			},
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

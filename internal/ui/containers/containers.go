@@ -2,9 +2,11 @@
 package containers
 
 import (
+	stdcontext "context"
 	"fmt"
 	"os/exec"
 	"slices"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -159,7 +161,7 @@ func New() Model {
 
 	// Initialize ResourceView
 	fetchContainers := func() ([]ContainerItem, error) {
-		containers, err := context.GetClient().GetContainers()
+		containers, err := context.GetClient().GetContainers(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +200,7 @@ func New() Model {
 	}
 
 	// Add custom keybindings to help
-	model.ResourceView.AdditionalHelp = []key.Binding{
+	model.AdditionalHelp = []key.Binding{
 		containerKeybindings.pauseContainer,
 		containerKeybindings.unpauseContainer,
 		containerKeybindings.startContainer,
@@ -254,12 +256,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.restoreScrollPosition()
 	}
 
-	if model.ResourceView.IsOverlayVisible() {
+	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteContainer" {
 				containerIDs := confirmMsg.Action.Payload.([]string)
 				spinnerCmd := model.setWorkingState(containerIDs, true)
-				model.ResourceView.CloseOverlay()
+				model.CloseOverlay()
 				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))
 			}
 		}
@@ -267,10 +269,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	// 4. Handle keybindings when list is focused
-	if model.ResourceView.IsListFocused() {
+	if model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if model.ResourceView.IsFiltering() {
+			if model.IsFiltering() {
 				break
 			}
 
@@ -309,7 +311,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	// 5. Handle keybindings when detail pane is focused
-	if !model.ResourceView.IsListFocused() {
+	if !model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			switch {
@@ -326,7 +328,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	// 6. Update Detail Content if selection changes
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
 		if selectedItem.ID != model.currentContainerID {
 			// Save scroll position of previous container
@@ -337,7 +339,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Capture ID for closure
 			id := selectedItem.ID
 			cmds = append(cmds, func() tea.Msg {
-				containerInfo, err := context.GetClient().InspectContainer(id)
+				containerInfo, err := context.GetClient().InspectContainer(stdcontext.Background(), id)
 				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
 			})
 		}
@@ -356,7 +358,7 @@ func (model Model) IsFiltering() bool {
 
 func (model Model) ShortHelp() []key.Binding {
 	// If detail pane is focused, show detail keybindings
-	if !model.ResourceView.IsListFocused() {
+	if !model.IsListFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -371,7 +373,7 @@ func (model Model) ShortHelp() []key.Binding {
 
 // getViewport returns the viewport from the detail pane if available
 func (model *Model) getViewport() *viewport.Model {
-	if vp, ok := model.ResourceView.SplitView.Detail.(*components.ViewportPane); ok {
+	if vp, ok := model.SplitView.Detail.(*components.ViewportPane); ok {
 		return &vp.Viewport
 	}
 	return nil
@@ -415,8 +417,8 @@ func (model *Model) refreshInspectionContent() {
 		}
 	}
 
-	content := builders.BuildContainerPanel(model.inspection, model.ResourceView.GetContentWidth(), false, format)
-	model.ResourceView.SetContent(content)
+	content := builders.BuildContainerPanel(model.inspection, model.GetContentWidth(), false, format)
+	model.SetContent(content)
 
 	// Restore scroll position after content is set
 	// Need to do this on next frame after viewport processes the content
@@ -481,7 +483,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 
 func (model Model) FullHelp() [][]key.Binding {
 	// If detail pane is focused, show detail keybindings
-	if !model.ResourceView.IsListFocused() {
+	if !model.IsListFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -500,26 +502,22 @@ func (model Model) FullHelp() [][]key.Binding {
 
 // Handler Functions (Moved from list.go/handlers.go)
 
-func (model *Model) getSelectedContainerIDs() []string {
-	// Use ResourceView's SelectionManager to get selections
-	return model.ResourceView.GetSelectedIDs()
-}
-
 func (model *Model) setWorkingState(containerIDs []string, working bool) tea.Cmd {
 	var cmds []tea.Cmd
 
-	currentItems := model.ResourceView.GetItems()
+	currentItems := model.GetItems()
 	for i, item := range currentItems {
 		if slices.Contains(containerIDs, item.ID) {
 			item.isWorking = working
 			if working {
 				item.spinner = newSpinner()
-				// Start the spinner by returning a command that sends the first tick
+				// Capture the spinner in a local variable to avoid closure capture bug
+				spinner := item.spinner
 				cmds = append(cmds, func() tea.Msg {
-					return item.spinner.Tick()
+					return spinner.Tick()
 				})
 			}
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	}
 
@@ -527,8 +525,8 @@ func (model *Model) setWorkingState(containerIDs []string, working bool) tea.Cmd
 }
 
 func (model *Model) anySelectedWorking() bool {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
-	items := model.ResourceView.GetItems()
+	selectedIDs := model.GetSelectedIDs()
+	items := model.GetItems()
 
 	for _, item := range items {
 		if slices.Contains(selectedIDs, item.ID) {
@@ -541,7 +539,7 @@ func (model *Model) anySelectedWorking() bool {
 }
 
 func (model *Model) handlePauseContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
@@ -549,7 +547,7 @@ func (model *Model) handlePauseContainers() tea.Cmd {
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
 		return tea.Batch(spinnerCmd, PerformContainerOperations(Pause, selectedIDs))
 	} else {
-		selectedItem := model.ResourceView.GetSelectedItem()
+		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
 			return tea.Batch(spinnerCmd, PerformContainerOperation(Pause, selectedItem.ID))
@@ -559,7 +557,7 @@ func (model *Model) handlePauseContainers() tea.Cmd {
 }
 
 func (model *Model) handleUnpauseContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
@@ -567,7 +565,7 @@ func (model *Model) handleUnpauseContainers() tea.Cmd {
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
 		return tea.Batch(spinnerCmd, PerformContainerOperations(Unpause, selectedIDs))
 	} else {
-		selectedItem := model.ResourceView.GetSelectedItem()
+		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
 			return tea.Batch(spinnerCmd, PerformContainerOperation(Unpause, selectedItem.ID))
@@ -577,7 +575,7 @@ func (model *Model) handleUnpauseContainers() tea.Cmd {
 }
 
 func (model *Model) handleStartContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
@@ -585,7 +583,7 @@ func (model *Model) handleStartContainers() tea.Cmd {
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
 		return tea.Batch(spinnerCmd, PerformContainerOperations(Start, selectedIDs))
 	} else {
-		selectedItem := model.ResourceView.GetSelectedItem()
+		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
 			return tea.Batch(spinnerCmd, PerformContainerOperation(Start, selectedItem.ID))
@@ -595,7 +593,7 @@ func (model *Model) handleStartContainers() tea.Cmd {
 }
 
 func (model *Model) handleStopContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
@@ -603,7 +601,7 @@ func (model *Model) handleStopContainers() tea.Cmd {
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
 		return tea.Batch(spinnerCmd, PerformContainerOperations(Stop, selectedIDs))
 	} else {
-		selectedItem := model.ResourceView.GetSelectedItem()
+		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
 			return tea.Batch(spinnerCmd, PerformContainerOperation(Stop, selectedItem.ID))
@@ -613,7 +611,7 @@ func (model *Model) handleStopContainers() tea.Cmd {
 }
 
 func (model *Model) handleRestartContainers() tea.Cmd {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
@@ -621,7 +619,7 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
 		return tea.Batch(spinnerCmd, PerformContainerOperations(Restart, selectedIDs))
 	} else {
-		selectedItem := model.ResourceView.GetSelectedItem()
+		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
 			return tea.Batch(spinnerCmd, PerformContainerOperation(Restart, selectedItem.ID))
@@ -631,7 +629,7 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 }
 
 func (model *Model) handleRemoveContainers() {
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return
@@ -639,7 +637,7 @@ func (model *Model) handleRemoveContainers() {
 
 		// Build confirmation message with container names
 		var containerNames []string
-		items := model.ResourceView.GetItems()
+		items := model.GetItems()
 		for _, item := range items {
 			if slices.Contains(selectedIDs, item.ID) {
 				containerNames = append(containerNames, item.Name)
@@ -661,9 +659,9 @@ func (model *Model) handleRemoveContainers() {
 				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: selectedIDs}},
 			},
 		)
-		model.ResourceView.SetOverlay(confirmDialog)
+		model.SetOverlay(confirmDialog)
 	} else {
-		item := model.ResourceView.GetSelectedItem()
+		item := model.GetSelectedItem()
 		if item != nil && !item.isWorking {
 			confirmDialog := components.NewDialog(
 				fmt.Sprintf("Are you sure you want to delete container %s?", item.Name),
@@ -672,13 +670,13 @@ func (model *Model) handleRemoveContainers() {
 					{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: []string{item.ID}}},
 				},
 			)
-			model.ResourceView.SetOverlay(confirmDialog)
+			model.SetOverlay(confirmDialog)
 		}
 	}
 }
 
 func (model *Model) handleShowLogs() tea.Cmd {
-	item := model.ResourceView.GetSelectedItem()
+	item := model.GetSelectedItem()
 	if item == nil || item.isWorking {
 		return nil
 	}
@@ -687,13 +685,38 @@ func (model *Model) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	command := exec.Command("sh", "-c", "docker logs \"$0\" 2>&1 | less", item.ID) //nolint:gosec
+	// Use exec.Command with proper argument passing to avoid shell injection
+	// docker logs <container-id> 2>&1 | less
+	dockerCmd := exec.Command("docker", "logs", item.ID)
+	lessCmd := exec.Command("less")
+
+	// Pipe docker output to less
+	pipe, err := dockerCmd.StdoutPipe()
+	if err != nil {
+		return notifications.ShowError(err)
+	}
+	dockerCmd.Stderr = dockerCmd.Stdout // Redirect stderr to stdout
+	lessCmd.Stdin = pipe
+
+	// Start both commands
+	if err := dockerCmd.Start(); err != nil {
+		return notifications.ShowError(err)
+	}
+
+	command := lessCmd
 	return tea.ExecProcess(command, func(err error) tea.Msg {
+		// Kill the docker logs command when less exits
+		// This is important because docker logs -f runs forever
+		if dockerCmd.Process != nil {
+			_ = dockerCmd.Process.Kill()
+		}
+		// Wait for docker command to clean up
+		_ = dockerCmd.Wait()
 		if err != nil {
 			return notifications.AddNotificationMsg{
 				Message:  err.Error(),
 				Level:    notifications.Error,
-				Duration: 10 * 1000 * 1000 * 1000,
+				Duration: 10 * time.Second,
 			}
 		}
 		return nil
@@ -701,7 +724,7 @@ func (model *Model) handleShowLogs() tea.Cmd {
 }
 
 func (model *Model) handleExecShell() tea.Cmd {
-	item := model.ResourceView.GetSelectedItem()
+	item := model.GetSelectedItem()
 	if item == nil || item.isWorking {
 		return nil
 	}
@@ -710,13 +733,14 @@ func (model *Model) handleExecShell() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	command := exec.Command("sh", "-c", "exec docker exec -it \"$0\" /bin/sh", item.ID) //nolint:gosec
+	// Use proper argument passing - no shell metacharacters possible
+	command := exec.Command("docker", "exec", "-it", item.ID, "/bin/sh")
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		if err != nil {
 			return notifications.AddNotificationMsg{
 				Message:  err.Error(),
 				Level:    notifications.Error,
-				Duration: 10 * 1000 * 1000 * 1000,
+				Duration: 10 * time.Second,
 			}
 		}
 		return nil
@@ -724,23 +748,23 @@ func (model *Model) handleExecShell() tea.Cmd {
 }
 
 func (model *Model) handleToggleSelection() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil && !selectedItem.isWorking {
-		model.ResourceView.HandleToggleSelection()
+		model.HandleToggleSelection()
 
 		// Update the visual state of the item
-		index := model.ResourceView.GetSelectedIndex()
-		if item := model.ResourceView.GetSelectedItem(); item != nil {
-			item.isSelected = model.ResourceView.Selections.IsSelected(item.ID)
-			model.ResourceView.SetItem(index, *item)
+		index := model.GetSelectedIndex()
+		if item := model.GetSelectedItem(); item != nil {
+			item.isSelected = model.Selections.IsSelected(item.ID)
+			model.SetItem(index, *item)
 		}
 	}
 }
 
 func (model *Model) handleToggleSelectionOfAll() {
 	// Check if any non-working items exist that are not selected
-	items := model.ResourceView.GetItems()
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	items := model.GetItems()
+	selectedIDs := model.GetSelectedIDs()
 
 	shouldSelectAll := false
 	for _, item := range items {
@@ -756,19 +780,19 @@ func (model *Model) handleToggleSelectionOfAll() {
 		// Select all non-working items
 		for i, item := range items {
 			if !item.isWorking && !slices.Contains(selectedIDs, item.ID) {
-				model.ResourceView.ToggleSelection(item.ID)
+				model.ToggleSelection(item.ID)
 			}
-			item.isSelected = model.ResourceView.Selections.IsSelected(item.ID)
-			model.ResourceView.SetItem(i, item)
+			item.isSelected = model.Selections.IsSelected(item.ID)
+			model.SetItem(i, item)
 		}
 	} else {
 		// Deselect all
 		for i, item := range items {
 			if slices.Contains(selectedIDs, item.ID) {
-				model.ResourceView.ToggleSelection(item.ID)
+				model.ToggleSelection(item.ID)
 			}
 			item.isSelected = false
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	}
 }
@@ -782,17 +806,8 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	}
 
 	if msg.Operation == Remove {
-		// Remove item from list
-		currentItems := model.ResourceView.GetItems()
-		var newItems []ContainerItem
-		for _, item := range currentItems {
-			if item.ID != msg.ID {
-				newItems = append(newItems, item)
-			}
-		}
-
 		// Trigger a refresh to get updated container list
-		return model.ResourceView.Refresh()
+		return model.Refresh()
 	}
 
 	var newState string
@@ -812,11 +827,11 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	}
 
 	// Update state locally for this container
-	items := model.ResourceView.GetItems()
+	items := model.GetItems()
 	for i, item := range items {
 		if item.ID == msg.ID {
 			item.State = newState
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 			break
 		}
 	}

@@ -90,32 +90,45 @@ type ClientWrapper struct {
 func NewClient() (*ClientWrapper, error) {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	return &ClientWrapper{client: dockerClient}, nil
 }
 
 // CloseClient closes the Docker client connection.
 func (clientWrapper *ClientWrapper) CloseClient() error {
-	return clientWrapper.client.Close()
+	if err := clientWrapper.client.Close(); err != nil {
+		return fmt.Errorf("failed to close Docker client: %w", err)
+	}
+	return nil
 }
 
 // GetContainers retrieves a list of all Docker containers.
-func (clientWrapper *ClientWrapper) GetContainers() ([]Container, error) {
+func (clientWrapper *ClientWrapper) GetContainers(ctx context.Context) ([]Container, error) {
 	listOptions := container.ListOptions{
 		All: true,
 	}
 
-	containers, err := clientWrapper.client.ContainerList(context.Background(), listOptions)
+	containers, err := clientWrapper.client.ContainerList(ctx, listOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	dockerContainers := make([]Container, 0, len(containers))
 	for _, containerItem := range containers {
+		// Bounds checking for Names array
+		name := ""
+		if len(containerItem.Names) > 0 {
+			name = containerItem.Names[0]
+			// Remove leading slash if present
+			if len(name) > 0 && name[0] == '/' {
+				name = name[1:]
+			}
+		}
+
 		dockerContainers = append(dockerContainers, Container{
 			ID:    containerItem.ID,
-			Name:  containerItem.Names[0][1:],
+			Name:  name,
 			Image: containerItem.Image,
 			State: containerItem.State,
 		})
@@ -125,14 +138,14 @@ func (clientWrapper *ClientWrapper) GetContainers() ([]Container, error) {
 }
 
 // GetImages retrieves a list of all Docker images.
-func (clientWrapper *ClientWrapper) GetImages() ([]Image, error) {
+func (clientWrapper *ClientWrapper) GetImages(ctx context.Context) ([]Image, error) {
 	listOptions := types.ImageListOptions{
 		All: true,
 	}
 
-	images, err := clientWrapper.client.ImageList(context.Background(), listOptions)
+	images, err := clientWrapper.client.ImageList(ctx, listOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	dockerImages := make([]Image, 0, len(images))
@@ -149,12 +162,12 @@ func (clientWrapper *ClientWrapper) GetImages() ([]Image, error) {
 }
 
 // GetNetworks retrieves a list of all Docker networks.
-func (clientWrapper *ClientWrapper) GetNetworks() ([]Network, error) {
+func (clientWrapper *ClientWrapper) GetNetworks(ctx context.Context) ([]Network, error) {
 	listOptions := types.NetworkListOptions{}
 
-	networks, err := clientWrapper.client.NetworkList(context.Background(), listOptions)
+	networks, err := clientWrapper.client.NetworkList(ctx, listOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	dockerNetworks := make([]Network, 0, len(networks))
@@ -171,12 +184,12 @@ func (clientWrapper *ClientWrapper) GetNetworks() ([]Network, error) {
 }
 
 // GetVolumes retrieves a list of all Docker volumes.
-func (clientWrapper *ClientWrapper) GetVolumes() ([]Volume, error) {
+func (clientWrapper *ClientWrapper) GetVolumes(ctx context.Context) ([]Volume, error) {
 	listOptions := volume.ListOptions{}
 
-	volumes, err := clientWrapper.client.VolumeList(context.Background(), listOptions)
+	volumes, err := clientWrapper.client.VolumeList(ctx, listOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list volumes: %w", err)
 	}
 
 	dockerVolumes := make([]Volume, 0, len(volumes.Volumes))
@@ -192,29 +205,33 @@ func (clientWrapper *ClientWrapper) GetVolumes() ([]Volume, error) {
 }
 
 // GetContainerState retrieves the current state of a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) GetContainerState(containerID string) (string, error) {
-	inspectResponse, err := clientWrapper.client.ContainerInspect(context.Background(), containerID)
+func (clientWrapper *ClientWrapper) GetContainerState(ctx context.Context, containerID string) (string, error) {
+	inspectResponse, err := clientWrapper.client.ContainerInspect(ctx, containerID)
 	if err != nil {
-		return "unknown", err
+		return "unknown", fmt.Errorf("failed to get state for container %s: %w", containerID, err)
 	}
 
 	return inspectResponse.State.Status, nil
 }
 
 // PauseContainer pauses a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) PauseContainer(containerID string) error {
-	return clientWrapper.client.ContainerPause(context.Background(), containerID)
+func (clientWrapper *ClientWrapper) PauseContainer(ctx context.Context, containerID string) error {
+	if err := clientWrapper.client.ContainerPause(ctx, containerID); err != nil {
+		return fmt.Errorf("failed to pause container %s: %w", containerID, err)
+	}
+	return nil
 }
 
 // PauseContainers pauses multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) PauseContainers(containerIDs []string) error {
+// Returns a MultiError containing all failures, or nil if all operations succeeded.
+func (clientWrapper *ClientWrapper) PauseContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.PauseContainer(containerID); err != nil {
-			return err
+		if err := clientWrapper.PauseContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
 		}
 	}
-
-	return nil
+	return multiErr.ToError()
 }
 
 // CreateContainerConfig holds configuration for creating a container.
@@ -229,7 +246,7 @@ type CreateContainerConfig struct {
 }
 
 // CreateContainer creates a new container with the specified configuration.
-func (clientWrapper *ClientWrapper) CreateContainer(config CreateContainerConfig) (containerID string, err error) {
+func (clientWrapper *ClientWrapper) CreateContainer(ctx context.Context, config CreateContainerConfig) (containerID string, err error) {
 	// Parse ports into nat.PortMap and nat.PortSet
 	portBindings := nat.PortMap{}
 	exposedPorts := nat.PortSet{}
@@ -265,7 +282,7 @@ func (clientWrapper *ClientWrapper) CreateContainer(config CreateContainerConfig
 
 	// Create the container
 	resp, err := clientWrapper.client.ContainerCreate(
-		context.Background(),
+		ctx,
 		containerConfig,
 		hostConfig,
 		nil, // NetworkingConfig
@@ -278,7 +295,7 @@ func (clientWrapper *ClientWrapper) CreateContainer(config CreateContainerConfig
 
 	// Auto-start if requested
 	if config.AutoStart {
-		if err := clientWrapper.StartContainer(resp.ID); err != nil {
+		if err := clientWrapper.StartContainer(ctx, resp.ID); err != nil {
 			return resp.ID, fmt.Errorf("container created but failed to start: %w", err)
 		}
 	}
@@ -287,92 +304,107 @@ func (clientWrapper *ClientWrapper) CreateContainer(config CreateContainerConfig
 }
 
 // UnpauseContainer unpauses a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) UnpauseContainer(containerID string) error {
-	return clientWrapper.client.ContainerUnpause(context.Background(), containerID)
+func (clientWrapper *ClientWrapper) UnpauseContainer(ctx context.Context, containerID string) error {
+	if err := clientWrapper.client.ContainerUnpause(ctx, containerID); err != nil {
+		return fmt.Errorf("failed to unpause container %s: %w", containerID, err)
+	}
+	return nil
 }
 
 // UnpauseContainers unpauses multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) UnpauseContainers(containerIDs []string) error {
+func (clientWrapper *ClientWrapper) UnpauseContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.UnpauseContainer(containerID); err != nil {
-			return err
+		if err := clientWrapper.UnpauseContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
 		}
 	}
-
-	return nil
+	return multiErr.ToError()
 }
 
 // StartContainer starts a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) StartContainer(containerID string) error {
-	return clientWrapper.client.ContainerStart(context.Background(), containerID, container.StartOptions{})
+func (clientWrapper *ClientWrapper) StartContainer(ctx context.Context, containerID string) error {
+	if err := clientWrapper.client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("failed to start container %s: %w", containerID, err)
+	}
+	return nil
 }
 
 // StartContainers starts multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) StartContainers(containerIDs []string) error {
+func (clientWrapper *ClientWrapper) StartContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.StartContainer(containerID); err != nil {
-			return err
+		if err := clientWrapper.StartContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
 		}
 	}
-
-	return nil
+	return multiErr.ToError()
 }
 
 // StopContainer stops a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) StopContainer(containerID string) error {
-	return clientWrapper.client.ContainerStop(context.Background(), containerID, container.StopOptions{})
-}
-
-// StopContainers stops multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) StopContainers(containerIDs []string) error {
-	for _, containerID := range containerIDs {
-		if err := clientWrapper.StopContainer(containerID); err != nil {
-			return err
-		}
+func (clientWrapper *ClientWrapper) StopContainer(ctx context.Context, containerID string) error {
+	if err := clientWrapper.client.ContainerStop(ctx, containerID, container.StopOptions{}); err != nil {
+		return fmt.Errorf("failed to stop container %s: %w", containerID, err)
 	}
-
 	return nil
 }
 
+// StopContainers stops multiple Docker containers by their IDs.
+func (clientWrapper *ClientWrapper) StopContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
+	for _, containerID := range containerIDs {
+		if err := clientWrapper.StopContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
+		}
+	}
+	return multiErr.ToError()
+}
+
 // RemoveContainer removes a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) RemoveContainer(containerID string) error {
+func (clientWrapper *ClientWrapper) RemoveContainer(ctx context.Context, containerID string) error {
 	removeOptions := container.RemoveOptions{
 		Force: true,
 	}
 
-	return clientWrapper.client.ContainerRemove(context.Background(), containerID, removeOptions)
+	if err := clientWrapper.client.ContainerRemove(ctx, containerID, removeOptions); err != nil {
+		return fmt.Errorf("failed to remove container %s: %w", containerID, err)
+	}
+	return nil
 }
 
 // RemoveContainers removes multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) RemoveContainers(containerIDs []string) error {
+func (clientWrapper *ClientWrapper) RemoveContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.RemoveContainer(containerID); err != nil {
-			return err
+		if err := clientWrapper.RemoveContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
 		}
 	}
-
-	return nil
+	return multiErr.ToError()
 }
 
 // RestartContainer restarts a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) RestartContainer(containerID string) error {
-	timeout := 10 // seconds
-	return clientWrapper.client.ContainerRestart(
-		context.Background(),
+func (clientWrapper *ClientWrapper) RestartContainer(ctx context.Context, containerID string) error {
+	timeout := int(DefaultRestartTimeout.Seconds())
+	if err := clientWrapper.client.ContainerRestart(
+		ctx,
 		containerID,
 		container.StopOptions{Timeout: &timeout},
-	)
+	); err != nil {
+		return fmt.Errorf("failed to restart container %s: %w", containerID, err)
+	}
+	return nil
 }
 
 // RestartContainers restarts multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) RestartContainers(containerIDs []string) error {
+func (clientWrapper *ClientWrapper) RestartContainers(ctx context.Context, containerIDs []string) error {
+	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.RestartContainer(containerID); err != nil {
-			return err
+		if err := clientWrapper.RestartContainer(ctx, containerID); err != nil {
+			multiErr.Add(containerID, err)
 		}
 	}
-
-	return nil
+	return multiErr.ToError()
 }
 
 // Service represents a Docker Compose service.
@@ -384,17 +416,17 @@ type Service struct {
 }
 
 // GetServices retrieves services based on docker-compose labels from containers.
-func (clientWrapper *ClientWrapper) GetServices() ([]Service, error) {
-	containers, err := clientWrapper.GetContainers()
+func (clientWrapper *ClientWrapper) GetServices(ctx context.Context) ([]Service, error) {
+	containers, err := clientWrapper.GetContainers(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 
 	servicesMap := make(map[string]*Service)
 
 	for _, container := range containers {
 		// We need to inspect to get labels
-		details, err := clientWrapper.InspectContainer(container.ID)
+		details, err := clientWrapper.InspectContainer(ctx, container.ID)
 		if err != nil {
 			continue
 		}
@@ -453,7 +485,7 @@ func (clientWrapper *ClientWrapper) GetServices() ([]Service, error) {
 type Logs io.ReadCloser
 
 // OpenLogs streams logs from a Docker container.
-func (clientWrapper *ClientWrapper) OpenLogs(containerID string) (Logs, error) {
+func (clientWrapper *ClientWrapper) OpenLogs(ctx context.Context, containerID string) (Logs, error) {
 	logsOptions := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -461,9 +493,9 @@ func (clientWrapper *ClientWrapper) OpenLogs(containerID string) (Logs, error) {
 		Tail:       "all",
 	}
 
-	reader, err := clientWrapper.client.ContainerLogs(context.Background(), containerID, logsOptions)
+	reader, err := clientWrapper.client.ContainerLogs(ctx, containerID, logsOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open logs for container %s: %w", containerID, err)
 	}
 
 	return reader, nil
@@ -471,7 +503,7 @@ func (clientWrapper *ClientWrapper) OpenLogs(containerID string) (Logs, error) {
 
 // ExecShell starts an interactive shell (e.g., /bin/sh or /bin/bash) in the container with a TTY.
 // Returns an io.ReadWriteCloser for bi-directional communication, or error.
-func (clientWrapper *ClientWrapper) ExecShell(containerID string, shell []string) (io.ReadWriteCloser, error) {
+func (clientWrapper *ClientWrapper) ExecShell(ctx context.Context, containerID string, shell []string) (io.ReadWriteCloser, error) {
 	execCreateOptions := types.ExecConfig{
 		Cmd:          shell,
 		AttachStdin:  true,
@@ -480,73 +512,85 @@ func (clientWrapper *ClientWrapper) ExecShell(containerID string, shell []string
 		Tty:          true,
 	}
 
-	execResp, err := clientWrapper.client.ContainerExecCreate(context.Background(), containerID, execCreateOptions)
+	execResp, err := clientWrapper.client.ContainerExecCreate(ctx, containerID, execCreateOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create exec for container %s: %w", containerID, err)
 	}
 
 	execAttachOptions := types.ExecStartCheck{
 		Tty: true,
 	}
 
-	attachResp, err := clientWrapper.client.ContainerExecAttach(context.Background(), execResp.ID, execAttachOptions)
+	attachResp, err := clientWrapper.client.ContainerExecAttach(ctx, execResp.ID, execAttachOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to attach to exec for container %s: %w", containerID, err)
 	}
 
 	return attachResp.Conn, nil // Attaches to socket, full duplex.
 }
 
 // RemoveImage removes a specific Docker image by its ID.
-func (clientWrapper *ClientWrapper) RemoveImage(imageID string) error {
+func (clientWrapper *ClientWrapper) RemoveImage(ctx context.Context, imageID string) error {
 	options := types.ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: true,
 	}
 
-	_, err := clientWrapper.client.ImageRemove(context.Background(), imageID, options)
-	return err
+	_, err := clientWrapper.client.ImageRemove(ctx, imageID, options)
+	if err != nil {
+		return fmt.Errorf("failed to remove image %s: %w", imageID, err)
+	}
+	return nil
 }
 
 // RemoveVolume removes a specific Docker volume by its name.
-func (clientWrapper *ClientWrapper) RemoveVolume(volumeName string) error {
-	return clientWrapper.client.VolumeRemove(context.Background(), volumeName, false)
+func (clientWrapper *ClientWrapper) RemoveVolume(ctx context.Context, volumeName string) error {
+	if err := clientWrapper.client.VolumeRemove(ctx, volumeName, false); err != nil {
+		return fmt.Errorf("failed to remove volume %s: %w", volumeName, err)
+	}
+	return nil
 }
 
 // RemoveNetwork removes a specific Docker network by its ID.
-func (clientWrapper *ClientWrapper) RemoveNetwork(networkID string) error {
-	return clientWrapper.client.NetworkRemove(context.Background(), networkID)
+func (clientWrapper *ClientWrapper) RemoveNetwork(ctx context.Context, networkID string) error {
+	if err := clientWrapper.client.NetworkRemove(ctx, networkID); err != nil {
+		return fmt.Errorf("failed to remove network %s: %w", networkID, err)
+	}
+	return nil
 }
 
 // PruneImages removes all unused images.
-func (clientWrapper *ClientWrapper) PruneImages() (uint64, error) {
-	report, err := clientWrapper.client.ImagesPrune(context.Background(), filters.Args{})
+func (clientWrapper *ClientWrapper) PruneImages(ctx context.Context) (uint64, error) {
+	report, err := clientWrapper.client.ImagesPrune(ctx, filters.Args{})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to prune images: %w", err)
 	}
 	return report.SpaceReclaimed, nil
 }
 
 // PruneVolumes removes all unused volumes.
-func (clientWrapper *ClientWrapper) PruneVolumes() (uint64, error) {
-	report, err := clientWrapper.client.VolumesPrune(context.Background(), filters.Args{})
+func (clientWrapper *ClientWrapper) PruneVolumes(ctx context.Context) (uint64, error) {
+	report, err := clientWrapper.client.VolumesPrune(ctx, filters.Args{})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to prune volumes: %w", err)
 	}
 	return report.SpaceReclaimed, nil
 }
 
 // PruneNetworks removes all unused networks.
-func (clientWrapper *ClientWrapper) PruneNetworks() error {
-	_, err := clientWrapper.client.NetworksPrune(context.Background(), filters.Args{})
-	return err
+func (clientWrapper *ClientWrapper) PruneNetworks(ctx context.Context) error {
+	_, err := clientWrapper.client.NetworksPrune(ctx, filters.Args{})
+	if err != nil {
+		return fmt.Errorf("failed to prune networks: %w", err)
+	}
+	return nil
 }
 
 // GetContainersUsingImage returns a list of container names that are using the specified image ID.
-func (clientWrapper *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingImage(ctx context.Context, imageID string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list containers for image usage check: %w", err)
 	}
 
 	var usedBy []string
@@ -564,10 +608,10 @@ func (clientWrapper *ClientWrapper) GetContainersUsingImage(imageID string) ([]s
 }
 
 // GetContainersUsingVolume returns a list of container names that are using the specified volume name.
-func (clientWrapper *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list containers for volume usage check: %w", err)
 	}
 
 	var usedBy []string
@@ -587,10 +631,10 @@ func (clientWrapper *ClientWrapper) GetContainersUsingVolume(volumeName string) 
 }
 
 // GetContainersUsingNetwork returns a list of container names that are attached to the specified network ID.
-func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
+func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(ctx context.Context, networkID string) ([]string, error) {
+	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list containers for network usage check: %w", err)
 	}
 
 	var usedBy []string
@@ -612,18 +656,21 @@ func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(networkID string) 
 }
 
 // GetContainerStats retrieves the current CPU and memory usage of a container.
-func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (ContainerStats, error) {
-	stats, err := clientWrapper.client.ContainerStats(context.Background(), containerID, false)
+func (clientWrapper *ClientWrapper) GetContainerStats(ctx context.Context, containerID string) (ContainerStats, error) {
+	stats, err := clientWrapper.client.ContainerStats(ctx, containerID, false)
 	if err != nil {
-		return ContainerStats{}, err
+		return ContainerStats{}, fmt.Errorf("failed to get stats for container %s: %w", containerID, err)
 	}
 	defer func() {
-		_ = stats.Body.Close()
+		if closeErr := stats.Body.Close(); closeErr != nil {
+			// Log the close error but don't override the return error
+			fmt.Fprintf(os.Stderr, "warning: failed to close stats body: %v\n", closeErr)
+		}
 	}()
 
 	var statsJSON types.StatsJSON
 	if err := json.NewDecoder(stats.Body).Decode(&statsJSON); err != nil {
-		return ContainerStats{}, err
+		return ContainerStats{}, fmt.Errorf("failed to decode stats for container %s: %w", containerID, err)
 	}
 
 	var cpuPercent float64
@@ -661,8 +708,12 @@ func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (Conta
 }
 
 // InspectContainer returns the detailed inspection information for a container.
-func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
-	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
+func (clientWrapper *ClientWrapper) InspectContainer(ctx context.Context, containerID string) (types.ContainerJSON, error) {
+	inspect, err := clientWrapper.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return types.ContainerJSON{}, fmt.Errorf("failed to inspect container %s: %w", containerID, err)
+	}
+	return inspect, nil
 }
 
 // RemoveImage removes a specific Docker image by its ID.

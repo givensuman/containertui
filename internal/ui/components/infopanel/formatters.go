@@ -134,9 +134,7 @@ func TruncateString(s string, maxLen int) string {
 // TruncateID truncates a container/image ID to 12 characters (standard Docker short ID).
 func TruncateID(id string) string {
 	// Remove sha256: prefix if present
-	if strings.HasPrefix(id, "sha256:") {
-		id = id[7:]
-	}
+	id = strings.TrimPrefix(id, "sha256:")
 	if len(id) > 12 {
 		return id[:12]
 	}

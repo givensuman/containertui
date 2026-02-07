@@ -64,7 +64,13 @@ func NewModel() Model {
 }
 
 func (model Model) Init() tea.Cmd {
-	return nil
+	return tea.Batch(
+		model.containersModel.Init(),
+		model.imagesModel.Init(),
+		model.volumesModel.Init(),
+		model.networksModel.Init(),
+		model.servicesModel.Init(),
+	)
 }
 
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -76,24 +82,36 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.height = msg.Height
 		context.SetWindowSize(msg.Width, msg.Height)
 
-		model.tabsModel, _ = model.tabsModel.Update(msg)
+		var tabsCmd tea.Cmd
+		model.tabsModel, tabsCmd = model.tabsModel.Update(msg)
+		cmds = append(cmds, tabsCmd)
 
-		contentHeight := max(0, msg.Height - 4)
+		contentHeight := max(0, msg.Height-4)
 
 		contentMsg := tea.WindowSizeMsg{
 			Width:  msg.Width,
 			Height: contentHeight,
 		}
 
-		model.containersModel, _ = model.containersModel.Update(contentMsg)
+		var containersCmd tea.Cmd
+		model.containersModel, containersCmd = model.containersModel.Update(contentMsg)
+		cmds = append(cmds, containersCmd)
 
-		model.imagesModel, _ = model.imagesModel.Update(contentMsg)
+		var imagesCmd tea.Cmd
+		model.imagesModel, imagesCmd = model.imagesModel.Update(contentMsg)
+		cmds = append(cmds, imagesCmd)
 
-		model.volumesModel, _ = model.volumesModel.Update(contentMsg)
+		var volumesCmd tea.Cmd
+		model.volumesModel, volumesCmd = model.volumesModel.Update(contentMsg)
+		cmds = append(cmds, volumesCmd)
 
-		model.networksModel, _ = model.networksModel.Update(contentMsg)
+		var networksCmd tea.Cmd
+		model.networksModel, networksCmd = model.networksModel.Update(contentMsg)
+		cmds = append(cmds, networksCmd)
 
-		model.servicesModel, _ = model.servicesModel.Update(contentMsg)
+		var servicesCmd tea.Cmd
+		model.servicesModel, servicesCmd = model.servicesModel.Update(contentMsg)
+		cmds = append(cmds, servicesCmd)
 
 		model.help.Width = msg.Width
 
@@ -114,19 +132,30 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, tea.Quit
 		}
 
-		// Check if the current view is filtering before processing tab switches
+		// Check if the current view is filtering or has an overlay before processing quit and tab switches
 		isFiltering := false
+		hasOverlay := false
 		switch model.tabsModel.ActiveTab {
 		case tabs.Containers:
 			isFiltering = model.containersModel.IsFiltering()
+			hasOverlay = model.containersModel.IsOverlayVisible()
 		case tabs.Images:
 			isFiltering = model.imagesModel.IsFiltering()
+			hasOverlay = model.imagesModel.IsOverlayVisible()
 		case tabs.Volumes:
 			isFiltering = model.volumesModel.IsFiltering()
+			hasOverlay = model.volumesModel.IsOverlayVisible()
 		case tabs.Networks:
 			isFiltering = model.networksModel.IsFiltering()
+			hasOverlay = model.networksModel.IsOverlayVisible()
 		case tabs.Services:
 			isFiltering = model.servicesModel.IsFiltering()
+			hasOverlay = model.servicesModel.IsOverlayVisible()
+		}
+
+		// Allow "q" to quit only when not filtering and no overlay is visible
+		if msg.String() == "q" && !isFiltering && !hasOverlay {
+			return model, tea.Quit
 		}
 
 		// Only process tab switching keypresses if not filtering
@@ -154,7 +183,9 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	updatedNotifications, notificationsCmd := model.notificationsModel.Update(msg)
-	model.notificationsModel = updatedNotifications.(notifications.Model)
+	if m, ok := updatedNotifications.(notifications.Model); ok {
+		model.notificationsModel = m
+	}
 	cmds = append(cmds, notificationsCmd)
 
 	// Detect tab changes and trigger update on newly active tab

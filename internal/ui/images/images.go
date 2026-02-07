@@ -2,6 +2,7 @@
 package images
 
 import (
+	stdcontext "context"
 	"fmt"
 	"slices"
 	"strings"
@@ -256,7 +257,7 @@ func New() Model {
 	imageKeybindings := newKeybindings()
 
 	fetchImages := func() ([]ImageItem, error) {
-		imageList, err := context.GetClient().GetImages()
+		imageList, err := context.GetClient().GetImages(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -299,7 +300,7 @@ func New() Model {
 	}
 
 	// Add custom keybindings to help
-	model.ResourceView.AdditionalHelp = []key.Binding{
+	model.AdditionalHelp = []key.Binding{
 		imageKeybindings.toggleSelection,
 		imageKeybindings.toggleSelectionOfAll,
 		imageKeybindings.remove,
@@ -342,10 +343,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				fmt.Sprintf("Failed to pull image:\n\n%v", msg.Err),
 				[]components.DialogButton{{Label: "OK"}},
 			)
-			model.ResourceView.SetOverlay(errorDialog)
+			model.SetOverlay(errorDialog)
 		} else {
 			// Success - close dialog and refresh list
-			model.ResourceView.CloseOverlay()
+			model.CloseOverlay()
 			// Trigger images refresh
 			return model, func() tea.Msg {
 				return MsgRefreshImages{}
@@ -354,7 +355,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return model, nil
 	case MsgRefreshImages:
 		// Refresh the images list via ResourceView
-		return model, model.ResourceView.Refresh()
+		return model, model.Refresh()
 
 	case MsgCreateContainerComplete:
 		if msg.Err != nil {
@@ -363,38 +364,39 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				fmt.Sprintf("Failed to create container:\n\n%v", msg.Err),
 				[]components.DialogButton{{Label: "OK"}},
 			)
-			model.ResourceView.SetOverlay(errorDialog)
+			model.SetOverlay(errorDialog)
 		} else {
 			// Success - show success message
 			successDialog := components.NewDialog(
 				fmt.Sprintf("Container created successfully!\n\nContainer ID: %s", msg.ContainerID[:12]),
 				[]components.DialogButton{{Label: "OK"}},
 			)
-			model.ResourceView.SetOverlay(successDialog)
+			model.SetOverlay(successDialog)
 		}
 		return model, nil
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
-	if model.ResourceView.IsOverlayVisible() {
+	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
-			if confirmMsg.Action.Type == "DeleteImage" {
+			switch confirmMsg.Action.Type {
+			case "DeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := context.GetClient().RemoveImage(imageID)
+				err := context.GetClient().RemoveImage(stdcontext.Background(), imageID)
 				if err == nil {
 					// Close the overlay and refresh list
-					model.ResourceView.CloseOverlay()
-					return model, model.ResourceView.Refresh()
+					model.CloseOverlay()
+					return model, model.Refresh()
 				} else {
 					// Show error
 					errorDialog := components.NewDialog(
 						fmt.Sprintf("Failed to remove image:\n\n%v", err),
 						[]components.DialogButton{{Label: "OK"}},
 					)
-					model.ResourceView.SetOverlay(errorDialog)
+					model.SetOverlay(errorDialog)
 					return model, nil
 				}
-			} else if confirmMsg.Action.Type == "PullImageAction" {
+			case "PullImageAction":
 				// Extract image name from form values
 				payload := confirmMsg.Action.Payload.(map[string]any)
 				formValues := payload["values"].(map[string]string)
@@ -405,14 +407,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					fmt.Sprintf("Pulling image: %s\n\nThis may take a few moments...", imageName),
 					[]components.DialogButton{}, // No buttons while pulling
 				)
-				model.ResourceView.SetOverlay(progressDialog)
+				model.SetOverlay(progressDialog)
 
 				// Start pull in goroutine
 				return model, func() tea.Msg {
-					err := context.GetClient().PullImage(imageName, nil)
+					err := context.GetClient().PullImage(stdcontext.Background(), imageName, nil)
 					return MsgPullComplete{ImageName: imageName, Err: err}
 				}
-			} else if confirmMsg.Action.Type == "CreateContainerAction" {
+			case "CreateContainerAction":
 				// Extract form values and image ID
 				payload := confirmMsg.Action.Payload.(map[string]any)
 				imageID := payload["imageID"].(string)
@@ -440,11 +442,11 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					"Creating container...",
 					[]components.DialogButton{}, // No buttons while creating
 				)
-				model.ResourceView.SetOverlay(progressDialog)
+				model.SetOverlay(progressDialog)
 
 				// Create container
 				return model, func() tea.Msg {
-					containerID, err := context.GetClient().CreateContainer(config)
+					containerID, err := context.GetClient().CreateContainer(stdcontext.Background(), config)
 					if err != nil {
 						return MsgCreateContainerComplete{Err: err}
 					}
@@ -452,7 +454,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 
-			model.ResourceView.CloseOverlay()
+			model.CloseOverlay()
 			return model, nil
 		}
 
@@ -461,10 +463,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	// 4. Main View Logic
-	if model.ResourceView.IsListFocused() {
+	if model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if model.ResourceView.IsFiltering() {
+			if model.IsFiltering() {
 				break
 			}
 
@@ -495,10 +497,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					base.SmartDialogAction{Type: "PullImageAction"},
 					nil,
 				)
-				model.ResourceView.SetOverlay(formDialog)
+				model.SetOverlay(formDialog)
 
 			case key.Matches(msg, model.keybindings.createContainer):
-				selectedItem := model.ResourceView.GetSelectedItem()
+				selectedItem := model.GetSelectedItem()
 				if selectedItem != nil {
 					// Show form dialog to create container
 					formDialog := components.NewFormDialog(
@@ -540,7 +542,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 						},
 						nil,
 					)
-					model.ResourceView.SetOverlay(formDialog)
+					model.SetOverlay(formDialog)
 				}
 
 			case key.Matches(msg, model.keybindings.remove):
@@ -553,7 +555,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
-			if model.ResourceView.IsDetailFocused() {
+			if model.IsDetailFocused() {
 				switch {
 				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
 					cmd := model.handleToggleFormat()
@@ -586,14 +588,14 @@ func (model Model) IsFiltering() bool {
 }
 
 func (model *Model) handleToggleSelection() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
-		model.ResourceView.ToggleSelection(selectedItem.Image.ID)
+		model.ToggleSelection(selectedItem.Image.ID)
 
 		// Update visual state
-		index := model.ResourceView.GetSelectedIndex()
+		index := model.GetSelectedIndex()
 		selectedItem.isSelected = !selectedItem.isSelected
-		model.ResourceView.SetItem(index, *selectedItem)
+		model.SetItem(index, *selectedItem)
 	}
 }
 
@@ -601,8 +603,8 @@ func (model *Model) handleToggleSelectionOfAll() {
 	// Similar logic to container selection toggling
 	// If any item is not selected, select all. Otherwise deselect all.
 
-	items := model.ResourceView.GetItems()
-	selectedIDs := model.ResourceView.GetSelectedIDs()
+	items := model.GetItems()
+	selectedIDs := model.GetSelectedIDs()
 
 	shouldSelectAll := false
 	for _, item := range items {
@@ -616,28 +618,39 @@ func (model *Model) handleToggleSelectionOfAll() {
 		// Select all
 		for i, item := range items {
 			if !slices.Contains(selectedIDs, item.Image.ID) {
-				model.ResourceView.ToggleSelection(item.Image.ID)
+				model.ToggleSelection(item.Image.ID)
 			}
 			item.isSelected = true
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	} else {
 		// Deselect all
 		for i, item := range items {
-			model.ResourceView.ToggleSelection(item.Image.ID)
+			model.ToggleSelection(item.Image.ID)
 			item.isSelected = false
-			model.ResourceView.SetItem(i, item)
+			model.SetItem(i, item)
 		}
 	}
 }
 
 func (model *Model) handleRemove() {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return
 	}
 
-	containersUsingImage, _ := context.GetClient().GetContainersUsingImage(selectedItem.Image.ID)
+	containersUsingImage, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), selectedItem.Image.ID)
+	if err != nil {
+		// If we can't check usage, show error and don't proceed with deletion
+		errorDialog := components.NewDialog(
+			fmt.Sprintf("Failed to check image usage: %v\nCannot safely delete image.", err),
+			[]components.DialogButton{
+				{Label: "OK"},
+			},
+		)
+		model.SetOverlay(errorDialog)
+		return
+	}
 	if len(containersUsingImage) > 0 {
 		warningDialog := components.NewDialog(
 			fmt.Sprintf("Image %s is used by %d containers (%v).\nCannot delete.", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
@@ -645,7 +658,7 @@ func (model *Model) handleRemove() {
 				{Label: "OK"},
 			},
 		)
-		model.ResourceView.SetOverlay(warningDialog)
+		model.SetOverlay(warningDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete image %s?", selectedItem.Image.ID[:12]),
@@ -654,15 +667,15 @@ func (model *Model) handleRemove() {
 				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteImage", Payload: selectedItem.Image.ID}},
 			},
 		)
-		model.ResourceView.SetOverlay(confirmationDialog)
+		model.SetOverlay(confirmationDialog)
 	}
 }
 
 func (model *Model) updateDetailContent() tea.Cmd {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
-		model.ResourceView.SetExtraContent("") // Clear extra pane when no image selected
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
+		model.SetExtraContent("") // Clear extra pane when no image selected
 		return nil
 	}
 
@@ -677,7 +690,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentImageID = imageID
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			imageInfo, err := context.GetClient().InspectImage(imageID)
+			imageInfo, err := context.GetClient().InspectImage(stdcontext.Background(), imageID)
 			return MsgImageInspection{ID: imageID, Image: imageInfo, Err: err}
 		}
 	}
@@ -709,7 +722,7 @@ func (model *Model) restoreScrollPosition() {
 
 // getViewport returns the viewport from the detail pane if available
 func (model *Model) getViewport() *viewport.Model {
-	if vp, ok := model.ResourceView.SplitView.Detail.(*components.ViewportPane); ok {
+	if vp, ok := model.SplitView.Detail.(*components.ViewportPane); ok {
 		return &vp.Viewport
 	}
 	return nil
@@ -728,8 +741,8 @@ func (model *Model) refreshInspectionContent() {
 	}
 
 	// Build content with current format
-	content := builders.BuildImagePanel(model.inspection, model.ResourceView.GetContentWidth(), format)
-	model.ResourceView.SetContent(content)
+	content := builders.BuildImagePanel(model.inspection, model.GetContentWidth(), format)
+	model.SetContent(content)
 
 	// Update "Used By" panel
 	model.updateUsedByPanel()
@@ -738,19 +751,19 @@ func (model *Model) refreshInspectionContent() {
 // updateUsedByPanel updates the extra pane with containers using this image
 func (model *Model) updateUsedByPanel() {
 	if model.inspection.ID == "" {
-		model.ResourceView.SetExtraContent("")
+		model.SetExtraContent("")
 		return
 	}
 
 	// Fetch containers using this image
-	usedBy, err := context.GetClient().GetContainersUsingImage(model.inspection.ID)
+	usedBy, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
 	}
 
 	if len(usedBy) == 0 {
-		model.ResourceView.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this image"))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this image"))
 		return
 	}
 
@@ -763,7 +776,7 @@ func (model *Model) updateUsedByPanel() {
 		output.WriteString(fmt.Sprintf("• %s", containerName))
 	}
 
-	model.ResourceView.SetExtraContent(output.String())
+	model.SetExtraContent(output.String())
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
@@ -823,7 +836,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 
 func (model Model) ShortHelp() []key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -831,7 +844,7 @@ func (model Model) ShortHelp() []key.Binding {
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -843,7 +856,7 @@ func (model Model) ShortHelp() []key.Binding {
 
 func (model Model) FullHelp() [][]key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
-	if model.ResourceView.IsDetailFocused() {
+	if model.IsDetailFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -855,7 +868,7 @@ func (model Model) FullHelp() [][]key.Binding {
 				model.detailsKeybindings.CopyOutput,
 			},
 		}
-	} else if model.ResourceView.IsExtraFocused() {
+	} else if model.IsExtraFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

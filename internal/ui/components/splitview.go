@@ -151,6 +151,7 @@ type VerticalSplitPane struct {
 	Top    *ViewportPane
 	Bottom *ViewportPane
 
+	topRatio     float64
 	topHeight    int
 	bottomHeight int
 	width        int
@@ -162,8 +163,9 @@ func NewVerticalSplitPane(topRatio float64) *VerticalSplitPane {
 		topRatio = 0.7 // default to 70/30 split
 	}
 	return &VerticalSplitPane{
-		Top:    NewViewportPane(),
-		Bottom: NewViewportPane(),
+		Top:      NewViewportPane(),
+		Bottom:   NewViewportPane(),
+		topRatio: topRatio,
 	}
 }
 
@@ -363,12 +365,12 @@ func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		case FocusDetail:
 			updatedDetail, cmd := s.Detail.Update(msg)
-			s.Detail = updatedDetail.(Pane)
+			s.Detail = updatedDetail
 			cmds = append(cmds, cmd)
 		case FocusExtra:
 			if s.Extra != nil {
 				updatedExtra, cmd := s.Extra.Update(msg)
-				s.Extra = updatedExtra.(Pane)
+				s.Extra = updatedExtra
 				cmds = append(cmds, cmd)
 			}
 		}

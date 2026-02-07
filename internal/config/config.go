@@ -48,11 +48,11 @@ func LoadFromFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
 	defer func() {
-		err = file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			// Log close error but don't override decode errors
+			fmt.Fprintf(os.Stderr, "warning: failed to close config file: %v\n", closeErr)
+		}
 	}()
-	if err != nil {
-		return nil, fmt.Errorf("failed to close file reader: %w", err)
-	}
 
 	var cfg Config
 	decoder := yaml.NewDecoder(file)

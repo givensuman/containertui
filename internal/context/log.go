@@ -31,18 +31,14 @@ func TimeStamp() error {
 
 func InitializeLog() {
 	if _, ok := os.LookupEnv("DEBUG"); ok {
-		var err error
 		file, err := tea.LogToFile("debug.log", "")
 		if err != nil {
-			panic(err)
+			// Log to stderr and continue - debug logging failure should not crash the application
+			fmt.Fprintf(os.Stderr, "warning: failed to initialize debug log: %v\n", err)
+			return
 		}
-		defer func() {
-			err = file.Close()
-		}()
-		if err != nil {
-			panic(err)
-		}
-
+		// Note: We intentionally don't defer close here because Writer needs to remain open
+		// for the lifetime of the application. The OS will close it on process exit.
 		Writer = file
 	}
 }

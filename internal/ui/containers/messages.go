@@ -1,6 +1,7 @@
 package containers
 
 import (
+	stdcontext "context"
 	tea "charm.land/bubbletea/v2"
 	"github.com/givensuman/containertui/internal/context"
 )
@@ -30,17 +31,17 @@ func PerformContainerOperation(operation Operation, containerID string) tea.Cmd 
 		client := context.GetClient()
 		switch operation {
 		case Pause:
-			err = client.PauseContainer(containerID)
+			err = client.PauseContainer(stdcontext.Background(), containerID)
 		case Unpause:
-			err = client.UnpauseContainer(containerID)
+			err = client.UnpauseContainer(stdcontext.Background(), containerID)
 		case Start:
-			err = client.StartContainer(containerID)
+			err = client.StartContainer(stdcontext.Background(), containerID)
 		case Stop:
-			err = client.StopContainer(containerID)
+			err = client.StopContainer(stdcontext.Background(), containerID)
 		case Restart:
-			err = client.RestartContainer(containerID)
+			err = client.RestartContainer(stdcontext.Background(), containerID)
 		case Remove:
-			err = client.RemoveContainer(containerID)
+			err = client.RemoveContainer(stdcontext.Background(), containerID)
 		}
 		return MessageContainerOperationResult{Operation: operation, ID: containerID, Error: err}
 	}

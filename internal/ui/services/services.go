@@ -1,6 +1,7 @@
 package services
 
 import (
+	stdcontext "context"
 	"os"
 	"time"
 
@@ -76,7 +77,7 @@ func New() Model {
 	serviceKeybindings := newKeybindings()
 
 	fetchServices := func() ([]ServiceItem, error) {
-		services, err := context.GetClient().GetServices()
+		services, err := context.GetClient().GetServices(stdcontext.Background())
 		if err != nil {
 			return []ServiceItem{}, nil
 		}
@@ -109,7 +110,7 @@ func New() Model {
 	}
 
 	// Add custom keybindings to help
-	model.ResourceView.AdditionalHelp = []key.Binding{
+	model.AdditionalHelp = []key.Binding{
 		serviceKeybindings.switchTab,
 	}
 
@@ -139,16 +140,16 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		model.WindowWidth = msg.Width
 		model.WindowHeight = msg.Height
-		model.ResourceView.UpdateWindowDimensions(msg)
+		model.UpdateWindowDimensions(msg)
 
 	case MsgRefreshServices:
 		cmds = append(cmds, tickCmd())
 		// Refresh the services list via ResourceView
-		cmds = append(cmds, model.ResourceView.Refresh())
+		cmds = append(cmds, model.Refresh())
 	}
 
 	// Main View Logic (only when no overlay)
-	if !model.ResourceView.IsOverlayVisible() && model.ResourceView.IsListFocused() {
+	if !model.IsOverlayVisible() && model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			if model.ResourceView.IsFiltering() {
@@ -160,7 +161,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, tea.Batch(cmds...) // Handled by parent
 			}
 		}
-	} else if !model.ResourceView.IsOverlayVisible() && !model.ResourceView.IsListFocused() {
+	} else if !model.IsOverlayVisible() && !model.IsListFocused() {
 		// Detail pane is focused
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
@@ -187,9 +188,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (model *Model) updateDetailContent() tea.Cmd {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.ResourceView.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
 		return nil
 	}
 
@@ -214,7 +215,7 @@ func (model *Model) refreshServiceDetails(service client.Service) {
 	}
 
 	// Use the panel builder with selected format
-	panelContent := builders.BuildServicePanel(service, model.ResourceView.GetContentWidth(), false, format)
+	panelContent := builders.BuildServicePanel(service, model.GetContentWidth(), false, format)
 
 	// Add compose file content if available
 	if service.ComposeFile != "" {
@@ -227,12 +228,12 @@ func (model *Model) refreshServiceDetails(service client.Service) {
 		}
 	}
 
-	model.ResourceView.SetContent(panelContent)
+	model.SetContent(panelContent)
 }
 
 // handleCopyToClipboard copies the current service details to clipboard
 func (model *Model) handleCopyToClipboard() tea.Cmd {
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return nil
 	}
@@ -281,7 +282,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	}
 
 	// Refresh content with new format
-	selectedItem := model.ResourceView.GetSelectedItem()
+	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
 		model.refreshServiceDetails(selectedItem.Service)
 	}
@@ -298,7 +299,7 @@ func (model Model) IsFiltering() bool {
 }
 
 func (model Model) ShortHelp() []key.Binding {
-	if !model.ResourceView.IsListFocused() {
+	if !model.IsListFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -311,7 +312,7 @@ func (model Model) ShortHelp() []key.Binding {
 }
 
 func (model Model) FullHelp() [][]key.Binding {
-	if !model.ResourceView.IsListFocused() {
+	if !model.IsListFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,

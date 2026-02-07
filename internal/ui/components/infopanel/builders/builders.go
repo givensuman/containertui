@@ -2,6 +2,7 @@
 package builders
 
 import (
+	stdcontext "context"
 	"fmt"
 	"strings"
 
@@ -230,7 +231,7 @@ func BuildImagePanel(image types.ImageInspect, width int, format infopanel.Outpu
 
 	// Connected Resources - containers using this image
 	// Temporarily disabled
-	// usedBy, err := context.GetClient().GetContainersUsingImage(image.ID)
+	// usedBy, err := context.GetClient().GetContainersUsingImage(stdcontext.Background(), image.ID)
 	// if err == nil && len(usedBy) > 0 {
 	// 	output.WriteString(formatSummaryField("Used By", formatBulletList(usedBy)))
 	// }
@@ -271,14 +272,12 @@ func BuildNetworkPanel(network types.NetworkResource, width int, format infopane
 
 	// Subnet/Gateway from IPAM config
 	if len(network.IPAM.Config) > 0 {
-		for _, config := range network.IPAM.Config {
-			if config.Subnet != "" {
-				output.WriteString(formatSummaryField("Subnet", config.Subnet))
-			}
-			if config.Gateway != "" {
-				output.WriteString(formatSummaryField("Gateway", config.Gateway))
-			}
-			break // Only show first config in summary
+		config := network.IPAM.Config[0]
+		if config.Subnet != "" {
+			output.WriteString(formatSummaryField("Subnet", config.Subnet))
+		}
+		if config.Gateway != "" {
+			output.WriteString(formatSummaryField("Gateway", config.Gateway))
 		}
 	}
 
@@ -288,7 +287,7 @@ func BuildNetworkPanel(network types.NetworkResource, width int, format infopane
 	}
 
 	// Connected Resources - containers using this network
-	usedBy, err := context.GetClient().GetContainersUsingNetwork(network.ID)
+	usedBy, err := context.GetClient().GetContainersUsingNetwork(stdcontext.Background(), network.ID)
 	if err == nil && len(usedBy) > 0 {
 		// Build container list with IPs
 		var containerLines []string
@@ -363,7 +362,7 @@ func BuildVolumePanel(vol volume.Volume, width int, format infopanel.OutputForma
 	}
 
 	// Connected Resources - containers using this volume
-	usedBy, err := context.GetClient().GetContainersUsingVolume(vol.Name)
+	usedBy, err := context.GetClient().GetContainersUsingVolume(stdcontext.Background(), vol.Name)
 	if err == nil && len(usedBy) > 0 {
 		output.WriteString(formatSummaryField("Mounted By", formatBulletList(usedBy)))
 	}

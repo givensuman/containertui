@@ -3,6 +3,7 @@ package containers
 
 import (
 	"bufio"
+	stdcontext "context"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
@@ -20,8 +21,10 @@ type ContainerLogs struct {
 	err           error          // Holds error from log fetching.
 	width         int
 	height        int
-	isAtBottom    bool          // If true, auto-scroll when new lines appear.
-	cancelChannel chan struct{} // To stop log streaming goroutine.
+	isAtBottom    bool                  // If true, auto-scroll when new lines appear.
+	cancelChannel chan struct{}         // To stop log streaming goroutine.
+	cancelFunc    stdcontext.CancelFunc // To cancel the context used for OpenLogs.
+	logCtx        stdcontext.Context    // Context for log streaming.
 }
 
 func (model *ContainerLogs) Init() tea.Cmd {
@@ -32,16 +35,20 @@ func (model *ContainerLogs) Init() tea.Cmd {
 func (model *ContainerLogs) streamLogsCmd() tea.Cmd {
 	containerID := model.containerItem.ID
 	cancelChannel := model.cancelChannel
+	ctx := model.logCtx
 	return func() tea.Msg {
-		reader, err := contxt.GetClient().OpenLogs(containerID)
+		reader, err := contxt.GetClient().OpenLogs(ctx, containerID)
 		if err != nil {
 			return logsLoadedMsg{lines: nil, err: err}
 		}
+		defer reader.Close()
 		scanner := bufio.NewScanner(reader)
 		for {
 			select {
 			case <-cancelChannel:
 				return nil // Overlay closed, stop streaming.
+			case <-ctx.Done():
+				return nil // Context cancelled, stop streaming.
 			default:
 				if !scanner.Scan() {
 					return nil // End of stream.
@@ -94,6 +101,10 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 			// Cancel streaming goroutine.
 			if model.cancelChannel != nil {
 				close(model.cancelChannel)
+			}
+			// Cancel the context to stop the Docker log stream.
+			if model.cancelFunc != nil {
+				model.cancelFunc()
 			}
 			return model, func() tea.Msg { return base.CloseDialogMessage{} }
 		case "up", "down", "pgup", "pgdown", "mouse wheel up", "mouse wheel down":
