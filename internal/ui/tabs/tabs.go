@@ -19,6 +19,7 @@ const (
 	Volumes
 	Networks
 	Services
+	Browse
 )
 
 func (t Tab) String() string {
@@ -28,6 +29,7 @@ func (t Tab) String() string {
 		"Volumes",
 		"Networks",
 		"Services",
+		"Browse",
 	}[t]
 }
 
@@ -37,6 +39,7 @@ type KeyMap struct {
 	SwitchToVolumes    key.Binding
 	SwitchToNetworks   key.Binding
 	SwitchToServices   key.Binding
+	SwitchToBrowse     key.Binding
 }
 
 func NewKeyMap() KeyMap {
@@ -61,6 +64,10 @@ func NewKeyMap() KeyMap {
 			key.WithKeys("5"),
 			key.WithHelp("5", "services"),
 		),
+		SwitchToBrowse: key.NewBinding(
+			key.WithKeys("6"),
+			key.WithHelp("6", "browse"),
+		),
 	}
 }
 
@@ -74,7 +81,7 @@ type Model struct {
 func New() Model {
 	return Model{
 		ActiveTab: Containers,
-		Tabs:      []Tab{Containers, Images, Volumes, Networks, Services},
+		Tabs:      []Tab{Containers, Images, Volumes, Networks, Services, Browse},
 		KeyMap:    NewKeyMap(),
 	}
 }
@@ -97,6 +104,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.ActiveTab = Networks
 		case key.Matches(msg, m.KeyMap.SwitchToServices):
 			m.ActiveTab = Services
+		case key.Matches(msg, m.KeyMap.SwitchToBrowse):
+			m.ActiveTab = Browse
 		}
 	case tea.WindowSizeMsg:
 		m.WindowWidth = msg.Width

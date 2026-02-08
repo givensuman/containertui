@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/go-connections/nat"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
@@ -72,6 +73,56 @@ func BuildContainerPanel(container types.ContainerJSON, width int, expandEnv boo
 	}
 
 	return output.String()
+}
+
+// BuildBrowsePanel builds a panel for Docker Hub registry image details.
+func BuildBrowsePanel(detail registry.RegistryImageDetail, width int) string {
+	var output strings.Builder
+
+	// === SUMMARY SECTION ===
+	output.WriteString(formatSummaryField("Name", detail.Name))
+	output.WriteString(formatSummaryField("Namespace", detail.Namespace))
+
+	// Format pull count
+	pullCountStr := formatLargeNumber(detail.PullCount)
+	output.WriteString(formatSummaryField("Pulls", pullCountStr))
+	output.WriteString(formatSummaryField("Stars", fmt.Sprintf("%d", detail.StarCount)))
+
+	if detail.IsOfficial {
+		output.WriteString(formatSummaryField("Official", "Yes"))
+	}
+
+	if detail.User != "" {
+		output.WriteString(formatSummaryField("Owner", detail.User))
+	}
+
+	output.WriteString(formatSummaryField("Last Updated", detail.LastUpdated))
+	output.WriteString(formatSummaryField("Created", detail.DateRegistered))
+
+	// === README SECTION ===
+	output.WriteString("\n\nREADME:\n\n")
+
+	if detail.FullDescription != "" {
+		output.WriteString(detail.FullDescription)
+	} else if detail.Description != "" {
+		output.WriteString(detail.Description)
+	} else {
+		output.WriteString("No description available.")
+	}
+
+	return output.String()
+}
+
+// formatLargeNumber formats large numbers with K, M, B suffixes.
+func formatLargeNumber(n int64) string {
+	if n >= 1_000_000_000 {
+		return fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
+	} else if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	} else if n >= 1_000 {
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // formatSummaryField formats a field in lazydocker style: "Label:     Value"

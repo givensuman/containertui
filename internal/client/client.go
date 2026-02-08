@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/givensuman/containertui/internal/registry"
 )
 
 // ContainerStats represents the CPU and memory usage of a container.
@@ -83,7 +84,8 @@ type Volume struct {
 
 // ClientWrapper wraps the Docker client to provide container management functionalities.
 type ClientWrapper struct {
-	client *client.Client
+	client         *client.Client
+	registryClient *registry.Client
 }
 
 // NewClient creates a new ClientWrapper with an initialized Docker client.
@@ -92,7 +94,10 @@ func NewClient() (*ClientWrapper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	return &ClientWrapper{client: dockerClient}, nil
+	return &ClientWrapper{
+		client:         dockerClient,
+		registryClient: registry.NewClient(),
+	}, nil
 }
 
 // CloseClient closes the Docker client connection.
@@ -880,4 +885,15 @@ func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (Conta
 // InspectContainer returns the detailed inspection information for a container.
 func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
 	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
+}
+
+// GetRegistryClient returns the registry client for Docker Hub operations.
+func (clientWrapper *ClientWrapper) GetRegistryClient() *registry.Client {
+	return clientWrapper.registryClient
+}
+
+// PullImageFromRegistry pulls an image from a registry (Docker Hub by default).
+func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, imageName string, progressChan chan<- string) error {
+	// Use the existing PullImage method which already handles Docker Hub
+	return clientWrapper.PullImage(ctx, imageName, progressChan)
 }

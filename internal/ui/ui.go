@@ -12,6 +12,7 @@ import (
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
+	"github.com/givensuman/containertui/internal/ui/browse"
 	"github.com/givensuman/containertui/internal/ui/containers"
 	"github.com/givensuman/containertui/internal/ui/images"
 	"github.com/givensuman/containertui/internal/ui/networks"
@@ -32,6 +33,7 @@ type Model struct {
 	volumesModel       *volumes.Model
 	networksModel      *networks.Model
 	servicesModel      services.Model
+	browseModel        browse.Model
 	notificationsModel notifications.Model
 	help               help.Model
 }
@@ -45,6 +47,7 @@ func NewModel() Model {
 	volumesModel := volumes.New()
 	networksModel := networks.New()
 	servicesModel := services.New()
+	browseModel := browse.New()
 	notificationsModel := notifications.New()
 
 	helpModel := help.New()
@@ -59,6 +62,7 @@ func NewModel() Model {
 		volumesModel:       volumesModel,
 		networksModel:      networksModel,
 		servicesModel:      servicesModel,
+		browseModel:        browseModel,
 		notificationsModel: notificationsModel,
 		help:               helpModel,
 	}
@@ -71,6 +75,7 @@ func (model Model) Init() tea.Cmd {
 		model.volumesModel.Init(),
 		model.networksModel.Init(),
 		model.servicesModel.Init(),
+		model.browseModel.Init(),
 	)
 }
 
@@ -152,6 +157,9 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tabs.Services:
 			isFiltering = model.servicesModel.IsFiltering()
 			hasOverlay = model.servicesModel.IsOverlayVisible()
+		case tabs.Browse:
+			isFiltering = model.browseModel.IsFiltering()
+			hasOverlay = model.browseModel.IsOverlayVisible()
 		}
 
 		// Allow "q" to quit only when not filtering and no overlay is visible
@@ -209,6 +217,10 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var volumesCmd tea.Cmd
 			model.volumesModel, volumesCmd = model.volumesModel.Update(dummyMsg)
 			cmds = append(cmds, volumesCmd)
+		case tabs.Browse:
+			var browseCmd tea.Cmd
+			model.browseModel, browseCmd = model.browseModel.Update(dummyMsg)
+			cmds = append(cmds, browseCmd)
 		}
 	}
 
@@ -242,6 +254,12 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var servicesCmd tea.Cmd
 			model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
 			cmds = append(cmds, servicesCmd)
+		}
+	case tabs.Browse:
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			var browseCmd tea.Cmd
+			model.browseModel, browseCmd = model.browseModel.Update(msg)
+			cmds = append(cmds, browseCmd)
 		}
 	}
 
@@ -360,6 +378,8 @@ func (model Model) View() tea.View {
 		contentViewContent = model.networksModel.View()
 	case tabs.Services:
 		contentViewContent = model.servicesModel.View()
+	case tabs.Browse:
+		contentViewContent = model.browseModel.View()
 	}
 
 	contentViewStr := contentViewContent
@@ -378,6 +398,8 @@ func (model Model) View() tea.View {
 		currentHelp = model.networksModel
 	case tabs.Services:
 		currentHelp = model.servicesModel
+	case tabs.Browse:
+		currentHelp = model.browseModel
 	}
 
 	if currentHelp != nil {
