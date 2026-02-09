@@ -1,6 +1,27 @@
-Errors and relevant success statements should be displayed in a notification toast.
-Rename "context" package to "state" to avoid confusion with stdlib package.
-When creating a container from the form in the Images tab, it does not appear in the Containers tab upon completion. The application needs to be restarted.
-When typing in forms, keypresses are not isolated; pressing "1" in the form switches tabs to the first tab, for instance.
-
+--- Notifications ---
 Fix notification rendering.
+revise extent to which notifications are shown
+
+--- Browse tab ---
+Info panel sometimes exceeds height of application.
+  happens after scrolling!
+Need Markdown rendering for info panel.
+Item rendering is bad.
+  possibly overflowing line?
+Search crashes app.
+Pulling needs progress bar; needs to show up in images immediately.
+  also not in keybinding help.
+
+--- Other ---
+Fix titles, colors
+  do eht
+Fix info panel display, remove extra stuff
+Use Markdown rendering for inspect YAML/JSON
+Some info panels have embedded title, some dont
+
+--- AOS ---
+Support podman as a client
+  client interface
+Support as many registries as possible!
+  api interface
+CPU graph for containers tab
