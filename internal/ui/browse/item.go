@@ -104,6 +104,7 @@ func (item BrowseItem) formatCount(count int64) string {
 }
 
 func (item BrowseItem) Title() string {
+	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var statusIcon string
 	if item.isWorking {
 		statusIcon = item.spinner.View()
@@ -112,11 +113,11 @@ func (item BrowseItem) Title() string {
 	}
 	titleOrnament := item.getTitleOrnament()
 
-	// Format: [x]  nginx  ★ 21.2K  ↓ 12.8B
+	// Simple format without padding to avoid filtering artifacts
 	stars := item.formatCount(int64(item.Image.StarCount))
 	pulls := item.formatCount(item.Image.PullCount)
 
-	return fmt.Sprintf("%s %s %-30s ★ %-8s ↓ %s",
+	return fmt.Sprintf("%s %s %s ★ %s ↓ %s",
 		statusIcon, titleOrnament, item.Image.RepoName, stars, pulls)
 }
 
@@ -128,6 +129,6 @@ func (item BrowseItem) Description() string {
 }
 
 func (item BrowseItem) FilterValue() string {
-	// Include repo name and description for filtering
-	return item.Image.RepoName + " " + item.Image.ShortDescription
+	// Return the same value as Title() since we removed styling
+	return item.Title()
 }

@@ -3,8 +3,6 @@ Fix notification rendering.
 revise extent to which notifications are shown
 
 --- Browse tab ---
-Info panel sometimes exceeds height of application.
-  happens after scrolling!
 Need Markdown rendering for info panel.
 Item rendering is bad.
   possibly overflowing line?
