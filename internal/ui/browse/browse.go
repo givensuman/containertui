@@ -4,6 +4,7 @@ package browse
 import (
 	stdcontext "context"
 	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
@@ -307,11 +308,25 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		return func() tea.Msg {
 			client := state.GetClient().GetRegistryClient()
 
-			// Determine namespace
-			namespace := "library" // Default to official images
-			name := itemID
+			// Determine namespace and name from RepoName
+			// Docker Hub format: "namespace/name" or just "name" for official images
+			var namespace, name string
 			if selectedItem.Image.IsOfficial {
+				// Official images are in the "library" namespace
 				namespace = "library"
+				name = itemID
+			} else {
+				// Parse namespace/name from RepoName
+				// RepoName format: "user/image" or "org/image"
+				parts := strings.SplitN(itemID, "/", 2)
+				if len(parts) == 2 {
+					namespace = parts[0]
+					name = parts[1]
+				} else {
+					// Fallback: assume library namespace
+					namespace = "library"
+					name = itemID
+				}
 			}
 
 			detail, err := client.GetRepository(stdcontext.Background(), namespace, name)
