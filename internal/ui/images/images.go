@@ -397,9 +397,21 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			case "PullImageAction":
 				// Extract image name from form values
-				payload := confirmMsg.Action.Payload.(map[string]any)
-				formValues := payload["values"].(map[string]string)
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
 				imageName := formValues["Image"]
+				if imageName == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("image name is required"))
+				}
 
 				// Show progress dialog
 				progressDialog := components.NewDialog(
@@ -415,9 +427,21 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			case "CreateContainerAction":
 				// Extract form values and image ID
-				payload := confirmMsg.Action.Payload.(map[string]any)
-				imageID := payload["imageID"].(string)
-				formValues := payload["values"].(map[string]string)
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				imageID, ok := payload["imageID"].(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid image ID"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
 
 				// Parse form values
 				ports := parsePorts(formValues["Ports"])

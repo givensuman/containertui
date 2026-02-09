@@ -190,7 +190,11 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteVolume" {
-				volumeName := confirmMsg.Action.Payload.(string)
+				volumeName, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteVolume"))
+				}
 				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
 				if err == nil {
 					// Close the overlay and refresh list

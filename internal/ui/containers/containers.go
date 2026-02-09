@@ -274,7 +274,11 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteContainer" {
-				containerIDs := confirmMsg.Action.Payload.([]string)
+				containerIDs, ok := confirmMsg.Action.Payload.([]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteContainer"))
+				}
 				spinnerCmd := model.setWorkingState(containerIDs, true)
 				model.CloseOverlay()
 				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))

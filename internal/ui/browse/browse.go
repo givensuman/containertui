@@ -223,8 +223,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, model.handlePullImage(imageName)
 
 			case "SearchRegistry":
-				query := confirmMsg.Action.Payload.(string)
+				// Extract query from form values
+				var query string
+				if payload, ok := confirmMsg.Action.Payload.(map[string]any); ok {
+					if values, ok := payload["values"].(map[string]string); ok {
+						query = values["Search Query"]
+					}
+				}
 				model.CloseOverlay()
+				if query == "" {
+					return model, notifications.ShowError(fmt.Errorf("search query is empty"))
+				}
 				return model, model.performRemoteSearch(query)
 			}
 		}

@@ -189,7 +189,11 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			if confirmMsg.Action.Type == "DeleteNetwork" {
-				networkID := confirmMsg.Action.Payload.(string)
+				networkID, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteNetwork"))
+				}
 				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
 				if err == nil {
 					// Close the overlay and refresh list
