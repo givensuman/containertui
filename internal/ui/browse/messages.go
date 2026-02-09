@@ -30,6 +30,7 @@ type MsgImageInspection struct {
 type MsgPullProgress struct {
 	ImageName string
 	Status    string
+	DoneChan  <-chan error // Channel to signal completion with error status
 }
 
 // MsgPullComplete indicates pull operation completed.

@@ -97,7 +97,9 @@ type Model struct {
 	scrollPositions map[string]int
 
 	// Pull state
-	isPulling bool
+	isPulling      bool
+	progressChan   <-chan string
+	currentPulling string // Name of image currently being pulled
 
 	WindowWidth  int
 	WindowHeight int
@@ -120,6 +122,8 @@ func New() Model {
 			items = append(items, BrowseItem{
 				Image:      img,
 				isSelected: false,
+				isWorking:  false,
+				spinner:    newSpinner(),
 			})
 		}
 		return items, nil
@@ -178,6 +182,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			items = append(items, BrowseItem{
 				Image:      img,
 				isSelected: false,
+				isWorking:  false,
+				spinner:    newSpinner(),
 			})
 		}
 		// Convert to list.Item and set items
@@ -208,11 +214,22 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.restoreScrollPosition()
 
 	case MsgPullProgress:
-		// Show progress in notification or status line
-		// For now, just update state
+		// Progress updates are handled internally, no UI update needed
+		// Continue listening to the progress channel
+		if model.progressChan != nil && msg.DoneChan != nil {
+			return model, listenToProgressChannelWithDone(msg.ImageName, model.progressChan, msg.DoneChan)
+		}
 
 	case MsgPullComplete:
 		model.isPulling = false
+		model.progressChan = nil
+
+		// Stop the spinner for the pulled image
+		if model.currentPulling != "" {
+			model.setWorkingState([]string{model.currentPulling}, false)
+			model.currentPulling = ""
+		}
+
 		if msg.Err != nil {
 			return model, notifications.ShowError(fmt.Errorf("pull failed: %w", msg.Err))
 		}
@@ -226,8 +243,30 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case "PullImage":
 				imageName := confirmMsg.Action.Payload.(string)
 				model.CloseOverlay()
+
+				// Start spinner for this image
+				spinnerCmd := model.setWorkingState([]string{imageName}, true)
+
 				model.isPulling = true
-				return model, model.handlePullImage(imageName)
+				model.currentPulling = imageName
+
+				// Create channels for progress and completion
+				progressChan := make(chan string, 100)
+				doneChan := make(chan error, 1)
+				model.progressChan = progressChan
+
+				// Start pull in background
+				go func() {
+					ctx := stdcontext.Background()
+					err := state.GetClient().PullImageFromRegistry(ctx, imageName, progressChan)
+					// PullImage closes progressChan when done
+					// Send the error result through doneChan
+					doneChan <- err
+					close(doneChan)
+				}()
+
+				// Start listening to progress
+				return model, tea.Batch(spinnerCmd, listenToProgressChannelWithDone(imageName, progressChan, doneChan))
 
 			case "SearchRegistry":
 				// Extract query from form values
@@ -495,17 +534,65 @@ func (model *Model) performRemoteSearch(query string) tea.Cmd {
 	}
 }
 
-// handlePullImage pulls an image from Docker Hub.
-func (model *Model) handlePullImage(imageName string) tea.Cmd {
+// setWorkingState sets the working/spinner state for specific images.
+func (model *Model) setWorkingState(imageNames []string, working bool) tea.Cmd {
+	var cmds []tea.Cmd
+
+	currentItems := model.GetItems()
+	for i, item := range currentItems {
+		// Check if this item's image name matches
+		if contains(imageNames, item.Image.RepoName) {
+			item.isWorking = working
+			if working {
+				item.spinner = newSpinner()
+				// Capture the spinner in a local variable to avoid closure capture bug
+				spinner := item.spinner
+				cmds = append(cmds, func() tea.Msg {
+					return spinner.Tick()
+				})
+			}
+			model.SetItem(i, item)
+		}
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+func listenToProgressChannelWithDone(imageName string, progressChan <-chan string, doneChan <-chan error) tea.Cmd {
 	return func() tea.Msg {
-		ctx := stdcontext.Background()
+		select {
+		case status, ok := <-progressChan:
+			if !ok {
+				// Progress channel closed, check for completion error
+				err := <-doneChan
+				return MsgPullComplete{
+					ImageName: imageName,
+					Err:       err,
+				}
+			}
 
-		// Pull the image without progress tracking for simplicity
-		err := state.GetClient().PullImageFromRegistry(ctx, imageName, nil)
+			// Regular progress update
+			return MsgPullProgress{
+				ImageName: imageName,
+				Status:    status,
+				DoneChan:  doneChan,
+			}
 
-		return MsgPullComplete{
-			ImageName: imageName,
-			Err:       err,
+		case err := <-doneChan:
+			// Completion received before progress channel closed
+			return MsgPullComplete{
+				ImageName: imageName,
+				Err:       err,
+			}
 		}
 	}
 }

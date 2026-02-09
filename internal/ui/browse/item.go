@@ -4,6 +4,10 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/state"
 )
@@ -12,6 +16,8 @@ import (
 type BrowseItem struct {
 	Image      registry.RegistryImage
 	isSelected bool
+	isWorking  bool
+	spinner    spinner.Model
 }
 
 var (
@@ -21,7 +27,33 @@ var (
 
 func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
+
+	delegate.UpdateFunc = func(msg tea.Msg, model *list.Model) tea.Cmd {
+		if _, ok := msg.(spinner.TickMsg); ok {
+			var cmds []tea.Cmd
+			items := model.Items()
+			for index, item := range items {
+				if browseItem, ok := item.(BrowseItem); ok && browseItem.isWorking {
+					var cmd tea.Cmd
+					browseItem.spinner, cmd = browseItem.spinner.Update(msg)
+					model.SetItem(index, browseItem)
+					cmds = append(cmds, cmd)
+				}
+			}
+			return tea.Batch(cmds...)
+		}
+		return nil
+	}
+
 	return delegate
+}
+
+func newSpinner() spinner.Model {
+	spinnerModel := spinner.New()
+	spinnerModel.Spinner = spinner.Dot
+	spinnerModel.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+
+	return spinnerModel
 }
 
 func (item BrowseItem) getIsSelectedIcon() string {
@@ -72,7 +104,12 @@ func (item BrowseItem) formatCount(count int64) string {
 }
 
 func (item BrowseItem) Title() string {
-	statusIcon := item.getIsSelectedIcon()
+	var statusIcon string
+	if item.isWorking {
+		statusIcon = item.spinner.View()
+	} else {
+		statusIcon = item.getIsSelectedIcon()
+	}
 	titleOrnament := item.getTitleOrnament()
 
 	// Format: [x]  nginx  ★ 21.2K  ↓ 12.8B

@@ -8,8 +8,9 @@ Info panel sometimes exceeds height of application.
 Need Markdown rendering for info panel.
 Item rendering is bad.
   possibly overflowing line?
-Pulling needs progress bar; needs to show up in images immediately.
+pulling needs to show up in images immediately.
   also not in keybinding help.
+filtering has that weird bug where it shows random characters
 
 --- Other ---
 Fix titles, colors
@@ -24,3 +25,4 @@ Support podman as a client
 Support as many registries as possible!
   api interface
 CPU graph for containers tab
+copy gomanagedocker functionality
