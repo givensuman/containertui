@@ -19,8 +19,19 @@ import (
 func renderBorderWithTitle(content, title string, width, height int, borderColor color.Color, focused bool) string {
 	border := lipgloss.RoundedBorder()
 
-	// Place the content
-	placedContent := lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, content)
+	// Enforce height constraint by truncating content to exact number of lines
+	// This prevents content from overflowing beyond the bordered box
+	contentLines := strings.Split(content, "\n")
+	if len(contentLines) > height {
+		contentLines = contentLines[:height]
+	}
+
+	// Pad content to fill the height if needed
+	for len(contentLines) < height {
+		contentLines = append(contentLines, "")
+	}
+
+	constrainedContent := strings.Join(contentLines, "\n")
 
 	// Create the base style with border
 	style := lipgloss.NewStyle().
@@ -29,7 +40,7 @@ func renderBorderWithTitle(content, title string, width, height int, borderColor
 		Padding(1)
 
 	// Render the bordered content
-	rendered := style.Render(placedContent)
+	rendered := style.Render(constrainedContent)
 
 	// If no title, return as-is
 	if title == "" {
