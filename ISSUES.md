@@ -8,7 +8,6 @@ Item rendering is bad.
   possibly overflowing line?
 pulling needs to show up in images immediately.
   also not in keybinding help.
-filtering has that weird bug where it shows random characters
 
 --- Other ---
 Fix titles, colors

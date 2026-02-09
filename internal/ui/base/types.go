@@ -69,3 +69,9 @@ type MsgFocusChanged struct {
 type MsgContainerCreated struct {
 	ContainerID string
 }
+
+// MsgImagePulled is sent when an image is pulled from another tab
+// to trigger a refresh of the Images tab
+type MsgImagePulled struct {
+	ImageName string
+}

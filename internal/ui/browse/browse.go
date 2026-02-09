@@ -233,7 +233,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			return model, notifications.ShowError(fmt.Errorf("pull failed: %w", msg.Err))
 		}
-		return model, notifications.ShowSuccess(fmt.Sprintf("Pulled %s successfully", msg.ImageName))
+
+		// Send message to refresh Images tab
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Pulled %s successfully", msg.ImageName)),
+			func() tea.Msg {
+				return base.MsgImagePulled{ImageName: msg.ImageName}
+			},
+		)
 	}
 
 	// Handle dialog confirmations
