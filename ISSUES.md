@@ -8,7 +8,6 @@ Info panel sometimes exceeds height of application.
 Need Markdown rendering for info panel.
 Item rendering is bad.
   possibly overflowing line?
-Search crashes app.
 Pulling needs progress bar; needs to show up in images immediately.
   also not in keybinding help.
 

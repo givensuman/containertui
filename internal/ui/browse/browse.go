@@ -88,9 +88,10 @@ type Model struct {
 	detailsKeybindings detailsKeybindings
 
 	// Current state
-	currentItemID string
-	inspection    registry.RegistryImageDetail
-	isSearchMode  bool
+	currentItemID      string
+	inspection         registry.RegistryImageDetail
+	isSearchMode       bool
+	currentSearchQuery string
 
 	// Scroll position memory
 	scrollPositions map[string]int
@@ -142,6 +143,7 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 		scrollPositions:    make(map[string]int),
 		isPulling:          false,
+		currentSearchQuery: "",
 	}
 }
 
@@ -185,7 +187,11 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		cmd := model.SplitView.List.SetItems(listItems)
 		cmds = append(cmds, cmd)
+
+		// Store the search query
+		model.currentSearchQuery = msg.Query
 		model.isSearchMode = true
+
 		cmds = append(cmds, notifications.ShowInfo(fmt.Sprintf("Found %d results for '%s'", len(msg.Images), msg.Query)))
 		return model, tea.Batch(cmds...)
 
@@ -228,13 +234,21 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				var query string
 				if payload, ok := confirmMsg.Action.Payload.(map[string]any); ok {
 					if values, ok := payload["values"].(map[string]string); ok {
-						query = values["Search Query"]
+						query = strings.TrimSpace(values["Search Query"])
 					}
 				}
 				model.CloseOverlay()
+
+				// If query is empty, return to popular images
 				if query == "" {
-					return model, notifications.ShowError(fmt.Errorf("search query is empty"))
+					model.currentSearchQuery = ""
+					model.isSearchMode = false
+					return model, tea.Batch(
+						model.Refresh(),
+						notifications.ShowInfo("Returned to popular images"),
+					)
 				}
+
 				return model, model.performRemoteSearch(query)
 			}
 		}
@@ -384,8 +398,9 @@ func (model *Model) handleSearch() {
 		[]components.FormField{
 			{
 				Label:       "Search Query",
-				Placeholder: "e.g., nginx, postgres, redis",
-				Required:    true,
+				Placeholder: "e.g., nginx, postgres, redis (leave empty to return to popular images)",
+				Value:       model.currentSearchQuery,
+				Required:    false,
 			},
 		},
 		base.SmartDialogAction{
