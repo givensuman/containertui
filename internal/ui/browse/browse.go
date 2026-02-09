@@ -141,6 +141,15 @@ func New() Model {
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
 
+	// Add custom keybindings to help
+	resourceView.AdditionalHelp = []key.Binding{
+		browseKeybindings.search,
+		browseKeybindings.pull,
+		browseKeybindings.toggleSelection,
+		browseKeybindings.toggleSelectionOfAll,
+		browseKeybindings.switchTab,
+	}
+
 	return Model{
 		ResourceView:       *resourceView,
 		keybindings:        browseKeybindings,
