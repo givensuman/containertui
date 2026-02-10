@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/glamour"
+	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/state"
 	"gopkg.in/yaml.v3"
 )
@@ -170,6 +172,65 @@ func ColorizeYAML(text string) string {
 	}
 
 	return strings.TrimRight(result.String(), "\n")
+}
+
+// RenderMarkdown renders markdown text using glamour with theme-aware styling.
+func RenderMarkdown(text string, width int) (string, error) {
+	cfg := state.GetConfig()
+	if cfg == nil {
+		// Fallback to plain text if no config
+		return text, nil
+	}
+
+	// Use a standard style that has good syntax highlighting
+	// Available styles: ascii, dark, dracula, light, notty, pink
+	var styleConfig string
+	if isDarkTheme(cfg) {
+		// dracula has the best syntax highlighting for dark themes
+		styleConfig = "dark"
+	} else {
+		styleConfig = "light"
+	}
+
+	// Initialize glamour renderer with syntax highlighting enabled
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle(styleConfig),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return text, fmt.Errorf("failed to create markdown renderer: %w", err)
+	}
+
+	// Render the markdown
+	out, err := r.Render(text)
+	if err != nil {
+		return text, fmt.Errorf("failed to render markdown: %w", err)
+	}
+
+	return strings.TrimSpace(out), nil
+}
+
+// WrapInMarkdownCodeBlock wraps content in a markdown code block with syntax highlighting.
+func WrapInMarkdownCodeBlock(content string, format OutputFormat, width int) (string, error) {
+	var lang string
+	switch format {
+	case FormatYAML:
+		lang = "yaml"
+	case FormatJSON:
+		lang = "json"
+	default:
+		lang = "yaml"
+	}
+
+	markdown := fmt.Sprintf("```%s\n%s\n```", lang, content)
+	return RenderMarkdown(markdown, width)
+}
+
+// isDarkTheme checks if the theme is dark based on background color.
+func isDarkTheme(cfg *config.Config) bool {
+	// For now, default to dark theme
+	// TODO: Implement proper color brightness detection if needed based on theme colors
+	return true
 }
 
 // ColorizeJSON applies syntax highlighting to JSON text using theme colors.

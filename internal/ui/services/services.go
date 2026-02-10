@@ -2,6 +2,7 @@ package services
 
 import (
 	stdcontext "context"
+	"fmt"
 	"os"
 	"time"
 
@@ -212,10 +213,15 @@ func (model *Model) refreshServiceDetails(service client.Service) {
 	if service.ComposeFile != "" {
 		data, err := os.ReadFile(service.ComposeFile)
 		if err == nil {
-			panelContent += "\n\n"
-			sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(colors.Primary()).Underline(true).MarginTop(1).MarginBottom(0)
-			panelContent += sectionHeader.Render("Compose File Content") + "\n"
-			panelContent += string(data)
+			// Wrap compose file content in markdown code block
+			composeMarkdown := fmt.Sprintf("## Compose File Content\n\n```yaml\n%s\n```", string(data))
+			renderedCompose, err := infopanel.RenderMarkdown(composeMarkdown, model.GetContentWidth())
+			if err == nil {
+				panelContent += "\n\n" + renderedCompose
+			} else {
+				// Fallback to plain text if markdown rendering fails
+				panelContent += "\n\n" + composeMarkdown
+			}
 		}
 	}
 
