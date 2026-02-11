@@ -75,3 +75,34 @@ type MsgContainerCreated struct {
 type MsgImagePulled struct {
 	ImageName string
 }
+
+// ResourceType represents the type of Docker resource
+type ResourceType string
+
+const (
+	ResourceContainer ResourceType = "container"
+	ResourceImage     ResourceType = "image"
+	ResourceVolume    ResourceType = "volume"
+	ResourceNetwork   ResourceType = "network"
+)
+
+// OperationType represents the type of operation performed on a resource
+type OperationType string
+
+const (
+	OperationCreated OperationType = "created"
+	OperationDeleted OperationType = "deleted"
+	OperationUpdated OperationType = "updated"
+	OperationPruned  OperationType = "pruned"
+)
+
+// MsgResourceChanged is a universal message for resource state changes
+// that require cross-tab UI updates. This message is sent when any operation
+// modifies resources (create, delete, update, prune) so that all relevant tabs
+// can refresh their views to reflect the current state.
+type MsgResourceChanged struct {
+	Resource  ResourceType   // Type of resource that changed
+	Operation OperationType  // Type of operation performed
+	IDs       []string       // IDs of affected resources
+	Metadata  map[string]any // Optional operation-specific data
+}

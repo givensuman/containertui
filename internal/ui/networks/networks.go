@@ -652,6 +652,13 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 		return tea.Batch(
 			notifications.ShowSuccess("Pruned unused networks"),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceNetwork,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+				}
+			},
 		)
 	}
 }
@@ -718,6 +725,13 @@ func (model *Model) performCreateNetwork(name, driver, subnet, gateway string, e
 		return tea.Batch(
 			notifications.ShowSuccess(fmt.Sprintf("Created network: %s", networkID[:12])),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceNetwork,
+					Operation: base.OperationCreated,
+					IDs:       []string{networkID},
+				}
+			},
 		)
 	}
 }

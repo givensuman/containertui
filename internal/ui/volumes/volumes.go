@@ -692,6 +692,16 @@ func (model *Model) handlePruneVolumes() tea.Cmd {
 		return tea.Batch(
 			notifications.ShowSuccess(msg),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceVolume,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+					Metadata: map[string]any{
+						"spaceReclaimed": spaceReclaimed,
+					},
+				}
+			},
 		)
 	}
 }
@@ -743,6 +753,13 @@ func (model *Model) performCreateVolume(name, driver string, labels map[string]s
 		return tea.Batch(
 			notifications.ShowSuccess(fmt.Sprintf("Created volume: %s", volumeID)),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceVolume,
+					Operation: base.OperationCreated,
+					IDs:       []string{volumeID},
+				}
+			},
 		)
 	}
 }

@@ -1017,9 +1017,21 @@ func (model *Model) handlePruneContainers() tea.Cmd {
 			return notifications.ShowError(err)
 		}
 		msg := fmt.Sprintf("Pruned stopped containers, freed %s", humanizeBytes(spaceReclaimed))
+
+		// Emit resource changed message for cross-tab updates
 		return tea.Batch(
 			notifications.ShowSuccess(msg),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationPruned,
+					IDs:       nil, // Prune affects multiple containers
+					Metadata: map[string]any{
+						"spaceReclaimed": spaceReclaimed,
+					},
+				}
+			},
 		)
 	}
 }
@@ -1079,6 +1091,13 @@ func (model *Model) performRenameContainer(containerID, newName string) tea.Cmd 
 		return tea.Batch(
 			notifications.ShowSuccess(fmt.Sprintf("Renamed to: %s", newName)),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationUpdated,
+					IDs:       []string{containerID},
+				}
+			},
 		)
 	}
 }

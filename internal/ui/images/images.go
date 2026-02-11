@@ -1077,6 +1077,16 @@ func (model *Model) handlePruneImages() tea.Cmd {
 		return tea.Batch(
 			notifications.ShowSuccess(msg),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+					Metadata: map[string]any{
+						"spaceReclaimed": spaceReclaimed,
+					},
+				}
+			},
 		)
 	}
 }
@@ -1146,7 +1156,17 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 			}
 		}
 
-		return notifications.ShowSuccess(fmt.Sprintf("Created ephemeral container: %s", containerID[:12]))
+		// Emit cross-tab message to update Containers tab
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Created ephemeral container: %s", containerID[:12])),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationCreated,
+					IDs:       []string{containerID},
+				}
+			},
+		)
 	}
 }
 
@@ -1196,6 +1216,13 @@ func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
 		return tea.Batch(
 			notifications.ShowSuccess(fmt.Sprintf("Tagged image: %s", newTag)),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationUpdated,
+					IDs:       []string{imageID},
+				}
+			},
 		)
 	}
 }
@@ -1229,6 +1256,13 @@ func (model *Model) performBuildImage(dockerfile, tag, contextPath string, build
 		return tea.Batch(
 			notifications.ShowSuccess(fmt.Sprintf("Built image: %s", tag)),
 			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationCreated,
+					IDs:       []string{tag},
+				}
+			},
 		)
 	}
 }
