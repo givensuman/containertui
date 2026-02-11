@@ -3,7 +3,6 @@ Fix notification rendering.
 revise extent to which notifications are shown
 
 --- Browse tab ---
-Need Markdown rendering for info panel.
 Item rendering is bad.
   possibly overflowing line?
 
@@ -11,8 +10,12 @@ Item rendering is bad.
 Fix titles, colors
   do eht
 Fix info panel display, remove extra stuff
-Use Markdown rendering for inspect YAML/JSON
 Some info panels have embedded title, some dont
+
+--- Specific ---
+Services tab keybindings has switch tab, none others do
+  Browse does too but it's formatted differently
+Browse tab has "toggle selection of all, no use"
 
 --- AOS ---
 Support podman as a client
@@ -21,3 +24,4 @@ Support as many registries as possible!
   api interface
 CPU graph for containers tab
 copy gomanagedocker functionality
+Tweak markdown rendering

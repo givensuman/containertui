@@ -74,10 +74,14 @@ type keybindings struct {
 	stopContainer        key.Binding
 	restartContainer     key.Binding
 	removeContainer      key.Binding
+	forceRemoveContainer key.Binding
+	pruneContainers      key.Binding
 	showLogs             key.Binding
 	execShell            key.Binding
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
+	toggleShowAll        key.Binding
+	renameContainer      key.Binding
 	switchTab            key.Binding
 }
 
@@ -107,6 +111,14 @@ func newKeybindings() *keybindings {
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove container"),
 		),
+		forceRemoveContainer: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "force remove"),
+		),
+		pruneContainers: key.NewBinding(
+			key.WithKeys("ctrl+p"),
+			key.WithHelp("ctrl+p", "prune stopped"),
+		),
 		showLogs: key.NewBinding(
 			key.WithKeys("L"),
 			key.WithHelp("L", "show container logs"),
@@ -122,6 +134,14 @@ func newKeybindings() *keybindings {
 		toggleSelectionOfAll: key.NewBinding(
 			key.WithKeys("ctrl+a"),
 			key.WithHelp("ctrl+a", "toggle selection of all"),
+		),
+		toggleShowAll: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "toggle all/running"),
+		),
+		renameContainer: key.NewBinding(
+			key.WithKeys("f2"),
+			key.WithHelp("F2", "rename container"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5"),
@@ -144,6 +164,9 @@ type Model struct {
 
 	// Track current output format (can toggle with 'J')
 	currentFormat string
+
+	// Track whether to show all containers or just running ones
+	showAllContainers bool
 
 	WindowWidth  int
 	WindowHeight int
@@ -200,16 +223,21 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 		scrollPositions:    make(map[string]int),
 		currentFormat:      "", // Empty means use config default
+		showAllContainers:  true,
 	}
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
+		containerKeybindings.toggleShowAll,
 		containerKeybindings.pauseContainer,
 		containerKeybindings.unpauseContainer,
 		containerKeybindings.startContainer,
 		containerKeybindings.stopContainer,
 		containerKeybindings.restartContainer,
 		containerKeybindings.removeContainer,
+		containerKeybindings.forceRemoveContainer,
+		containerKeybindings.pruneContainers,
+		containerKeybindings.renameContainer,
 		containerKeybindings.showLogs,
 		containerKeybindings.execShell,
 		containerKeybindings.toggleSelection,
@@ -283,6 +311,46 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				model.CloseOverlay()
 				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))
 			}
+			if confirmMsg.Action.Type == "ForceDeleteContainer" {
+				containerIDs, ok := confirmMsg.Action.Payload.([]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteContainer"))
+				}
+				spinnerCmd := model.setWorkingState(containerIDs, true)
+				model.CloseOverlay()
+				return model, tea.Batch(
+					spinnerCmd,
+					PerformContainerOperations(Remove, containerIDs),
+				)
+			}
+			if confirmMsg.Action.Type == "RenameContainer" {
+				// Extract form values and container ID
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+				containerID, ok := payload["containerID"].(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid container ID"))
+				}
+
+				newName := formValues["0"] // FormDialog uses index as key
+				if newName == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("name cannot be empty"))
+				}
+
+				model.CloseOverlay()
+				return model, model.performRenameContainer(containerID, newName)
+			}
 		}
 		return model, tea.Batch(cmds...)
 	}
@@ -301,6 +369,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			switch {
+			case key.Matches(msg, model.keybindings.toggleShowAll):
+				cmds = append(cmds, model.handleToggleShowAll())
 			case key.Matches(msg, model.keybindings.pauseContainer):
 				cmds = append(cmds, model.handlePauseContainers())
 			case key.Matches(msg, model.keybindings.unpauseContainer):
@@ -312,7 +382,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case key.Matches(msg, model.keybindings.restartContainer):
 				cmds = append(cmds, model.handleRestartContainers())
 			case key.Matches(msg, model.keybindings.removeContainer):
-				model.handleRemoveContainers()
+				if cmd := model.handleRemoveContainers(false); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, model.keybindings.forceRemoveContainer):
+				if cmd := model.handleRemoveContainers(true); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, model.keybindings.pruneContainers):
+				cmds = append(cmds, model.handlePruneContainers())
+			case key.Matches(msg, model.keybindings.renameContainer):
+				model.handleRenameContainer()
 			case key.Matches(msg, model.keybindings.showLogs):
 				if cmd := model.handleShowLogs(); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -647,20 +727,42 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 	return nil
 }
 
-func (model *Model) handleRemoveContainers() {
+func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
-			return
+			return nil
 		}
 
-		// Build confirmation message with container names
+		// Build container names list for display
 		var containerNames []string
 		items := model.GetItems()
 		for _, item := range items {
 			if slices.Contains(selectedIDs, item.ID) {
 				containerNames = append(containerNames, item.Name)
 			}
+		}
+
+		// If force, show confirmation with warning
+		if force {
+			message := fmt.Sprintf("⚠️  FORCE DELETE %d container(s)?", len(containerNames))
+			if len(containerNames) <= 5 {
+				message += "\n\n"
+				for _, name := range containerNames {
+					message += fmt.Sprintf("• %s\n", name)
+				}
+			}
+			message += "\nThis will forcefully stop and remove containers."
+
+			confirmDialog := components.NewDialog(
+				message,
+				[]components.DialogButton{
+					{Label: "Cancel"},
+					{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteContainer", Payload: selectedIDs}},
+				},
+			)
+			model.SetOverlay(confirmDialog)
+			return nil
 		}
 
 		message := fmt.Sprintf("Are you sure you want to delete %d container(s)?", len(containerNames))
@@ -682,6 +784,19 @@ func (model *Model) handleRemoveContainers() {
 	} else {
 		item := model.GetSelectedItem()
 		if item != nil && !item.isWorking {
+			if force {
+				// Force delete single container with confirmation
+				confirmDialog := components.NewDialog(
+					fmt.Sprintf("⚠️  FORCE DELETE container %s?\n\nThis will forcefully stop and remove the container.", item.Name),
+					[]components.DialogButton{
+						{Label: "Cancel"},
+						{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteContainer", Payload: []string{item.ID}}},
+					},
+				)
+				model.SetOverlay(confirmDialog)
+				return nil
+			}
+
 			confirmDialog := components.NewDialog(
 				fmt.Sprintf("Are you sure you want to delete container %s?", item.Name),
 				[]components.DialogButton{
@@ -692,6 +807,7 @@ func (model *Model) handleRemoveContainers() {
 			model.SetOverlay(confirmDialog)
 		}
 	}
+	return nil
 }
 
 func (model *Model) handleShowLogs() tea.Cmd {
@@ -876,4 +992,93 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	}
 
 	return notifications.ShowSuccess(successMsg)
+}
+
+// humanizeBytes converts bytes to human-readable format
+func humanizeBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// handlePruneContainers prunes all stopped containers
+func (model *Model) handlePruneContainers() tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		spaceReclaimed, err := state.GetClient().PruneContainers(ctx)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		msg := fmt.Sprintf("Pruned stopped containers, freed %s", humanizeBytes(spaceReclaimed))
+		return tea.Batch(
+			notifications.ShowSuccess(msg),
+			model.Refresh(),
+		)
+	}
+}
+
+// handleToggleShowAll toggles between showing all containers and only running ones
+// Note: The actual filtering will take effect on next auto-refresh (every 3 seconds via tickCmd)
+// This is a limitation of the current architecture where fetchContainers closure
+// is defined before model exists and doesn't have access to model.showAllContainers
+func (model *Model) handleToggleShowAll() tea.Cmd {
+	model.showAllContainers = !model.showAllContainers
+	mode := "all"
+	if !model.showAllContainers {
+		mode = "running only"
+	}
+
+	msg := fmt.Sprintf("Showing %s containers (will update on next refresh)", mode)
+	return notifications.ShowInfo(msg)
+}
+
+// handleRenameContainer shows a dialog to rename the selected container
+func (model *Model) handleRenameContainer() {
+	item := model.GetSelectedItem()
+	if item == nil || item.isWorking {
+		return
+	}
+
+	fields := []components.FormField{
+		{
+			Label:       "New Name",
+			Placeholder: "my-container",
+			Required:    true,
+		},
+	}
+
+	metadata := map[string]any{
+		"containerID": item.ID,
+	}
+
+	dialog := components.NewFormDialog(
+		"Rename Container",
+		fields,
+		base.SmartDialogAction{Type: "RenameContainer"},
+		metadata,
+	)
+
+	model.SetOverlay(dialog)
+}
+
+// performRenameContainer renames a container
+func (model *Model) performRenameContainer(containerID, newName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		err := state.GetClient().RenameContainer(ctx, containerID, newName)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Renamed to: %s", newName)),
+			model.Refresh(),
+		)
+	}
 }

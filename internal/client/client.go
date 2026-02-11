@@ -12,6 +12,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
@@ -591,6 +593,15 @@ func (clientWrapper *ClientWrapper) PruneNetworks(ctx context.Context) error {
 	return nil
 }
 
+// PruneContainers removes all stopped containers.
+func (clientWrapper *ClientWrapper) PruneContainers(ctx context.Context) (uint64, error) {
+	report, err := clientWrapper.client.ContainersPrune(ctx, filters.Args{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune containers: %w", err)
+	}
+	return report.SpaceReclaimed, nil
+}
+
 // GetContainersUsingImage returns a list of container names that are using the specified image ID.
 func (clientWrapper *ClientWrapper) GetContainersUsingImage(ctx context.Context, imageID string) ([]string, error) {
 	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
@@ -896,4 +907,113 @@ func (clientWrapper *ClientWrapper) GetRegistryClient() *registry.Client {
 func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, imageName string, progressChan chan<- string) error {
 	// Use the existing PullImage method which already handles Docker Hub
 	return clientWrapper.PullImage(ctx, imageName, progressChan)
+}
+
+// CreateVolume creates a new Docker volume with the specified configuration.
+func (clientWrapper *ClientWrapper) CreateVolume(ctx context.Context, name, driver string, labels map[string]string) (string, error) {
+	volumeCreateBody := volume.CreateOptions{
+		Name:   name,
+		Driver: driver,
+		Labels: labels,
+	}
+
+	vol, err := clientWrapper.client.VolumeCreate(ctx, volumeCreateBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to create volume: %w", err)
+	}
+
+	return vol.Name, nil
+}
+
+// CreateNetwork creates a new Docker network with the specified configuration.
+func (clientWrapper *ClientWrapper) CreateNetwork(ctx context.Context, name, driver, subnet, gateway string, ipv6 bool, labels map[string]string) (string, error) {
+	networkCreate := types.NetworkCreate{
+		CheckDuplicate: true,
+		Driver:         driver,
+		EnableIPv6:     ipv6,
+		Labels:         labels,
+	}
+
+	// Configure IPAM if subnet or gateway is provided
+	if subnet != "" || gateway != "" {
+		ipamConfig := network.IPAMConfig{
+			Subnet:  subnet,
+			Gateway: gateway,
+		}
+		networkCreate.IPAM = &network.IPAM{
+			Config: []network.IPAMConfig{ipamConfig},
+		}
+	}
+
+	response, err := clientWrapper.client.NetworkCreate(ctx, name, networkCreate)
+	if err != nil {
+		return "", fmt.Errorf("failed to create network: %w", err)
+	}
+
+	return response.ID, nil
+}
+
+// TagImage creates a new tag for an image.
+func (clientWrapper *ClientWrapper) TagImage(ctx context.Context, imageID, newTag string) error {
+	if err := clientWrapper.client.ImageTag(ctx, imageID, newTag); err != nil {
+		return fmt.Errorf("failed to tag image: %w", err)
+	}
+	return nil
+}
+
+// RenameContainer renames a container.
+func (clientWrapper *ClientWrapper) RenameContainer(ctx context.Context, containerID, newName string) error {
+	if err := clientWrapper.client.ContainerRename(ctx, containerID, newName); err != nil {
+		return fmt.Errorf("failed to rename container: %w", err)
+	}
+	return nil
+}
+
+// ImageHistory retrieves the history of an image (layers and commands).
+func (clientWrapper *ClientWrapper) ImageHistory(ctx context.Context, imageID string) ([]image.HistoryResponseItem, error) {
+	history, err := clientWrapper.client.ImageHistory(ctx, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image history: %w", err)
+	}
+	return history, nil
+}
+
+// BuildImage builds a Docker image from a Dockerfile.
+func (clientWrapper *ClientWrapper) BuildImage(ctx context.Context, dockerfilePath, tag, contextPath string, buildArgs map[string]*string) (io.ReadCloser, error) {
+	// Create tar archive of build context
+	tarReader, err := createTarArchive(contextPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create build context: %w", err)
+	}
+
+	buildOptions := types.ImageBuildOptions{
+		Tags:       []string{tag},
+		Dockerfile: dockerfilePath,
+		BuildArgs:  buildArgs,
+		Remove:     true, // Remove intermediate containers
+	}
+
+	response, err := clientWrapper.client.ImageBuild(ctx, tarReader, buildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build image: %w", err)
+	}
+
+	return response.Body, nil
+}
+
+// createTarArchive creates a tar archive of the build context directory
+func createTarArchive(contextPath string) (io.ReadCloser, error) {
+	// For now, we'll use a simple implementation
+	// In production, you'd want to properly handle .dockerignore, etc.
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+		// This is a simplified implementation
+		// You'd typically use archive/tar to create a proper tar
+		// For now, we'll just return an error that needs proper implementation
+		pw.CloseWithError(fmt.Errorf("tar archive creation not yet fully implemented"))
+	}()
+
+	return pr, nil
 }

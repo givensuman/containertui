@@ -69,6 +69,9 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
+	forceRemove          key.Binding
+	pruneVolumes         key.Binding
+	createVolume         key.Binding
 	switchTab            key.Binding
 }
 
@@ -85,6 +88,18 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
+		),
+		forceRemove: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "force remove"),
+		),
+		pruneVolumes: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "prune unused"),
+		),
+		createVolume: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "create volume"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5"),
@@ -155,6 +170,9 @@ func New() *Model {
 		volumeKeybindings.toggleSelection,
 		volumeKeybindings.toggleSelectionOfAll,
 		volumeKeybindings.remove,
+		volumeKeybindings.forceRemove,
+		volumeKeybindings.pruneVolumes,
+		volumeKeybindings.createVolume,
 	}
 
 	return &model
@@ -208,6 +226,58 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(err)
 				}
+			} else if confirmMsg.Action.Type == "ForceDeleteVolume" {
+				volumeName, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteVolume"))
+				}
+				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
+				model.CloseOverlay()
+				if err != nil {
+					return model, notifications.ShowError(fmt.Errorf("failed to force delete volume: %w", err))
+				}
+				return model, tea.Batch(
+					notifications.ShowSuccess(fmt.Sprintf("Force deleted volume: %s", volumeName)),
+					model.Refresh(),
+				)
+			} else if confirmMsg.Action.Type == "CreateVolumeAction" {
+				// Extract form values
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+
+				name := formValues["0"]   // First field
+				driver := formValues["1"] // Second field
+				labels := formValues["2"] // Third field
+
+				if name == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("volume name is required"))
+				}
+
+				// Parse labels if provided
+				var labelsMap map[string]string
+				if labels != "" {
+					labelsMap = make(map[string]string)
+					pairs := strings.Split(labels, ",")
+					for _, pair := range pairs {
+						kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+						if len(kv) == 2 {
+							labelsMap[kv[0]] = kv[1]
+						}
+					}
+				}
+
+				model.CloseOverlay()
+				return model, model.performCreateVolume(name, driver, labelsMap)
 			}
 			model.CloseOverlay()
 			return model, nil
@@ -238,7 +308,21 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove()
+				model.handleRemove(false)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.forceRemove):
+				model.handleRemove(true)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.pruneVolumes):
+				if cmd := model.handlePruneVolumes(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+
+			case key.Matches(msg, model.keybindings.createVolume):
+				model.handleCreateVolume()
 				return model, nil
 			}
 		}
@@ -317,9 +401,22 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove() {
+func (model *Model) handleRemove(force bool) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
+		return
+	}
+
+	if force {
+		// Force delete - show confirmation dialog first
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Force delete volume %s?\n\nThis will delete the volume even if containers are using it.", selectedItem.Volume.Name),
+			[]components.DialogButton{
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteVolume", Payload: selectedItem.Volume.Name}},
+			},
+		)
+		model.SetOverlay(confirmationDialog)
 		return
 	}
 
@@ -567,4 +664,85 @@ func (model *Model) FullHelp() [][]key.Binding {
 		}
 	}
 	return model.ResourceView.FullHelp()
+}
+
+// humanizeBytes converts bytes to human-readable format
+func humanizeBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// handlePruneVolumes prunes unused volumes
+func (model *Model) handlePruneVolumes() tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		spaceReclaimed, err := state.GetClient().PruneVolumes(ctx)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		msg := fmt.Sprintf("Pruned unused volumes, freed %s", humanizeBytes(spaceReclaimed))
+		return tea.Batch(
+			notifications.ShowSuccess(msg),
+			model.Refresh(),
+		)
+	}
+}
+
+// handleCreateVolume shows dialog to create a volume
+func (model *Model) handleCreateVolume() {
+	fields := []components.FormField{
+		{
+			Label:       "Name",
+			Placeholder: "my-volume",
+			Required:    true,
+		},
+		{
+			Label:       "Driver",
+			Placeholder: "local",
+			Required:    false,
+		},
+		{
+			Label:       "Labels",
+			Placeholder: "KEY=value,FOO=bar",
+			Required:    false,
+		},
+	}
+
+	dialog := components.NewFormDialog(
+		"Create Volume",
+		fields,
+		base.SmartDialogAction{Type: "CreateVolumeAction"},
+		nil,
+	)
+
+	model.SetOverlay(dialog)
+}
+
+// performCreateVolume creates a volume
+func (model *Model) performCreateVolume(name, driver string, labels map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+
+		// Use "local" as default driver if not specified
+		if driver == "" {
+			driver = "local"
+		}
+
+		volumeID, err := state.GetClient().CreateVolume(ctx, name, driver, labels)
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to create volume: %w", err))
+		}
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Created volume: %s", volumeID)),
+			model.Refresh(),
+		)
+	}
 }

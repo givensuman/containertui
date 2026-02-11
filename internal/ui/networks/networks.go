@@ -68,6 +68,9 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
+	forceRemove          key.Binding
+	pruneNetworks        key.Binding
+	createNetwork        key.Binding
 	switchTab            key.Binding
 }
 
@@ -84,6 +87,18 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
+		),
+		forceRemove: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "force remove"),
+		),
+		pruneNetworks: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "prune unused"),
+		),
+		createNetwork: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "create network"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5"),
@@ -154,6 +169,9 @@ func New() *Model {
 		networkKeybindings.toggleSelection,
 		networkKeybindings.toggleSelectionOfAll,
 		networkKeybindings.remove,
+		networkKeybindings.forceRemove,
+		networkKeybindings.pruneNetworks,
+		networkKeybindings.createNetwork,
 	}
 
 	return &model
@@ -207,6 +225,64 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(err)
 				}
+			} else if confirmMsg.Action.Type == "ForceDeleteNetwork" {
+				networkID, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteNetwork"))
+				}
+				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				model.CloseOverlay()
+				if err != nil {
+					return model, notifications.ShowError(fmt.Errorf("failed to force delete network: %w", err))
+				}
+				return model, tea.Batch(
+					notifications.ShowSuccess(fmt.Sprintf("Force deleted network: %s", networkID[:12])),
+					model.Refresh(),
+				)
+			} else if confirmMsg.Action.Type == "CreateNetworkAction" {
+				// Extract form values
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+
+				name := formValues["0"]    // First field
+				driver := formValues["1"]  // Second field
+				subnet := formValues["2"]  // Third field
+				gateway := formValues["3"] // Fourth field
+				ipv6 := formValues["4"]    // Fifth field
+				labels := formValues["5"]  // Sixth field
+
+				if name == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("network name is required"))
+				}
+
+				// Parse IPv6 boolean
+				enableIPv6 := (strings.ToLower(ipv6) == "yes" || strings.ToLower(ipv6) == "true")
+
+				// Parse labels if provided
+				var labelsMap map[string]string
+				if labels != "" {
+					labelsMap = make(map[string]string)
+					pairs := strings.Split(labels, ",")
+					for _, pair := range pairs {
+						kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+						if len(kv) == 2 {
+							labelsMap[kv[0]] = kv[1]
+						}
+					}
+				}
+
+				model.CloseOverlay()
+				return model, model.performCreateNetwork(name, driver, subnet, gateway, enableIPv6, labelsMap)
 			}
 			model.CloseOverlay()
 			return model, nil
@@ -237,7 +313,21 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove()
+				model.handleRemove(false)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.forceRemove):
+				model.handleRemove(true)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.pruneNetworks):
+				if cmd := model.handlePruneNetworks(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+
+			case key.Matches(msg, model.keybindings.createNetwork):
+				model.handleCreateNetwork()
 				return model, nil
 			}
 		}
@@ -298,9 +388,22 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove() {
+func (model *Model) handleRemove(force bool) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
+		return
+	}
+
+	if force {
+		// Force delete - show confirmation dialog first
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Force delete network %s?\n\nThis will delete the network even if containers are using it.", selectedItem.Network.Name),
+			[]components.DialogButton{
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteNetwork", Payload: selectedItem.Network.ID}},
+			},
+		)
+		model.SetOverlay(confirmationDialog)
 		return
 	}
 
@@ -536,4 +639,85 @@ func (model *Model) FullHelp() [][]key.Binding {
 		}
 	}
 	return model.ResourceView.FullHelp()
+}
+
+// handlePruneNetworks prunes unused networks
+func (model *Model) handlePruneNetworks() tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		err := state.GetClient().PruneNetworks(ctx)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		return tea.Batch(
+			notifications.ShowSuccess("Pruned unused networks"),
+			model.Refresh(),
+		)
+	}
+}
+
+// handleCreateNetwork shows dialog to create a network
+func (model *Model) handleCreateNetwork() {
+	fields := []components.FormField{
+		{
+			Label:       "Name",
+			Placeholder: "my-network",
+			Required:    true,
+		},
+		{
+			Label:       "Driver",
+			Placeholder: "bridge",
+			Required:    false,
+		},
+		{
+			Label:       "Subnet (CIDR)",
+			Placeholder: "172.20.0.0/16",
+			Required:    false,
+		},
+		{
+			Label:       "Gateway",
+			Placeholder: "172.20.0.1",
+			Required:    false,
+		},
+		{
+			Label:       "Enable IPv6",
+			Placeholder: "yes/no",
+			Required:    false,
+		},
+		{
+			Label:       "Labels",
+			Placeholder: "KEY=value,FOO=bar",
+			Required:    false,
+		},
+	}
+
+	dialog := components.NewFormDialog(
+		"Create Network",
+		fields,
+		base.SmartDialogAction{Type: "CreateNetworkAction"},
+		nil,
+	)
+
+	model.SetOverlay(dialog)
+}
+
+// performCreateNetwork creates a network
+func (model *Model) performCreateNetwork(name, driver, subnet, gateway string, enableIPv6 bool, labels map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+
+		// Use "bridge" as default driver if not specified
+		if driver == "" {
+			driver = "bridge"
+		}
+
+		networkID, err := state.GetClient().CreateNetwork(ctx, name, driver, subnet, gateway, enableIPv6, labels)
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to create network: %w", err))
+		}
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Created network: %s", networkID[:12])),
+			model.Refresh(),
+		)
+	}
 }

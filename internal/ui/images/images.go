@@ -90,6 +90,11 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
+	forceRemove          key.Binding
+	pruneImages          key.Binding
+	tagImage             key.Binding
+	runAndExec           key.Binding
+	buildImage           key.Binding
 	pullImage            key.Binding
 	createContainer      key.Binding
 	switchTab            key.Binding
@@ -108,6 +113,26 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
+		),
+		forceRemove: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "force remove"),
+		),
+		pruneImages: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "prune unused"),
+		),
+		tagImage: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "tag image"),
+		),
+		runAndExec: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "run & exec"),
+		),
+		buildImage: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "build image"),
 		),
 		pullImage: key.NewBinding(
 			key.WithKeys("i"),
@@ -304,6 +329,11 @@ func New() Model {
 		imageKeybindings.toggleSelection,
 		imageKeybindings.toggleSelectionOfAll,
 		imageKeybindings.remove,
+		imageKeybindings.forceRemove,
+		imageKeybindings.pruneImages,
+		imageKeybindings.tagImage,
+		imageKeybindings.runAndExec,
+		imageKeybindings.buildImage,
 		imageKeybindings.pullImage,
 		imageKeybindings.createContainer,
 	}
@@ -395,6 +425,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(err)
 				}
+			case "ForceDeleteImage":
+				imageID := confirmMsg.Action.Payload.(string)
+				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID)
+				model.CloseOverlay()
+				if err != nil {
+					return model, notifications.ShowError(fmt.Errorf("failed to force delete image: %w", err))
+				}
+				return model, tea.Batch(
+					notifications.ShowSuccess(fmt.Sprintf("Force deleted image: %s", imageID[:12])),
+					model.Refresh(),
+				)
 			case "PullImageAction":
 				// Extract image name from form values
 				payload, ok := confirmMsg.Action.Payload.(map[string]any)
@@ -475,6 +516,76 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					}
 					return MsgCreateContainerComplete{ContainerID: containerID, Err: nil}
 				}
+			case "TagImageAction":
+				// Extract form values and image ID from metadata
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				metadata, ok := payload["metadata"].(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid metadata"))
+				}
+				imageID, ok := metadata["imageID"].(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid image ID"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+
+				newTag := formValues["0"] // First field
+				if newTag == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("tag is required"))
+				}
+
+				model.CloseOverlay()
+				return model, model.performTagImage(imageID, newTag)
+
+			case "BuildImageAction":
+				// Extract form values
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+
+				dockerfile := formValues["0"]  // First field
+				tag := formValues["1"]         // Second field
+				contextPath := formValues["2"] // Third field
+				buildArgs := formValues["3"]   // Fourth field (optional)
+
+				if dockerfile == "" || tag == "" || contextPath == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("dockerfile, tag, and context are required"))
+				}
+
+				// Parse build args if provided
+				var buildArgsMap map[string]string
+				if buildArgs != "" {
+					buildArgsMap = make(map[string]string)
+					pairs := strings.Split(buildArgs, ",")
+					for _, pair := range pairs {
+						kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+						if len(kv) == 2 {
+							buildArgsMap[kv[0]] = kv[1]
+						}
+					}
+				}
+
+				model.CloseOverlay()
+				return model, model.performBuildImage(dockerfile, tag, contextPath, buildArgsMap)
 			}
 
 			model.CloseOverlay()
@@ -569,7 +680,31 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove()
+				model.handleRemove(false)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.forceRemove):
+				model.handleRemove(true)
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.pruneImages):
+				if cmd := model.handlePruneImages(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+
+			case key.Matches(msg, model.keybindings.tagImage):
+				model.handleTagImage()
+				return model, nil
+
+			case key.Matches(msg, model.keybindings.runAndExec):
+				if cmd := model.handleRunAndExec(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+
+			case key.Matches(msg, model.keybindings.buildImage):
+				model.handleBuildImage()
 				return model, nil
 			}
 		}
@@ -656,9 +791,22 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove() {
+func (model *Model) handleRemove(force bool) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
+		return
+	}
+
+	if force {
+		// Force delete - show confirmation dialog first
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Force delete image %s?\n\nThis will delete the image even if containers are using it.", selectedItem.Image.ID[:12]),
+			[]components.DialogButton{
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteImage", Payload: selectedItem.Image.ID}},
+			},
+		)
+		model.SetOverlay(confirmationDialog)
 		return
 	}
 
@@ -901,4 +1049,186 @@ func (model Model) FullHelp() [][]key.Binding {
 		}
 	}
 	return model.ResourceView.FullHelp()
+}
+
+// humanizeBytes converts bytes to human-readable format
+func humanizeBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// handlePruneImages prunes unused images
+func (model *Model) handlePruneImages() tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		spaceReclaimed, err := state.GetClient().PruneImages(ctx)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		msg := fmt.Sprintf("Pruned unused images, freed %s", humanizeBytes(spaceReclaimed))
+		return tea.Batch(
+			notifications.ShowSuccess(msg),
+			model.Refresh(),
+		)
+	}
+}
+
+// handleTagImage shows dialog to tag an image
+func (model *Model) handleTagImage() {
+	selectedItem := model.GetSelectedItem()
+	if selectedItem == nil {
+		return
+	}
+
+	fields := []components.FormField{
+		{
+			Label:       "New Tag",
+			Placeholder: "myrepo/myimage:v1.0",
+			Required:    true,
+		},
+	}
+
+	metadata := map[string]any{
+		"imageID": selectedItem.Image.ID,
+	}
+
+	dialog := components.NewFormDialog(
+		"Tag Image",
+		fields,
+		base.SmartDialogAction{Type: "TagImageAction"},
+		metadata,
+	)
+
+	model.SetOverlay(dialog)
+}
+
+// handleRunAndExec creates an ephemeral container and execs into it
+func (model *Model) handleRunAndExec() tea.Cmd {
+	selectedItem := model.GetSelectedItem()
+	if selectedItem == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+
+		// Create ephemeral container
+		config := client.CreateContainerConfig{
+			Name:      fmt.Sprintf("temp-%d", selectedItem.Image.Created),
+			ImageID:   selectedItem.Image.ID,
+			Ports:     nil,
+			Volumes:   nil,
+			Env:       nil,
+			AutoStart: true,
+			Network:   "bridge",
+		}
+
+		containerID, err := state.GetClient().CreateContainer(ctx, config)
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to create container: %w", err))
+		}
+
+		// Exec into it
+		shell := []string{"/bin/sh"}
+		if _, err := state.GetClient().ExecShell(ctx, containerID, shell); err != nil {
+			// Try bash if sh fails
+			shell = []string{"/bin/bash"}
+			if _, err := state.GetClient().ExecShell(ctx, containerID, shell); err != nil {
+				return notifications.ShowError(fmt.Errorf("failed to exec shell: %w", err))
+			}
+		}
+
+		return notifications.ShowSuccess(fmt.Sprintf("Created ephemeral container: %s", containerID[:12]))
+	}
+}
+
+// handleBuildImage shows dialog to build an image
+func (model *Model) handleBuildImage() {
+	fields := []components.FormField{
+		{
+			Label:       "Dockerfile Path",
+			Placeholder: "./Dockerfile",
+			Required:    true,
+		},
+		{
+			Label:       "Tag",
+			Placeholder: "myimage:latest",
+			Required:    true,
+		},
+		{
+			Label:       "Build Context",
+			Placeholder: ".",
+			Required:    true,
+		},
+		{
+			Label:       "Build Args",
+			Placeholder: "KEY=value,FOO=bar",
+			Required:    false,
+		},
+	}
+
+	dialog := components.NewFormDialog(
+		"Build Image",
+		fields,
+		base.SmartDialogAction{Type: "BuildImageAction"},
+		nil,
+	)
+
+	model.SetOverlay(dialog)
+}
+
+// performTagImage tags an image with a new name
+func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+		err := state.GetClient().TagImage(ctx, imageID, newTag)
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to tag image: %w", err))
+		}
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Tagged image: %s", newTag)),
+			model.Refresh(),
+		)
+	}
+}
+
+// performBuildImage builds an image from a Dockerfile
+func (model *Model) performBuildImage(dockerfile, tag, contextPath string, buildArgs map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := stdcontext.Background()
+
+		// Show progress notification
+		notifications.ShowInfo("Building image... This may take a while")
+
+		// Convert buildArgs to map[string]*string
+		buildArgsPtr := make(map[string]*string)
+		for k, v := range buildArgs {
+			val := v
+			buildArgsPtr[k] = &val
+		}
+
+		buildOutput, err := state.GetClient().BuildImage(ctx, dockerfile, tag, contextPath, buildArgsPtr)
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to build image: %w", err))
+		}
+
+		// Read and discard the build output (for now)
+		// TODO: Stream build output to user
+		if buildOutput != nil {
+			buildOutput.Close()
+		}
+
+		return tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Built image: %s", tag)),
+			model.Refresh(),
+		)
+	}
 }
