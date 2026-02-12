@@ -5,8 +5,6 @@ This document outlines the planned features for CONTAINERTUI beyond Tier 1 imple
 ## Current Status
 
 **Tier 1 (In Progress):** Essential features to match gomanagedocker functionality
-- Toggle show all containers
-  remove this
 - Force delete options
   doesn't work
 - Volume/Network creation

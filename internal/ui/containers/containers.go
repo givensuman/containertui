@@ -157,7 +157,15 @@ type Model struct {
 
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
-	detailsPanel       components.DetailsPanel
+
+	// Track scroll position per container ID
+	scrollPositions map[string]int
+
+	// Track current output format (can toggle with 'J')
+	currentFormat string
+
+	WindowWidth  int
+	WindowHeight int
 }
 
 // Ensure Model satisfies base.Component but we cannot directly assign (*Model)(nil) if Model has embedded fields that complicate it?
@@ -209,8 +217,8 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		inspection:         types.ContainerJSON{},
-		detailsPanel:       components.NewDetailsPanel(),
+		scrollPositions:    make(map[string]int),
+		currentFormat:      "", // Empty means use config default
 	}
 
 	// Add custom keybindings to help
