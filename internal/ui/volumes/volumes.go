@@ -237,7 +237,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteVolume"))
 				}
-				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
+				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName, false)
 				if err == nil {
 					// Close the overlay and refresh list
 					model.CloseOverlay()
@@ -256,7 +256,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteVolume"))
 				}
-				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName)
+				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName, true)
 				model.CloseOverlay()
 				if err != nil {
 					return model, notifications.ShowError(fmt.Errorf("failed to force delete volume: %w", err))

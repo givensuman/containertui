@@ -11,6 +11,7 @@ Fix titles, colors
   do eht
 Fix info panel display, remove extra stuff
 Some info panels have embedded title, some dont
+When creating a container from an image, the "Used By" field doesn't update
 
 --- Specific ---
 Services tab keybindings has switch tab, none others do

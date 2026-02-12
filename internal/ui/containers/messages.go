@@ -25,7 +25,7 @@ const (
 )
 
 // PerformContainerOperation performs the specified operation on a single container asynchronously.
-func PerformContainerOperation(operation Operation, containerID string) tea.Cmd {
+func PerformContainerOperation(operation Operation, containerID string, force bool) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		client := state.GetClient()
@@ -41,7 +41,7 @@ func PerformContainerOperation(operation Operation, containerID string) tea.Cmd 
 		case Restart:
 			err = client.RestartContainer(stdcontext.Background(), containerID)
 		case Remove:
-			err = client.RemoveContainer(stdcontext.Background(), containerID)
+			err = client.RemoveContainer(stdcontext.Background(), containerID, force)
 		}
 		return MsgContainerOperationResult{Operation: operation, ID: containerID, Error: err}
 	}
@@ -49,10 +49,10 @@ func PerformContainerOperation(operation Operation, containerID string) tea.Cmd 
 
 // PerformContainerOperations performs the specified operation on multiple containers asynchronously.
 // Returns a batch of commands, one for each container.
-func PerformContainerOperations(operation Operation, containerIDs []string) tea.Cmd {
+func PerformContainerOperations(operation Operation, containerIDs []string, force bool) tea.Cmd {
 	var cmds []tea.Cmd
 	for _, id := range containerIDs {
-		cmds = append(cmds, PerformContainerOperation(operation, id))
+		cmds = append(cmds, PerformContainerOperation(operation, id, force))
 	}
 	return tea.Batch(cmds...)
 }

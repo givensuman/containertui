@@ -438,7 +438,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			switch confirmMsg.Action.Type {
 			case "DeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID)
+				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID, false)
 				if err == nil {
 					model.CloseOverlay()
 					return model, tea.Batch(
@@ -452,7 +452,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			case "ForceDeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID)
+				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID, true)
 				model.CloseOverlay()
 				if err != nil {
 					return model, notifications.ShowError(fmt.Errorf("failed to force delete image: %w", err))

@@ -368,9 +368,9 @@ func (clientWrapper *ClientWrapper) StopContainers(ctx context.Context, containe
 }
 
 // RemoveContainer removes a specific Docker container by its ID.
-func (clientWrapper *ClientWrapper) RemoveContainer(ctx context.Context, containerID string) error {
+func (clientWrapper *ClientWrapper) RemoveContainer(ctx context.Context, containerID string, force bool) error {
 	removeOptions := container.RemoveOptions{
-		Force: true,
+		Force: force,
 	}
 
 	if err := clientWrapper.client.ContainerRemove(ctx, containerID, removeOptions); err != nil {
@@ -380,10 +380,10 @@ func (clientWrapper *ClientWrapper) RemoveContainer(ctx context.Context, contain
 }
 
 // RemoveContainers removes multiple Docker containers by their IDs.
-func (clientWrapper *ClientWrapper) RemoveContainers(ctx context.Context, containerIDs []string) error {
+func (clientWrapper *ClientWrapper) RemoveContainers(ctx context.Context, containerIDs []string, force bool) error {
 	var multiErr MultiError
 	for _, containerID := range containerIDs {
-		if err := clientWrapper.RemoveContainer(ctx, containerID); err != nil {
+		if err := clientWrapper.RemoveContainer(ctx, containerID, force); err != nil {
 			multiErr.Add(containerID, err)
 		}
 	}
@@ -537,9 +537,9 @@ func (clientWrapper *ClientWrapper) ExecShell(ctx context.Context, containerID s
 }
 
 // RemoveImage removes a specific Docker image by its ID.
-func (clientWrapper *ClientWrapper) RemoveImage(ctx context.Context, imageID string) error {
+func (clientWrapper *ClientWrapper) RemoveImage(ctx context.Context, imageID string, force bool) error {
 	options := types.ImageRemoveOptions{
-		Force:         false,
+		Force:         force,
 		PruneChildren: true,
 	}
 
@@ -551,8 +551,8 @@ func (clientWrapper *ClientWrapper) RemoveImage(ctx context.Context, imageID str
 }
 
 // RemoveVolume removes a specific Docker volume by its name.
-func (clientWrapper *ClientWrapper) RemoveVolume(ctx context.Context, volumeName string) error {
-	if err := clientWrapper.client.VolumeRemove(ctx, volumeName, false); err != nil {
+func (clientWrapper *ClientWrapper) RemoveVolume(ctx context.Context, volumeName string, force bool) error {
+	if err := clientWrapper.client.VolumeRemove(ctx, volumeName, force); err != nil {
 		return fmt.Errorf("failed to remove volume %s: %w", volumeName, err)
 	}
 	return nil

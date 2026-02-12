@@ -187,6 +187,7 @@ var (
 			Background(lipgloss.Color("#5A56E0")). // Purple-ish
 			Padding(0, 2).
 			MarginBottom(1).
+			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#5A56E0"))
 
@@ -195,6 +196,7 @@ var (
 			Background(lipgloss.Color("#E05656")). // Red
 			Padding(0, 2).
 			MarginBottom(1).
+			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E05656"))
 
@@ -203,6 +205,7 @@ var (
 			Background(lipgloss.Color("#56E095")). // Green
 			Padding(0, 2).
 			MarginBottom(1).
+			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#56E095"))
 
@@ -211,6 +214,7 @@ var (
 			Background(lipgloss.Color("#E0A856")). // Orange/amber
 			Padding(0, 2).
 			MarginBottom(1).
+			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#E0A856"))
 )

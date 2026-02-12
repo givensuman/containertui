@@ -50,7 +50,7 @@ func (networkItem NetworkItem) getTitleOrnament() string {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.
-		return " "
+		return " "
 	}
 
 	return ""
@@ -60,7 +60,14 @@ func (networkItem NetworkItem) Title() string {
 	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := networkItem.getTitleOrnament()
 	statusIcon := networkItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, networkItem.Network.Name)
+	name := networkItem.Network.Name
+
+	// Add lock icon for system networks
+	if isSystemNetwork(name) {
+		name = "🔒 " + name
+	}
+
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, name)
 }
 
 func (networkItem NetworkItem) Description() string {

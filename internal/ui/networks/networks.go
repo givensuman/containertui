@@ -34,6 +34,17 @@ type MsgPruneComplete struct {
 	Err error
 }
 
+// isSystemNetwork returns true if the network is a predefined system network
+func isSystemNetwork(name string) bool {
+	systemNetworks := []string{"bridge", "host", "none", "podman"}
+	for _, sysNet := range systemNetworks {
+		if name == sysNet {
+			return true
+		}
+	}
+	return false
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -331,12 +342,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove(false)
-				return model, nil
+				return model, model.handleRemove(false)
 
 			case key.Matches(msg, model.keybindings.forceRemove):
-				model.handleRemove(true)
-				return model, nil
+				return model, model.handleRemove(true)
 
 			case key.Matches(msg, model.keybindings.pruneNetworks):
 				if cmd := model.handlePruneNetworks(); cmd != nil {
@@ -406,10 +415,17 @@ func (model Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model Model) handleRemove(force bool) {
+func (model *Model) handleRemove(force bool) tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		return
+		return nil
+	}
+
+	// Check if this is a system network
+	if isSystemNetwork(selectedItem.Network.Name) {
+		return notifications.ShowInfo(
+			fmt.Sprintf("Cannot delete system network: %s", selectedItem.Network.Name),
+		)
 	}
 
 	if force {
@@ -422,7 +438,7 @@ func (model Model) handleRemove(force bool) {
 			},
 		)
 		model.SetOverlay(confirmationDialog)
-		return
+		return nil
 	}
 
 	containersUsingNetwork, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
@@ -435,7 +451,7 @@ func (model Model) handleRemove(force bool) {
 			},
 		)
 		model.SetOverlay(errorDialog)
-		return
+		return nil
 	}
 	if len(containersUsingNetwork) > 0 {
 		warningDialog := components.NewDialog(
@@ -455,6 +471,7 @@ func (model Model) handleRemove(force bool) {
 		)
 		model.SetOverlay(confirmationDialog)
 	}
+	return nil
 }
 
 func (model Model) updateDetailContent() tea.Cmd {

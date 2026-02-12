@@ -322,7 +322,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 				spinnerCmd := model.setWorkingState(containerIDs, true)
 				model.CloseOverlay()
-				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs))
+				return model, tea.Batch(spinnerCmd, PerformContainerOperations(Remove, containerIDs, false))
 			}
 			if confirmMsg.Action.Type == "ForceDeleteContainer" {
 				containerIDs, ok := confirmMsg.Action.Payload.([]string)
@@ -334,7 +334,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				model.CloseOverlay()
 				return model, tea.Batch(
 					spinnerCmd,
-					PerformContainerOperations(Remove, containerIDs),
+					PerformContainerOperations(Remove, containerIDs, true),
 				)
 			}
 			if confirmMsg.Action.Type == "RenameContainer" {
@@ -564,12 +564,12 @@ func (model *Model) handlePauseContainers() tea.Cmd {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Pause, selectedIDs))
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Pause, selectedIDs, false))
 	} else {
 		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Pause, selectedItem.ID))
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Pause, selectedItem.ID, false))
 		}
 	}
 	return nil
@@ -582,12 +582,12 @@ func (model *Model) handleUnpauseContainers() tea.Cmd {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Unpause, selectedIDs))
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Unpause, selectedIDs, false))
 	} else {
 		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Unpause, selectedItem.ID))
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Unpause, selectedItem.ID, false))
 		}
 	}
 	return nil
@@ -600,12 +600,12 @@ func (model *Model) handleStartContainers() tea.Cmd {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Start, selectedIDs))
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Start, selectedIDs, false))
 	} else {
 		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Start, selectedItem.ID))
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Start, selectedItem.ID, false))
 		}
 	}
 	return nil
@@ -618,12 +618,12 @@ func (model *Model) handleStopContainers() tea.Cmd {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Stop, selectedIDs))
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Stop, selectedIDs, false))
 	} else {
 		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Stop, selectedItem.ID))
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Stop, selectedItem.ID, false))
 		}
 	}
 	return nil
@@ -636,12 +636,12 @@ func (model *Model) handleRestartContainers() tea.Cmd {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Restart, selectedIDs))
+		return tea.Batch(spinnerCmd, PerformContainerOperations(Restart, selectedIDs, false))
 	} else {
 		selectedItem := model.GetSelectedItem()
 		if selectedItem != nil && !selectedItem.isWorking {
 			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Restart, selectedItem.ID))
+			return tea.Batch(spinnerCmd, PerformContainerOperation(Restart, selectedItem.ID, false))
 		}
 	}
 	return nil
