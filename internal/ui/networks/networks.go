@@ -29,6 +29,11 @@ type MsgNetworkInspection struct {
 // MsgRestoreScroll is sent to restore scroll position after content is set.
 type MsgRestoreScroll struct{}
 
+// MsgPruneComplete is sent when the prune operation completes
+type MsgPruneComplete struct {
+	Err error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -196,8 +201,113 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.detailsPanel.RestoreScrollPosition(model.getViewport())
-		return model, nil
+		model.restoreScrollPosition()
+
+	case MsgPruneComplete:
+		model.CloseOverlay()
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess("Pruned unused networks"),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceNetwork,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+				}
+			},
+		)
+	}
+
+	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
+	if model.IsOverlayVisible() {
+		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "DeleteNetwork" {
+				networkID, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteNetwork"))
+				}
+				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				if err == nil {
+					// Close the overlay and refresh list
+					model.CloseOverlay()
+					return model, tea.Batch(
+						notifications.ShowSuccess(fmt.Sprintf("Network removed: %s", networkID[:12])),
+						model.Refresh(),
+					)
+				} else {
+					// Show error notification
+					model.CloseOverlay()
+					return model, notifications.ShowError(err)
+				}
+			} else if confirmMsg.Action.Type == "ForceDeleteNetwork" {
+				networkID, ok := confirmMsg.Action.Payload.(string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteNetwork"))
+				}
+				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				model.CloseOverlay()
+				if err != nil {
+					return model, notifications.ShowError(fmt.Errorf("failed to force delete network: %w", err))
+				}
+				return model, tea.Batch(
+					notifications.ShowSuccess(fmt.Sprintf("Force deleted network: %s", networkID[:12])),
+					model.Refresh(),
+				)
+			} else if confirmMsg.Action.Type == "CreateNetworkAction" {
+				// Extract form values
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				formValues, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+
+				name := formValues["0"]    // First field
+				driver := formValues["1"]  // Second field
+				subnet := formValues["2"]  // Third field
+				gateway := formValues["3"] // Fourth field
+				ipv6 := formValues["4"]    // Fifth field
+				labels := formValues["5"]  // Sixth field
+
+				if name == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("network name is required"))
+				}
+
+				// Parse IPv6 boolean
+				enableIPv6 := (strings.ToLower(ipv6) == "yes" || strings.ToLower(ipv6) == "true")
+
+				// Parse labels if provided
+				var labelsMap map[string]string
+				if labels != "" {
+					labelsMap = make(map[string]string)
+					pairs := strings.Split(labels, ",")
+					for _, pair := range pairs {
+						kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+						if len(kv) == 2 {
+							labelsMap[kv[0]] = kv[1]
+						}
+					}
+				}
+
+				model.CloseOverlay()
+				return model, model.performCreateNetwork(name, driver, subnet, gateway, enableIPv6, labelsMap)
+			}
+			model.CloseOverlay()
+			return model, nil
+		}
+
+		// Let ResourceView handle forwarding to overlay
+		return model, tea.Batch(cmds...)
 	}
 
 	// 3. Main View Logic
@@ -472,24 +582,20 @@ func (model Model) FullHelp() [][]key.Binding {
 }
 
 // handlePruneNetworks prunes unused networks
-func (model Model) handlePruneNetworks() tea.Cmd {
+func (model *Model) handlePruneNetworks() tea.Cmd {
+	// Show progress dialog
+	progressDialog := components.NewProgressDialog(
+		"Pruning unused networks...\n\nThis may take a few moments...",
+	)
+	model.SetOverlay(progressDialog)
+
+	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		err := state.GetClient().PruneNetworks(ctx)
-		if err != nil {
-			return notifications.ShowError(err)
+		return MsgPruneComplete{
+			Err: err,
 		}
-		return tea.Batch(
-			notifications.ShowSuccess("Pruned unused networks"),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceNetwork,
-					Operation: base.OperationPruned,
-					IDs:       nil,
-				}
-			},
-		)
 	}
 }
 

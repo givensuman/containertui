@@ -85,6 +85,12 @@ type MsgCreateContainerComplete struct {
 	Err         error
 }
 
+// MsgPruneComplete is sent when the prune operation completes
+type MsgPruneComplete struct {
+	SpaceReclaimed uint64
+	Err            error
+}
+
 type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
@@ -401,6 +407,27 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			notifications.ShowSuccess(successMsg),
 			func() tea.Msg {
 				return base.MsgContainerCreated{ContainerID: msg.ContainerID}
+			},
+		)
+
+	case MsgPruneComplete:
+		model.CloseOverlay()
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		successMsg := fmt.Sprintf("Pruned unused images, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		return model, tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+					Metadata: map[string]any{
+						"spaceReclaimed": msg.SpaceReclaimed,
+					},
+				}
 			},
 		)
 	}
@@ -966,27 +993,20 @@ func (model Model) FullHelp() [][]key.Binding {
 
 // handlePruneImages prunes unused images
 func (model *Model) handlePruneImages() tea.Cmd {
+	// Show progress dialog
+	progressDialog := components.NewProgressDialog(
+		"Pruning unused images...\n\nThis may take a few moments...",
+	)
+	model.SetOverlay(progressDialog)
+
+	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		spaceReclaimed, err := state.GetClient().PruneImages(ctx)
-		if err != nil {
-			return notifications.ShowError(err)
+		return MsgPruneComplete{
+			SpaceReclaimed: spaceReclaimed,
+			Err:            err,
 		}
-		msg := fmt.Sprintf("Pruned unused images, freed %s", utils.HumanizeBytes(spaceReclaimed))
-		return tea.Batch(
-			notifications.ShowSuccess(msg),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceImage,
-					Operation: base.OperationPruned,
-					IDs:       nil,
-					Metadata: map[string]any{
-						"spaceReclaimed": spaceReclaimed,
-					},
-				}
-			},
-		)
 	}
 }
 

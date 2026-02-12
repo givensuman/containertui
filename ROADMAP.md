@@ -5,14 +5,20 @@ This document outlines the planned features for CONTAINERTUI beyond Tier 1 imple
 ## Current Status
 
 **Tier 1 (In Progress):** Essential features to match gomanagedocker functionality
-- Prune operations
 - Toggle show all containers
+  remove this
 - Force delete options
+  doesn't work
 - Volume/Network creation
+  doesn't work
 - Image building
+  (test)
 - Enhanced log viewing
+  what was done?
 - Image tagging
+  invalid metadata
 - Container renaming
+  bad keybind
 
 ## Tier 2: Enhanced Functionality (Medium Priority)
 
@@ -122,30 +128,6 @@ These features will be implemented after Tier 1 completion to provide advanced c
 - Requires stopping and recreating container with new port config
 - Warn user about container restart requirement
 - Preserve other container settings during recreation
-
----
-
-### 5. Image Push to Registry
-**Priority:** MEDIUM | **Effort:** Medium (8-10 hours)
-
-**Description:** Push local images to Docker Hub or private registries.
-
-**Features:**
-- Push to Docker Hub
-- Push to private registries
-- Authentication handling
-- Progress indication
-- Tag images before pushing
-- Support multiple tags
-
-**Keybindings:**
-- `P` (Shift+p) - Push image
-
-**Technical Approach:**
-- Form dialog for registry URL and credentials
-- Use Docker SDK `ImagePush()` API
-- Store registry credentials securely
-- Show progress dialog with layer upload status
 
 ---
 

@@ -31,6 +31,12 @@ type MsgVolumeInspection struct {
 // MsgRestoreScroll is sent to restore scroll position after content is set.
 type MsgRestoreScroll struct{}
 
+// MsgPruneComplete is sent when the prune operation completes
+type MsgPruneComplete struct {
+	SpaceReclaimed uint64
+	Err            error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -198,8 +204,28 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.detailsPanel.RestoreScrollPosition(model.getViewport())
-		return model, nil
+		model.restoreScrollPosition()
+
+	case MsgPruneComplete:
+		model.CloseOverlay()
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		successMsg := fmt.Sprintf("Pruned unused volumes, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		return model, tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceVolume,
+					Operation: base.OperationPruned,
+					IDs:       nil,
+					Metadata: map[string]any{
+						"spaceReclaimed": msg.SpaceReclaimed,
+					},
+				}
+			},
+		)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -587,28 +613,21 @@ func (model Model) FullHelp() [][]key.Binding {
 }
 
 // handlePruneVolumes prunes unused volumes
-func (model Model) handlePruneVolumes() tea.Cmd {
+func (model *Model) handlePruneVolumes() tea.Cmd {
+	// Show progress dialog
+	progressDialog := components.NewProgressDialog(
+		"Pruning unused volumes...\n\nThis may take a few moments...",
+	)
+	model.SetOverlay(progressDialog)
+
+	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		spaceReclaimed, err := state.GetClient().PruneVolumes(ctx)
-		if err != nil {
-			return notifications.ShowError(err)
+		return MsgPruneComplete{
+			SpaceReclaimed: spaceReclaimed,
+			Err:            err,
 		}
-		msg := fmt.Sprintf("Pruned unused volumes, freed %s", utils.HumanizeBytes(spaceReclaimed))
-		return tea.Batch(
-			notifications.ShowSuccess(msg),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceVolume,
-					Operation: base.OperationPruned,
-					IDs:       nil,
-					Metadata: map[string]any{
-						"spaceReclaimed": spaceReclaimed,
-					},
-				}
-			},
-		)
 	}
 }
 

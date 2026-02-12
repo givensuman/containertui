@@ -33,6 +33,12 @@ type MsgRestoreScroll struct{}
 // MsgRefreshContainers is sent periodically to refresh the container list
 type MsgRefreshContainers time.Time
 
+// MsgPruneComplete is sent when the prune operation completes
+type MsgPruneComplete struct {
+	SpaceReclaimed uint64
+	Err            error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -274,8 +280,28 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.detailsPanel.RestoreScrollPosition(model.getViewport())
-		return model, nil
+		model.restoreScrollPosition()
+
+	case MsgPruneComplete:
+		model.CloseOverlay()
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		successMsg := fmt.Sprintf("Pruned stopped containers, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		return model, tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationPruned,
+					IDs:       nil, // Prune affects multiple containers
+					Metadata: map[string]any{
+						"spaceReclaimed": msg.SpaceReclaimed,
+					},
+				}
+			},
+		)
 	}
 
 	if model.IsOverlayVisible() {
@@ -882,29 +908,20 @@ func (model *Model) handleContainerOperationResult(msg MsgContainerOperationResu
 
 // handlePruneContainers prunes all stopped containers
 func (model *Model) handlePruneContainers() tea.Cmd {
+	// Show progress dialog
+	progressDialog := components.NewProgressDialog(
+		"Pruning stopped containers...\n\nThis may take a few moments...",
+	)
+	model.SetOverlay(progressDialog)
+
+	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		spaceReclaimed, err := state.GetClient().PruneContainers(ctx)
-		if err != nil {
-			return notifications.ShowError(err)
+		return MsgPruneComplete{
+			SpaceReclaimed: spaceReclaimed,
+			Err:            err,
 		}
-		msg := fmt.Sprintf("Pruned stopped containers, freed %s", utils.HumanizeBytes(spaceReclaimed))
-
-		// Emit resource changed message for cross-tab updates
-		return tea.Batch(
-			notifications.ShowSuccess(msg),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceContainer,
-					Operation: base.OperationPruned,
-					IDs:       nil, // Prune affects multiple containers
-					Metadata: map[string]any{
-						"spaceReclaimed": spaceReclaimed,
-					},
-				}
-			},
-		)
 	}
 }
 
