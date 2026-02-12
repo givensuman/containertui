@@ -30,8 +30,8 @@ type Model struct {
 	tabsModel          tabs.Model
 	containersModel    containers.Model
 	imagesModel        images.Model
-	volumesModel       *volumes.Model
-	networksModel      *networks.Model
+	volumesModel       volumes.Model
+	networksModel      networks.Model
 	servicesModel      services.Model
 	browseModel        browse.Model
 	notificationsModel notifications.Model

@@ -118,7 +118,7 @@ type Model struct {
 	currentFormat      string
 }
 
-func New() *Model {
+func New() Model {
 	networkKeybindings := newKeybindings()
 
 	fetchNetworks := func() ([]NetworkItem, error) {
@@ -174,14 +174,14 @@ func New() *Model {
 		networkKeybindings.createNetwork,
 	}
 
-	return &model
+	return model
 }
 
-func (model *Model) Init() tea.Cmd {
+func (model Model) Init() tea.Cmd {
 	return model.ResourceView.Init()
 }
 
-func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
+func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 1. Try standard ResourceView updates first (resizing, dialog closing, basic navigation)
 	updatedView, cmd := model.ResourceView.Update(msg)
 	model.ResourceView = updatedView
@@ -360,15 +360,15 @@ func (model *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func (model *Model) View() string {
+func (model Model) View() string {
 	return model.ResourceView.View()
 }
 
-func (model *Model) IsFiltering() bool {
+func (model Model) IsFiltering() bool {
 	return model.ResourceView.IsFiltering()
 }
 
-func (model *Model) handleToggleSelection() {
+func (model Model) handleToggleSelection() {
 	model.HandleToggleSelection()
 
 	index := model.GetSelectedIndex()
@@ -378,7 +378,7 @@ func (model *Model) handleToggleSelection() {
 	}
 }
 
-func (model *Model) handleToggleSelectionOfAll() {
+func (model Model) handleToggleSelectionOfAll() {
 	model.HandleToggleAll()
 
 	items := model.GetItems()
@@ -388,7 +388,7 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove(force bool) {
+func (model Model) handleRemove(force bool) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return
@@ -439,7 +439,7 @@ func (model *Model) handleRemove(force bool) {
 	}
 }
 
-func (model *Model) updateDetailContent() tea.Cmd {
+func (model Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
@@ -467,7 +467,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 }
 
 // saveScrollPosition saves the current viewport scroll position for the current network
-func (model *Model) saveScrollPosition() {
+func (model Model) saveScrollPosition() {
 	if model.currentNetworkID != "" {
 		if vp := model.getViewport(); vp != nil {
 			model.scrollPositions[model.currentNetworkID] = vp.YOffset()
@@ -476,7 +476,7 @@ func (model *Model) saveScrollPosition() {
 }
 
 // restoreScrollPosition restores the viewport scroll position for the current network
-func (model *Model) restoreScrollPosition() {
+func (model Model) restoreScrollPosition() {
 	if model.currentNetworkID != "" {
 		if vp := model.getViewport(); vp != nil {
 			if offset, exists := model.scrollPositions[model.currentNetworkID]; exists {
@@ -489,7 +489,7 @@ func (model *Model) restoreScrollPosition() {
 }
 
 // getViewport returns the viewport from the detail pane if available
-func (model *Model) getViewport() *viewport.Model {
+func (model Model) getViewport() *viewport.Model {
 	if vp, ok := model.SplitView.Detail.(*components.ViewportPane); ok {
 		return &vp.Viewport
 	}
@@ -497,7 +497,7 @@ func (model *Model) getViewport() *viewport.Model {
 }
 
 // refreshInspectionContent refreshes the detail content with current inspection data
-func (model *Model) refreshInspectionContent() {
+func (model Model) refreshInspectionContent() {
 	// Determine format to use
 	format := infopanel.GetOutputFormat()
 	if model.currentFormat != "" {
@@ -517,7 +517,7 @@ func (model *Model) refreshInspectionContent() {
 }
 
 // updateUsedByPanel updates the extra pane with containers using this network
-func (model *Model) updateUsedByPanel() {
+func (model Model) updateUsedByPanel() {
 	if model.inspection.ID == "" {
 		model.SetExtraContent("")
 		return
@@ -548,7 +548,7 @@ func (model *Model) updateUsedByPanel() {
 }
 
 // handleCopyToClipboard copies the current inspection output to clipboard
-func (model *Model) handleCopyToClipboard() tea.Cmd {
+func (model Model) handleCopyToClipboard() tea.Cmd {
 	if model.inspection.ID == "" {
 		return nil
 	}
@@ -575,7 +575,7 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 }
 
 // handleToggleFormat toggles between JSON and YAML format
-func (model *Model) handleToggleFormat() tea.Cmd {
+func (model Model) handleToggleFormat() tea.Cmd {
 	currentFormat := model.currentFormat
 	if currentFormat == "" {
 		cfg := state.GetConfig()
@@ -595,7 +595,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
-func (model *Model) ShortHelp() []key.Binding {
+func (model Model) ShortHelp() []key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
 	if model.IsDetailFocused() {
 		return []key.Binding{
@@ -615,7 +615,7 @@ func (model *Model) ShortHelp() []key.Binding {
 	return model.ResourceView.ShortHelp()
 }
 
-func (model *Model) FullHelp() [][]key.Binding {
+func (model Model) FullHelp() [][]key.Binding {
 	// If detail or extra pane is focused, show detail keybindings
 	if model.IsDetailFocused() {
 		return [][]key.Binding{
@@ -642,7 +642,7 @@ func (model *Model) FullHelp() [][]key.Binding {
 }
 
 // handlePruneNetworks prunes unused networks
-func (model *Model) handlePruneNetworks() tea.Cmd {
+func (model Model) handlePruneNetworks() tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		err := state.GetClient().PruneNetworks(ctx)
@@ -664,7 +664,7 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 }
 
 // handleCreateNetwork shows dialog to create a network
-func (model *Model) handleCreateNetwork() {
+func (model Model) handleCreateNetwork() {
 	fields := []components.FormField{
 		{
 			Label:       "Name",
@@ -709,7 +709,7 @@ func (model *Model) handleCreateNetwork() {
 }
 
 // performCreateNetwork creates a network
-func (model *Model) performCreateNetwork(name, driver, subnet, gateway string, enableIPv6 bool, labels map[string]string) tea.Cmd {
+func (model Model) performCreateNetwork(name, driver, subnet, gateway string, enableIPv6 bool, labels map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 
