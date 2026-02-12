@@ -11,13 +11,11 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 )
@@ -113,10 +111,8 @@ type Model struct {
 	components.ResourceView[string, VolumeItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	currentVolumeName  string
 	inspection         volume.Volume
-	scrollPositions    map[string]int
-	currentFormat      string
+	detailsPanel       components.DetailsPanel
 }
 
 func New() Model {
@@ -161,8 +157,8 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        volumeKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		scrollPositions:    make(map[string]int),
-		currentFormat:      "",
+		inspection:         volume.Volume{},
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -192,7 +188,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 2. Handle Messages
 	switch msg := msg.(type) {
 	case MsgVolumeInspection:
-		if msg.Name == model.currentVolumeName && msg.Err == nil {
+		if msg.Name == model.detailsPanel.GetCurrentID() && msg.Err == nil {
 			model.inspection = msg.Volume
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
@@ -201,7 +197,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
+		return model, nil
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -332,15 +329,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
 			if model.IsDetailFocused() {
-				switch {
-				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-					cmd := model.handleToggleFormat()
+				if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
+					newFormat, cmd := model.detailsPanel.HandleToggleFormat()
+					_ = newFormat // format is tracked internally
+					model.refreshInspectionContent()
 					cmds = append(cmds, cmd)
-				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-					cmd := model.handleCopyToClipboard()
-					if cmd != nil {
-						cmds = append(cmds, cmd)
-					}
+				}
+				if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
+					cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
+					cmds = append(cmds, cmd)
 				}
 			}
 		}
@@ -465,14 +462,13 @@ func (model Model) updateDetailContent() tea.Cmd {
 	}
 
 	volumeName := selectedItem.Volume.Name
-	// If we've switched to a different volume, OR we don't have inspection data yet, fetch it
-	if volumeName != model.currentVolumeName || model.inspection.Name == "" {
-		// Save scroll position of previous volume
-		if model.currentVolumeName != "" && model.currentVolumeName != volumeName {
-			model.saveScrollPosition()
-		}
+	currentID := model.detailsPanel.GetCurrentID()
 
-		model.currentVolumeName = volumeName
+	// If we've switched to a different volume, OR we don't have inspection data yet, fetch it
+	if volumeName != currentID || model.inspection.Name == "" {
+		// SetCurrentID will save scroll position for previous ID
+		model.detailsPanel.SetCurrentID(volumeName, model.getViewport())
+
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
 			volumeInfo, err := state.GetClient().InspectVolume(stdcontext.Background(), volumeName)
@@ -481,28 +477,6 @@ func (model Model) updateDetailContent() tea.Cmd {
 	}
 
 	return nil
-}
-
-// saveScrollPosition saves the current viewport scroll position for the current volume
-func (model Model) saveScrollPosition() {
-	if model.currentVolumeName != "" {
-		if vp := model.getViewport(); vp != nil {
-			model.scrollPositions[model.currentVolumeName] = vp.YOffset()
-		}
-	}
-}
-
-// restoreScrollPosition restores the viewport scroll position for the current volume
-func (model Model) restoreScrollPosition() {
-	if model.currentVolumeName != "" {
-		if vp := model.getViewport(); vp != nil {
-			if offset, exists := model.scrollPositions[model.currentVolumeName]; exists {
-				vp.SetYOffset(offset)
-			} else {
-				vp.SetYOffset(0) // New volume, start at top
-			}
-		}
-	}
 }
 
 // getViewport returns the viewport from the detail pane if available
@@ -515,15 +489,8 @@ func (model Model) getViewport() *viewport.Model {
 
 // refreshInspectionContent refreshes the detail content with current inspection data
 func (model Model) refreshInspectionContent() {
-	// Determine format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
+	// Use DetailsPanel to get the current format
+	format := model.detailsPanel.GetFormatForDisplay()
 
 	// Build content with current format
 	content := builders.BuildVolumePanel(model.inspection, model.GetContentWidth(), format)
@@ -562,54 +529,6 @@ func (model Model) updateUsedByPanel() {
 	}
 
 	model.SetExtraContent(output.String())
-}
-
-// handleCopyToClipboard copies the current inspection output to clipboard
-func (model Model) handleCopyToClipboard() tea.Cmd {
-	if model.inspection.Name == "" {
-		return nil
-	}
-
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
-
-	data, err := infopanel.MarshalToFormat(model.inspection, format)
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-
-	if err := clipboard.WriteAll(string(data)); err != nil {
-		return notifications.ShowError(err)
-	}
-
-	return notifications.ShowSuccess("Copied to clipboard")
-}
-
-// handleToggleFormat toggles between JSON and YAML format
-func (model Model) handleToggleFormat() tea.Cmd {
-	currentFormat := model.currentFormat
-	if currentFormat == "" {
-		cfg := state.GetConfig()
-		currentFormat = cfg.InspectionFormat
-		if currentFormat == "" {
-			currentFormat = "yaml"
-		}
-	}
-
-	if currentFormat == "json" {
-		model.currentFormat = "yaml"
-	} else {
-		model.currentFormat = "json"
-	}
-
-	model.refreshInspectionContent()
-	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
 func (model Model) View() string {

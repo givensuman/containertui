@@ -10,13 +10,11 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 )
@@ -112,10 +110,8 @@ type Model struct {
 	components.ResourceView[string, NetworkItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	currentNetworkID   string
 	inspection         types.NetworkResource
-	scrollPositions    map[string]int
-	currentFormat      string
+	detailsPanel       components.DetailsPanel
 }
 
 func New() Model {
@@ -160,8 +156,8 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        networkKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		scrollPositions:    make(map[string]int),
-		currentFormat:      "",
+		inspection:         types.NetworkResource{},
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -191,7 +187,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 2. Handle Messages
 	switch msg := msg.(type) {
 	case MsgNetworkInspection:
-		if msg.ID == model.currentNetworkID && msg.Err == nil {
+		if msg.ID == model.detailsPanel.GetCurrentID() && msg.Err == nil {
 			model.inspection = msg.Network
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
@@ -200,96 +196,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
-	}
-
-	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
-	if model.IsOverlayVisible() {
-		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
-			if confirmMsg.Action.Type == "DeleteNetwork" {
-				networkID, ok := confirmMsg.Action.Payload.(string)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteNetwork"))
-				}
-				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
-				if err == nil {
-					// Close the overlay and refresh list
-					model.CloseOverlay()
-					return model, tea.Batch(
-						notifications.ShowSuccess(fmt.Sprintf("Network removed: %s", networkID[:12])),
-						model.Refresh(),
-					)
-				} else {
-					// Show error notification
-					model.CloseOverlay()
-					return model, notifications.ShowError(err)
-				}
-			} else if confirmMsg.Action.Type == "ForceDeleteNetwork" {
-				networkID, ok := confirmMsg.Action.Payload.(string)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteNetwork"))
-				}
-				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
-				model.CloseOverlay()
-				if err != nil {
-					return model, notifications.ShowError(fmt.Errorf("failed to force delete network: %w", err))
-				}
-				return model, tea.Batch(
-					notifications.ShowSuccess(fmt.Sprintf("Force deleted network: %s", networkID[:12])),
-					model.Refresh(),
-				)
-			} else if confirmMsg.Action.Type == "CreateNetworkAction" {
-				// Extract form values
-				payload, ok := confirmMsg.Action.Payload.(map[string]any)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
-				}
-				formValues, ok := payload["values"].(map[string]string)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
-				}
-
-				name := formValues["0"]    // First field
-				driver := formValues["1"]  // Second field
-				subnet := formValues["2"]  // Third field
-				gateway := formValues["3"] // Fourth field
-				ipv6 := formValues["4"]    // Fifth field
-				labels := formValues["5"]  // Sixth field
-
-				if name == "" {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("network name is required"))
-				}
-
-				// Parse IPv6 boolean
-				enableIPv6 := (strings.ToLower(ipv6) == "yes" || strings.ToLower(ipv6) == "true")
-
-				// Parse labels if provided
-				var labelsMap map[string]string
-				if labels != "" {
-					labelsMap = make(map[string]string)
-					pairs := strings.Split(labels, ",")
-					for _, pair := range pairs {
-						kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
-						if len(kv) == 2 {
-							labelsMap[kv[0]] = kv[1]
-						}
-					}
-				}
-
-				model.CloseOverlay()
-				return model, model.performCreateNetwork(name, driver, subnet, gateway, enableIPv6, labelsMap)
-			}
-			model.CloseOverlay()
-			return model, nil
-		}
-
-		// Let ResourceView handle forwarding to overlay
-		return model, tea.Batch(cmds...)
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
+		return model, nil
 	}
 
 	// 3. Main View Logic
@@ -337,15 +245,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
 			if model.IsDetailFocused() {
-				switch {
-				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-					cmd := model.handleToggleFormat()
+				if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
+					newFormat, cmd := model.detailsPanel.HandleToggleFormat()
+					_ = newFormat // format is tracked internally
+					model.refreshInspectionContent()
 					cmds = append(cmds, cmd)
-				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-					cmd := model.handleCopyToClipboard()
-					if cmd != nil {
-						cmds = append(cmds, cmd)
-					}
+				}
+				if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
+					cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
+					cmds = append(cmds, cmd)
 				}
 			}
 		}
@@ -448,14 +356,13 @@ func (model Model) updateDetailContent() tea.Cmd {
 	}
 
 	networkID := selectedItem.Network.ID
-	// If we've switched to a different network, OR we don't have inspection data yet, fetch it
-	if networkID != model.currentNetworkID || model.inspection.ID == "" {
-		// Save scroll position of previous network
-		if model.currentNetworkID != "" && model.currentNetworkID != networkID {
-			model.saveScrollPosition()
-		}
+	currentID := model.detailsPanel.GetCurrentID()
 
-		model.currentNetworkID = networkID
+	// If we've switched to a different network, OR we don't have inspection data yet, fetch it
+	if networkID != currentID || model.inspection.ID == "" {
+		// SetCurrentID will save scroll position for previous ID
+		model.detailsPanel.SetCurrentID(networkID, model.getViewport())
+
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
 			networkInfo, err := state.GetClient().InspectNetwork(stdcontext.Background(), networkID)
@@ -464,28 +371,6 @@ func (model Model) updateDetailContent() tea.Cmd {
 	}
 
 	return nil
-}
-
-// saveScrollPosition saves the current viewport scroll position for the current network
-func (model Model) saveScrollPosition() {
-	if model.currentNetworkID != "" {
-		if vp := model.getViewport(); vp != nil {
-			model.scrollPositions[model.currentNetworkID] = vp.YOffset()
-		}
-	}
-}
-
-// restoreScrollPosition restores the viewport scroll position for the current network
-func (model Model) restoreScrollPosition() {
-	if model.currentNetworkID != "" {
-		if vp := model.getViewport(); vp != nil {
-			if offset, exists := model.scrollPositions[model.currentNetworkID]; exists {
-				vp.SetYOffset(offset)
-			} else {
-				vp.SetYOffset(0) // New network, start at top
-			}
-		}
-	}
 }
 
 // getViewport returns the viewport from the detail pane if available
@@ -498,15 +383,8 @@ func (model Model) getViewport() *viewport.Model {
 
 // refreshInspectionContent refreshes the detail content with current inspection data
 func (model Model) refreshInspectionContent() {
-	// Determine format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
+	// Use DetailsPanel to get the current format
+	format := model.detailsPanel.GetFormatForDisplay()
 
 	// Build content with current format
 	content := builders.BuildNetworkPanel(model.inspection, model.GetContentWidth(), format)
@@ -545,54 +423,6 @@ func (model Model) updateUsedByPanel() {
 	}
 
 	model.SetExtraContent(output.String())
-}
-
-// handleCopyToClipboard copies the current inspection output to clipboard
-func (model Model) handleCopyToClipboard() tea.Cmd {
-	if model.inspection.ID == "" {
-		return nil
-	}
-
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
-
-	data, err := infopanel.MarshalToFormat(model.inspection, format)
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-
-	if err := clipboard.WriteAll(string(data)); err != nil {
-		return notifications.ShowError(err)
-	}
-
-	return notifications.ShowSuccess("Copied to clipboard")
-}
-
-// handleToggleFormat toggles between JSON and YAML format
-func (model Model) handleToggleFormat() tea.Cmd {
-	currentFormat := model.currentFormat
-	if currentFormat == "" {
-		cfg := state.GetConfig()
-		currentFormat = cfg.InspectionFormat
-		if currentFormat == "" {
-			currentFormat = "yaml"
-		}
-	}
-
-	if currentFormat == "json" {
-		model.currentFormat = "yaml"
-	} else {
-		model.currentFormat = "json"
-	}
-
-	model.refreshInspectionContent()
-	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
 func (model Model) ShortHelp() []key.Binding {

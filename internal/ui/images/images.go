@@ -11,14 +11,12 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 )
@@ -272,10 +270,8 @@ type Model struct {
 	components.ResourceView[string, ImageItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	currentImageID     string
 	inspection         types.ImageInspect
-	scrollPositions    map[string]int
-	currentFormat      string
+	detailsPanel       components.DetailsPanel
 }
 
 func New() Model {
@@ -320,8 +316,8 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        imageKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		scrollPositions:    make(map[string]int),
-		currentFormat:      "",
+		inspection:         types.ImageInspect{},
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -355,7 +351,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 2. Handle Messages
 	switch msg := msg.(type) {
 	case MsgImageInspection:
-		if msg.ID == model.currentImageID && msg.Err == nil {
+		if msg.ID == model.detailsPanel.GetCurrentID() && msg.Err == nil {
 			model.inspection = msg.Image
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
@@ -364,7 +360,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
+		return model, nil
 
 	case MsgPullComplete:
 		if msg.Err != nil {
@@ -714,15 +711,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case tea.KeyPressMsg:
 			// Only handle these actions when detail pane is focused (not extra)
 			if model.IsDetailFocused() {
-				switch {
-				case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-					cmd := model.handleToggleFormat()
+				if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
+					newFormat, cmd := model.detailsPanel.HandleToggleFormat()
+					_ = newFormat // format is tracked internally
+					model.refreshInspectionContent()
 					cmds = append(cmds, cmd)
-				case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-					cmd := model.handleCopyToClipboard()
-					if cmd != nil {
-						cmds = append(cmds, cmd)
-					}
+				}
+				if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
+					cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
+					cmds = append(cmds, cmd)
 				}
 			}
 		}
@@ -851,14 +848,13 @@ func (model *Model) updateDetailContent() tea.Cmd {
 	}
 
 	imageID := selectedItem.Image.ID
-	// If we've switched to a different image, OR we don't have inspection data yet, fetch it
-	if imageID != model.currentImageID || model.inspection.ID == "" {
-		// Save scroll position of previous image
-		if model.currentImageID != "" && model.currentImageID != imageID {
-			model.saveScrollPosition()
-		}
+	currentID := model.detailsPanel.GetCurrentID()
 
-		model.currentImageID = imageID
+	// If we've switched to a different image, OR we don't have inspection data yet, fetch it
+	if imageID != currentID || model.inspection.ID == "" {
+		// SetCurrentID will save scroll position for previous ID
+		model.detailsPanel.SetCurrentID(imageID, model.getViewport())
+
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
 			imageInfo, err := state.GetClient().InspectImage(stdcontext.Background(), imageID)
@@ -867,28 +863,6 @@ func (model *Model) updateDetailContent() tea.Cmd {
 	}
 
 	return nil
-}
-
-// saveScrollPosition saves the current viewport scroll position for the current image
-func (model *Model) saveScrollPosition() {
-	if model.currentImageID != "" {
-		if vp := model.getViewport(); vp != nil {
-			model.scrollPositions[model.currentImageID] = vp.YOffset()
-		}
-	}
-}
-
-// restoreScrollPosition restores the viewport scroll position for the current image
-func (model *Model) restoreScrollPosition() {
-	if model.currentImageID != "" {
-		if vp := model.getViewport(); vp != nil {
-			if offset, exists := model.scrollPositions[model.currentImageID]; exists {
-				vp.SetYOffset(offset)
-			} else {
-				vp.SetYOffset(0) // New image, start at top
-			}
-		}
-	}
 }
 
 // getViewport returns the viewport from the detail pane if available
@@ -901,15 +875,8 @@ func (model *Model) getViewport() *viewport.Model {
 
 // refreshInspectionContent refreshes the detail content with current inspection data
 func (model *Model) refreshInspectionContent() {
-	// Determine format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
+	// Use DetailsPanel to get the current format
+	format := model.detailsPanel.GetFormatForDisplay()
 
 	// Build content with current format
 	content := builders.BuildImagePanel(model.inspection, model.GetContentWidth(), format)
@@ -948,61 +915,6 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	model.SetExtraContent(output.String())
-}
-
-// handleCopyToClipboard copies the current inspection output to clipboard
-func (model *Model) handleCopyToClipboard() tea.Cmd {
-	if model.inspection.ID == "" {
-		return nil
-	}
-
-	// Determine which format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
-
-	// Marshal the data without syntax highlighting
-	data, err := infopanel.MarshalToFormat(model.inspection, format)
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-
-	// Copy to clipboard
-	if err := clipboard.WriteAll(string(data)); err != nil {
-		return notifications.ShowError(err)
-	}
-
-	return notifications.ShowSuccess("Copied to clipboard")
-}
-
-// handleToggleFormat toggles between JSON and YAML format
-func (model *Model) handleToggleFormat() tea.Cmd {
-	// Determine current effective format
-	currentFormat := model.currentFormat
-	if currentFormat == "" {
-		cfg := state.GetConfig()
-		currentFormat = cfg.InspectionFormat
-		if currentFormat == "" {
-			currentFormat = "yaml"
-		}
-	}
-
-	// Toggle to the opposite format
-	if currentFormat == "json" {
-		model.currentFormat = "yaml"
-	} else {
-		model.currentFormat = "json"
-	}
-
-	// Refresh content with new format
-	model.refreshInspectionContent()
-
-	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
 func (model Model) ShortHelp() []key.Binding {

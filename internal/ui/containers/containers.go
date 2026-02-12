@@ -11,12 +11,10 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"github.com/atotto/clipboard"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 )
@@ -155,15 +153,9 @@ type Model struct {
 	components.ResourceView[string, ContainerItem]
 	keybindings *keybindings
 
-	currentContainerID string
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
-
-	// Track scroll position per container ID
-	scrollPositions map[string]int
-
-	// Track current output format (can toggle with 'J')
-	currentFormat string
+	detailsPanel       components.DetailsPanel
 
 	// Track whether to show all containers or just running ones
 	showAllContainers bool
@@ -221,8 +213,8 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		scrollPositions:    make(map[string]int),
-		currentFormat:      "", // Empty means use config default
+		inspection:         types.ContainerJSON{},
+		detailsPanel:       components.NewDetailsPanel(),
 		showAllContainers:  true,
 	}
 
@@ -287,7 +279,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	case MsgContainerInspection:
-		if msg.ID == model.currentContainerID && msg.Err == nil {
+		if msg.ID == model.detailsPanel.GetCurrentID() && msg.Err == nil {
 			model.inspection = msg.Container
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
@@ -296,7 +288,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
+		return model, nil
 	}
 
 	if model.IsOverlayVisible() {
@@ -413,15 +406,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			switch {
-			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
-				cmd := model.handleToggleFormat()
+			if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
+				newFormat, cmd := model.detailsPanel.HandleToggleFormat()
+				_ = newFormat // format is tracked internally
+				model.refreshInspectionContent()
 				cmds = append(cmds, cmd)
-			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
-				cmd := model.handleCopyToClipboard()
-				if cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+			}
+			if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
+				cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
+				cmds = append(cmds, cmd)
 			}
 		}
 	}
@@ -429,11 +422,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 6. Update Detail Content if selection changes
 	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
-		if selectedItem.ID != model.currentContainerID {
-			// Save scroll position of previous container
-			model.saveScrollPosition()
-
-			model.currentContainerID = selectedItem.ID
+		if selectedItem.ID != model.detailsPanel.GetCurrentID() {
+			// SetCurrentID will save scroll position for previous ID
+			model.detailsPanel.SetCurrentID(selectedItem.ID, model.getViewport())
 
 			// Capture ID for closure
 			id := selectedItem.ID
@@ -478,106 +469,17 @@ func (model *Model) getViewport() *viewport.Model {
 	return nil
 }
 
-// saveScrollPosition saves the current scroll position for the current container
-func (model *Model) saveScrollPosition() {
-	if model.currentContainerID != "" {
-		if vp := model.getViewport(); vp != nil {
-			model.scrollPositions[model.currentContainerID] = vp.YOffset()
-		}
-	}
-}
-
-// restoreScrollPosition restores the scroll position for the current container
-func (model *Model) restoreScrollPosition() {
-	if model.currentContainerID != "" {
-		if vp := model.getViewport(); vp != nil {
-			if pos, exists := model.scrollPositions[model.currentContainerID]; exists {
-				vp.SetYOffset(pos)
-			} else {
-				vp.SetYOffset(0) // Reset to top for new containers
-			}
-		}
-	}
-}
-
 // refreshInspectionContent regenerates and sets the inspection content
 func (model *Model) refreshInspectionContent() {
 	if model.inspection.ID == "" {
 		return
 	}
 
-	// Determine format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
+	// Use DetailsPanel to get the current format
+	format := model.detailsPanel.GetFormatForDisplay()
 
 	content := builders.BuildContainerPanel(model.inspection, model.GetContentWidth(), false, format)
 	model.SetContent(content)
-
-	// Restore scroll position after content is set
-	// Need to do this on next frame after viewport processes the content
-	model.restoreScrollPosition()
-}
-
-// handleCopyToClipboard copies the current inspection output to clipboard
-func (model *Model) handleCopyToClipboard() tea.Cmd {
-	if model.inspection.ID == "" {
-		return nil
-	}
-
-	// Determine which format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
-
-	// Marshal the data without syntax highlighting
-	data, err := infopanel.MarshalToFormat(model.inspection, format)
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-
-	// Copy to clipboard
-	err = clipboard.WriteAll(data)
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-
-	return notifications.ShowSuccess("Copied to clipboard")
-}
-
-// handleToggleFormat toggles between JSON and YAML format
-func (model *Model) handleToggleFormat() tea.Cmd {
-	// Determine current effective format
-	currentFormat := model.currentFormat
-	if currentFormat == "" {
-		cfg := state.GetConfig()
-		currentFormat = cfg.InspectionFormat
-		if currentFormat == "" {
-			currentFormat = "yaml"
-		}
-	}
-
-	// Toggle to the opposite format
-	if currentFormat == "json" {
-		model.currentFormat = "yaml"
-	} else {
-		model.currentFormat = "json"
-	}
-
-	// Refresh content with new format
-	model.refreshInspectionContent()
-
-	return notifications.ShowSuccess("Switched to " + model.currentFormat)
 }
 
 func (model Model) FullHelp() [][]key.Binding {
