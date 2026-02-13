@@ -8,12 +8,10 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 )
 
@@ -69,8 +67,8 @@ type Model struct {
 	components.ResourceView[string, ServiceItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
+	detailsPanel       components.DetailsPanel
 	currentServiceName string
-	currentFormat      string
 }
 
 func New() Model {
@@ -106,7 +104,7 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        serviceKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		currentFormat:      "",
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -204,15 +202,8 @@ func (model *Model) updateDetailContent() tea.Cmd {
 }
 
 func (model *Model) refreshServiceDetails(service client.Service) {
-	// Determine format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
+	// Get format from detailsPanel
+	format := model.detailsPanel.GetFormatForDisplay()
 
 	// Use the panel builder with selected format
 	panelContent := builders.BuildServicePanel(service, model.GetContentWidth(), false, format)
@@ -238,48 +229,13 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 		return nil
 	}
 
-	// Determine which format to use
-	format := infopanel.GetOutputFormat()
-	if model.currentFormat != "" {
-		if model.currentFormat == "json" {
-			format = infopanel.FormatJSON
-		} else {
-			format = infopanel.FormatYAML
-		}
-	}
-
-	// Marshal the data without syntax highlighting
-	data, err := infopanel.MarshalToFormat(selectedItem.Service, format)
-	if err != nil {
-		return nil
-	}
-
-	// Copy to clipboard
-	if err := clipboard.WriteAll(string(data)); err != nil {
-		return nil
-	}
-
-	return nil
+	return model.detailsPanel.HandleCopyToClipboard(selectedItem.Service)
 }
 
 // handleToggleFormat toggles between JSON and YAML format
 func (model *Model) handleToggleFormat() tea.Cmd {
-	// Determine current effective format
-	currentFormat := model.currentFormat
-	if currentFormat == "" {
-		cfg := state.GetConfig()
-		currentFormat = cfg.InspectionFormat
-		if currentFormat == "" {
-			currentFormat = "yaml"
-		}
-	}
-
-	// Toggle to the opposite format
-	if currentFormat == "json" {
-		model.currentFormat = "yaml"
-	} else {
-		model.currentFormat = "json"
-	}
+	// Use detailsPanel to handle format toggle
+	_, cmd := model.detailsPanel.HandleToggleFormat()
 
 	// Refresh content with new format
 	selectedItem := model.GetSelectedItem()
@@ -287,7 +243,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 		model.refreshServiceDetails(selectedItem.Service)
 	}
 
-	return nil
+	return cmd
 }
 
 func (model Model) View() string {

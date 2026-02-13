@@ -100,9 +100,6 @@ type Model struct {
 	isPulling      bool
 	progressChan   <-chan string
 	currentPulling string // Name of image currently being pulled
-
-	WindowWidth  int
-	WindowHeight int
 }
 
 // New creates a new Browse model.

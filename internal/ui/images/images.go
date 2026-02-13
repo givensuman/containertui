@@ -19,6 +19,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
 // MsgImageInspection contains the inspection data for an image.
@@ -963,20 +964,6 @@ func (model Model) FullHelp() [][]key.Binding {
 	return model.ResourceView.FullHelp()
 }
 
-// humanizeBytes converts bytes to human-readable format
-func humanizeBytes(bytes uint64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := uint64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
 // handlePruneImages prunes unused images
 func (model *Model) handlePruneImages() tea.Cmd {
 	return func() tea.Msg {
@@ -985,7 +972,7 @@ func (model *Model) handlePruneImages() tea.Cmd {
 		if err != nil {
 			return notifications.ShowError(err)
 		}
-		msg := fmt.Sprintf("Pruned unused images, freed %s", humanizeBytes(spaceReclaimed))
+		msg := fmt.Sprintf("Pruned unused images, freed %s", utils.HumanizeBytes(spaceReclaimed))
 		return tea.Batch(
 			notifications.ShowSuccess(msg),
 			model.Refresh(),

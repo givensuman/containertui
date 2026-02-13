@@ -17,6 +17,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
 // MsgContainerInspection contains the inspection data for a container.
@@ -78,7 +79,6 @@ type keybindings struct {
 	execShell            key.Binding
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
-	toggleShowAll        key.Binding
 	renameContainer      key.Binding
 	switchTab            key.Binding
 }
@@ -133,10 +133,6 @@ func newKeybindings() *keybindings {
 			key.WithKeys("ctrl+a"),
 			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
-		toggleShowAll: key.NewBinding(
-			key.WithKeys("a"),
-			key.WithHelp("a", "toggle all/running"),
-		),
 		renameContainer: key.NewBinding(
 			key.WithKeys("f2"),
 			key.WithHelp("F2", "rename container"),
@@ -156,12 +152,6 @@ type Model struct {
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
 	detailsPanel       components.DetailsPanel
-
-	// Track whether to show all containers or just running ones
-	showAllContainers bool
-
-	WindowWidth  int
-	WindowHeight int
 }
 
 // Ensure Model satisfies base.Component but we cannot directly assign (*Model)(nil) if Model has embedded fields that complicate it?
@@ -215,12 +205,10 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 		inspection:         types.ContainerJSON{},
 		detailsPanel:       components.NewDetailsPanel(),
-		showAllContainers:  true,
 	}
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
-		containerKeybindings.toggleShowAll,
 		containerKeybindings.pauseContainer,
 		containerKeybindings.unpauseContainer,
 		containerKeybindings.startContainer,
@@ -240,8 +228,6 @@ func New() Model {
 }
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	model.WindowWidth = msg.Width
-	model.WindowHeight = msg.Height
 	model.ResourceView.UpdateWindowDimensions(msg)
 }
 
@@ -273,7 +259,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Refresh the containers list via ResourceView
 		cmds = append(cmds, model.Refresh())
 
-	case MessageContainerOperationResult:
+	case MsgContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -362,8 +348,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			switch {
-			case key.Matches(msg, model.keybindings.toggleShowAll):
-				cmds = append(cmds, model.handleToggleShowAll())
 			case key.Matches(msg, model.keybindings.pauseContainer):
 				cmds = append(cmds, model.handlePauseContainers())
 			case key.Matches(msg, model.keybindings.unpauseContainer):
@@ -834,7 +818,7 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleContainerOperationResult(msg MessageContainerOperationResult) tea.Cmd {
+func (model *Model) handleContainerOperationResult(msg MsgContainerOperationResult) tea.Cmd {
 	// Stop spinner for this container
 	model.setWorkingState([]string{msg.ID}, false)
 
@@ -896,20 +880,6 @@ func (model *Model) handleContainerOperationResult(msg MessageContainerOperation
 	return notifications.ShowSuccess(successMsg)
 }
 
-// humanizeBytes converts bytes to human-readable format
-func humanizeBytes(bytes uint64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := uint64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
 // handlePruneContainers prunes all stopped containers
 func (model *Model) handlePruneContainers() tea.Cmd {
 	return func() tea.Msg {
@@ -918,7 +888,7 @@ func (model *Model) handlePruneContainers() tea.Cmd {
 		if err != nil {
 			return notifications.ShowError(err)
 		}
-		msg := fmt.Sprintf("Pruned stopped containers, freed %s", humanizeBytes(spaceReclaimed))
+		msg := fmt.Sprintf("Pruned stopped containers, freed %s", utils.HumanizeBytes(spaceReclaimed))
 
 		// Emit resource changed message for cross-tab updates
 		return tea.Batch(
@@ -936,21 +906,6 @@ func (model *Model) handlePruneContainers() tea.Cmd {
 			},
 		)
 	}
-}
-
-// handleToggleShowAll toggles between showing all containers and only running ones
-// Note: The actual filtering will take effect on next auto-refresh (every 3 seconds via tickCmd)
-// This is a limitation of the current architecture where fetchContainers closure
-// is defined before model exists and doesn't have access to model.showAllContainers
-func (model *Model) handleToggleShowAll() tea.Cmd {
-	model.showAllContainers = !model.showAllContainers
-	mode := "all"
-	if !model.showAllContainers {
-		mode = "running only"
-	}
-
-	msg := fmt.Sprintf("Showing %s containers (will update on next refresh)", mode)
-	return notifications.ShowInfo(msg)
 }
 
 // handleRenameContainer shows a dialog to rename the selected container
