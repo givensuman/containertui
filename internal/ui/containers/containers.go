@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/docker/docker/api/types"
@@ -239,6 +241,62 @@ func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.ResourceView.UpdateWindowDimensions(msg)
 }
 
+// refreshWithState refreshes the container list while preserving isWorking and isSelected states
+func (model *Model) refreshWithState() tea.Cmd {
+	return func() tea.Msg {
+		// Fetch fresh container data from Docker
+		containers, err := state.GetClient().GetContainers(stdcontext.Background())
+		if err != nil {
+			return nil
+		}
+
+		// Get current items to preserve state
+		currentItems := model.GetItems()
+		stateMap := make(map[string]struct {
+			isWorking  bool
+			isSelected bool
+			spinner    spinner.Model
+		})
+		for _, item := range currentItems {
+			stateMap[item.ID] = struct {
+				isWorking  bool
+				isSelected bool
+				spinner    spinner.Model
+			}{
+				isWorking:  item.isWorking,
+				isSelected: item.isSelected,
+				spinner:    item.spinner,
+			}
+		}
+
+		// Create new items, preserving state where applicable
+		items := make([]ContainerItem, 0, len(containers))
+		for _, container := range containers {
+			item := ContainerItem{
+				Container:  container,
+				isSelected: false,
+				isWorking:  false,
+				spinner:    newSpinner(),
+			}
+			// Restore state if this container existed before
+			if state, exists := stateMap[container.ID]; exists {
+				item.isSelected = state.isSelected
+				item.isWorking = state.isWorking
+				item.spinner = state.spinner
+			}
+			items = append(items, item)
+		}
+
+		// Convert to list items
+		listItems := make([]list.Item, len(items))
+		for i, item := range items {
+			listItems[i] = item
+		}
+
+		return model.SplitView.List.SetItems(listItems)
+	}
+}
+
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second*3, func(t time.Time) tea.Msg {
 		return MsgRefreshContainers(t)
@@ -264,8 +322,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case MsgRefreshContainers:
 		// Schedule next refresh
 		cmds = append(cmds, tickCmd())
-		// Refresh the containers list via ResourceView
-		cmds = append(cmds, model.Refresh())
+		// Refresh the containers list via custom refresh that preserves state
+		cmds = append(cmds, model.refreshWithState())
 
 	case MsgContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {

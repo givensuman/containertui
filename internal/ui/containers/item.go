@@ -2,6 +2,7 @@ package containers
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
@@ -56,6 +57,26 @@ func (containerItem ContainerItem) getTitleOrnament() string {
 	return ""
 }
 
+// getStatusColor returns the appropriate color for a container based on its state
+func getStatusColor(state string) color.Color {
+	switch state {
+	case "running":
+		return colors.Success()
+	case "paused":
+		return colors.Warning()
+	case "restarting":
+		return colors.Success()
+	case "removing":
+		return colors.Warning()
+	case "dead":
+		return colors.Error()
+	case "exited":
+		return colors.Text()
+	default:
+		return colors.Text()
+	}
+}
+
 func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
 
@@ -88,7 +109,6 @@ func newSpinner() spinner.Model {
 }
 
 func (containerItem ContainerItem) Title() string {
-	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var statusIcon string
 	if containerItem.isWorking {
 		statusIcon = containerItem.spinner.View()
@@ -96,7 +116,13 @@ func (containerItem ContainerItem) Title() string {
 		statusIcon = containerItem.getIsSelectedIcon()
 	}
 	titleOrnament := containerItem.getTitleOrnament()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, containerItem.Name)
+
+	// Apply status-based coloring
+	statusColor := getStatusColor(containerItem.State)
+	nameStyle := lipgloss.NewStyle().Foreground(statusColor)
+	styledName := nameStyle.Render(containerItem.Name)
+
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, styledName)
 }
 
 func (containerItem ContainerItem) Description() string {
@@ -104,10 +130,16 @@ func (containerItem ContainerItem) Description() string {
 	if len(containerItem.ID) > 12 {
 		shortID = containerItem.ID[:12]
 	}
-	return "   " + shortID
+
+	// Apply status-based coloring to description as well
+	statusColor := getStatusColor(containerItem.State)
+	descStyle := lipgloss.NewStyle().Foreground(statusColor)
+	styledID := descStyle.Render(shortID)
+
+	return "   " + styledID
 }
 
 func (containerItem ContainerItem) FilterValue() string {
-	// Return the same value as Title() since we removed styling
-	return containerItem.Title()
+	// Return unstyled text for filtering to work correctly
+	return containerItem.Name
 }
