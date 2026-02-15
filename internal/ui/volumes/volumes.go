@@ -204,14 +204,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
-		successMsg := fmt.Sprintf("Pruned unused volumes, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		successMsg := fmt.Sprintf("Pruned unused volumes, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),

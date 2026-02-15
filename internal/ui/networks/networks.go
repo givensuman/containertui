@@ -212,7 +212,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
 		model.CloseOverlay()

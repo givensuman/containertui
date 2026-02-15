@@ -157,12 +157,7 @@ type Model struct {
 
 	inspection         types.ContainerJSON
 	detailsKeybindings detailsKeybindings
-
-	// Track scroll position per container ID
-	scrollPositions map[string]int
-
-	// Track current output format (can toggle with 'J')
-	currentFormat string
+	detailsPanel       components.DetailsPanel
 
 	WindowWidth  int
 	WindowHeight int
@@ -217,8 +212,7 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		scrollPositions:    make(map[string]int),
-		currentFormat:      "", // Empty means use config default
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -288,14 +282,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
-		model.restoreScrollPosition()
+		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
-		successMsg := fmt.Sprintf("Pruned stopped containers, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		successMsg := fmt.Sprintf("Pruned stopped containers, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),

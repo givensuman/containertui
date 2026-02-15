@@ -415,7 +415,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
-		successMsg := fmt.Sprintf("Pruned unused images, freed %s", humanizeBytes(msg.SpaceReclaimed))
+		successMsg := fmt.Sprintf("Pruned unused images, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),
