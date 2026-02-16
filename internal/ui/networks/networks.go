@@ -138,9 +138,20 @@ func New() Model {
 		if err != nil {
 			return nil, err
 		}
+
 		items := make([]NetworkItem, 0, len(networkList))
 		for _, network := range networkList {
-			items = append(items, NetworkItem{Network: network})
+			// Check if this network has any containers
+			containersUsing, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), network.ID)
+			isActive := false
+			if err == nil && len(containersUsing) > 0 {
+				isActive = true
+			}
+
+			items = append(items, NetworkItem{
+				Network:  network,
+				IsActive: isActive,
+			})
 		}
 		return items, nil
 	}

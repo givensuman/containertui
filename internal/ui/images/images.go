@@ -289,9 +289,37 @@ func New() Model {
 		if err != nil {
 			return nil, err
 		}
+
+		// Get all containers to determine which images are in use
+		containers, err := state.GetClient().GetContainers(stdcontext.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		// Build a map of image IDs that are in use
+		inUseImages := make(map[string]bool)
+		for _, container := range containers {
+			// Mark by image name (e.g., "nginx:latest") and ID
+			inUseImages[container.Image] = true
+		}
+
 		items := make([]ImageItem, 0, len(imageList))
 		for _, image := range imageList {
-			items = append(items, ImageItem{Image: image})
+			// Check if this image is in use by checking its ID or any of its tags
+			inUse := inUseImages[image.ID]
+			if !inUse {
+				// Also check if any repo tags match
+				for _, tag := range image.RepoTags {
+					if inUseImages[tag] {
+						inUse = true
+						break
+					}
+				}
+			}
+			items = append(items, ImageItem{
+				Image: image,
+				InUse: inUse,
+			})
 		}
 		return items, nil
 	}

@@ -130,9 +130,20 @@ func New() Model {
 		if err != nil {
 			return nil, err
 		}
+
 		items := make([]VolumeItem, 0, len(volumeList))
 		for _, volume := range volumeList {
-			items = append(items, VolumeItem{Volume: volume})
+			// Check if this volume is mounted by any containers
+			containersUsing, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), volume.Name)
+			isMounted := false
+			if err == nil && len(containersUsing) > 0 {
+				isMounted = true
+			}
+
+			items = append(items, VolumeItem{
+				Volume:    volume,
+				IsMounted: isMounted,
+			})
 		}
 		return items, nil
 	}

@@ -6,11 +6,13 @@ import (
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
 
 type ImageItem struct {
 	Image      client.Image
 	isSelected bool
+	InUse      bool // Whether the image is being used by any containers
 }
 
 var (
@@ -50,10 +52,20 @@ func (imageItem ImageItem) getTitleOrnament() string {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.
-		return " "
+		return " "
 	}
 
 	return ""
+}
+
+// getStatusIcon returns the appropriate icon for an image based on its usage status
+func (imageItem ImageItem) getStatusIcon() string {
+	icons := infopanel.GetIcons()
+
+	if imageItem.InUse {
+		return icons.InUse
+	}
+	return icons.Unused
 }
 
 func (imageItem ImageItem) Title() string {
@@ -67,7 +79,8 @@ func (imageItem ImageItem) Title() string {
 
 	titleOrnament := imageItem.getTitleOrnament()
 	statusIcon := imageItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, repoTag)
+	statusStateIcon := imageItem.getStatusIcon()
+	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, repoTag)
 }
 
 func (imageItem ImageItem) Description() string {

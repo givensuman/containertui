@@ -14,13 +14,25 @@ type IconSet struct {
 	Volume    string
 	Service   string
 
-	// Status indicators
-	Running string
-	Stopped string
-	Paused  string
-	Warning string
-	Error   string
-	Info    string
+	// Container status indicators
+	Running    string
+	Stopped    string
+	Paused     string
+	Restarting string
+	Removing   string
+	Created    string
+	Dead       string
+	Warning    string
+	Error      string
+	Info       string
+
+	// Resource state indicators
+	InUse     string
+	Unused    string
+	Active    string
+	Empty     string
+	Mounted   string
+	Unmounted string
 
 	// Misc
 	Port   string
@@ -46,13 +58,25 @@ var (
 		Volume:    "󰋊",
 		Service:   "",
 
-		// Status indicators
-		Running: "",
-		Stopped: "",
-		Paused:  "",
-		Warning: "",
-		Error:   "",
-		Info:    "",
+		// Container status indicators
+		Running:    "",
+		Stopped:    "",
+		Paused:     "",
+		Restarting: "󰑐",
+		Removing:   "󰩺",
+		Created:    "",
+		Dead:       "",
+		Warning:    "",
+		Error:      "",
+		Info:       "",
+
+		// Resource state indicators
+		InUse:     "󰌹",
+		Unused:    "󰌺",
+		Active:    "󰐾",
+		Empty:     "󰐿",
+		Mounted:   "󰉋",
+		Unmounted: "󰋊",
 
 		// Misc
 		Port:   "",
@@ -77,13 +101,25 @@ var (
 		Volume:    "◇",
 		Service:   "◈",
 
-		// Status indicators
-		Running: "●",
-		Stopped: "○",
-		Paused:  "◐",
-		Warning: "⚠",
-		Error:   "✗",
-		Info:    "ⓘ",
+		// Container status indicators
+		Running:    "●",
+		Stopped:    "○",
+		Paused:     "◐",
+		Restarting: "↻",
+		Removing:   "✗",
+		Created:    "○",
+		Dead:       "✗",
+		Warning:    "⚠",
+		Error:      "✗",
+		Info:       "ⓘ",
+
+		// Resource state indicators
+		InUse:     "◆",
+		Unused:    "◇",
+		Active:    "⬢",
+		Empty:     "⬡",
+		Mounted:   "▣",
+		Unmounted: "▢",
 
 		// Misc
 		Port:   "→",

@@ -6,11 +6,13 @@ import (
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
 
 type VolumeItem struct {
 	Volume     client.Volume
 	isSelected bool
+	IsMounted  bool // Whether the volume is currently mounted by any containers
 }
 
 var (
@@ -50,17 +52,28 @@ func (volumeItem VolumeItem) getTitleOrnament() string {
 	case true: // Don't use nerd fonts.
 		return ""
 	case false: // Use nerd fonts.
-		return " "
+		return " "
 	}
 
 	return ""
+}
+
+// getStatusIcon returns the appropriate icon for a volume based on its mount status
+func (volumeItem VolumeItem) getStatusIcon() string {
+	icons := infopanel.GetIcons()
+
+	if volumeItem.IsMounted {
+		return icons.Mounted
+	}
+	return icons.Unmounted
 }
 
 func (volumeItem VolumeItem) Title() string {
 	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := volumeItem.getTitleOrnament()
 	statusIcon := volumeItem.getIsSelectedIcon()
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, volumeItem.Volume.Name)
+	statusStateIcon := volumeItem.getStatusIcon()
+	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, volumeItem.Volume.Name)
 }
 
 func (volumeItem VolumeItem) Description() string {

@@ -6,11 +6,13 @@ import (
 	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
 
 type NetworkItem struct {
 	Network    client.Network
 	isSelected bool
+	IsActive   bool // Whether the network has any containers connected
 }
 
 var (
@@ -54,6 +56,16 @@ func (networkItem NetworkItem) getTitleOrnament() string {
 	}
 
 	return ""
+}
+
+// getStatusIcon returns the appropriate icon for a network based on its activity status
+func (networkItem NetworkItem) getStatusIcon() string {
+	icons := infopanel.GetIcons()
+
+	if networkItem.IsActive {
+		return icons.Active
+	}
+	return icons.Empty
 }
 
 func (networkItem NetworkItem) Title() string {
