@@ -271,61 +271,39 @@ type helpProvider interface {
 	FullHelp() [][]key.Binding
 }
 
-// overlayNotifications overlays notifications on top of the content without pushing it down
+// overlayNotifications overlays notifications on top of the content using lipgloss layers
 func (model Model) overlayNotifications(content string) string {
 	notificationsContent := model.notificationsModel.ViewString()
 	if notificationsContent == "" {
 		return content
 	}
 
-	// Style notifications with padding
-	notifStyle := lipgloss.NewStyle().
-		PaddingTop(1).
-		PaddingRight(2)
-	styledNotifications := notifStyle.Render(notificationsContent)
-
-	// Manual overlay approach: split content into lines and overlay notifications on top-right
-	contentLines := strings.Split(content, "\n")
-	notifLines := strings.Split(styledNotifications, "\n")
-
-	if len(contentLines) == 0 {
-		return styledNotifications
+	if model.width == 0 || model.height == 0 {
+		return content
 	}
 
-	// Get the width of the content (from first line or window width)
-	contentWidth := lipgloss.Width(contentLines[0])
+	// Create background layer with the full content
+	bgLayer := lipgloss.NewLayer(content).Width(model.width).Height(model.height)
 
-	// Overlay notifications on the first N lines
-	for i := 0; i < len(notifLines) && i < len(contentLines); i++ {
-		lineWidth := lipgloss.Width(contentLines[i])
-		notifLineWidth := lipgloss.Width(notifLines[i])
+	// Create foreground layer with notifications
+	fgLayer := lipgloss.NewLayer(notificationsContent)
 
-		// Calculate position to place notification at top-right
-		// If the line is shorter than needed, pad it
-		if lineWidth < contentWidth {
-			contentLines[i] = contentLines[i] + lipgloss.NewStyle().
-				Width(contentWidth-lineWidth).
-				Render("")
-		}
+	// Position notifications in the top-right corner
+	fgWidth := fgLayer.GetWidth()
+	// Position with some padding from the right edge and top
+	x := model.width - fgWidth - 2
+	y := 1 // Small padding from the top
 
-		// Calculate where to place the notification (right-aligned)
-		overlayStart := contentWidth - notifLineWidth
-		if overlayStart < 0 {
-			overlayStart = 0
-		}
-
-		// Split the content line and insert notification
-		if overlayStart < len(contentLines[i]) {
-			// Get the part before notification and the notification itself
-			before := []rune(contentLines[i])[:overlayStart]
-			contentLines[i] = string(before) + notifLines[i]
-		} else {
-			// Just append if the line is too short
-			contentLines[i] = contentLines[i] + notifLines[i]
-		}
+	if x < 0 {
+		x = 0
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, contentLines...)
+	fgLayer = fgLayer.X(x).Y(y).Z(1)
+
+	// Create canvas with both layers
+	canvas := lipgloss.NewCanvas(bgLayer, fgLayer)
+
+	return canvas.Render()
 }
 
 func (model Model) View() tea.View {

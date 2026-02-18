@@ -20,9 +20,7 @@ Browse tab has "toggle selection of all, no use"
 
 --- AOS ---
 Support podman as a client
-  client interface
 Support as many registries as possible!
-  api interface
 CPU graph for containers tab
 copy gomanagedocker functionality
 Tweak markdown rendering

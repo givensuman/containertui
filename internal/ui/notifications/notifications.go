@@ -2,10 +2,12 @@
 package notifications
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/givensuman/containertui/internal/colors"
 )
 
 type Level int
@@ -183,40 +185,36 @@ func DismissNotification(id int64) tea.Cmd {
 
 var (
 	infoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF")).
-			Background(lipgloss.Color("#5A56E0")). // Purple-ish
+			Foreground(colors.Primary()).
 			Padding(0, 2).
 			MarginBottom(1).
 			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#5A56E0"))
+			BorderForeground(colors.Primary())
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF")).
-			Background(lipgloss.Color("#E05656")). // Red
+			Foreground(colors.Error()).
 			Padding(0, 2).
 			MarginBottom(1).
 			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#E05656"))
+			BorderForeground(colors.Error())
 
 	successStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF")).
-			Background(lipgloss.Color("#56E095")). // Green
+			Foreground(colors.Success()).
 			Padding(0, 2).
 			MarginBottom(1).
 			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#56E095"))
+			BorderForeground(colors.Success())
 
 	progressStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFF")).
-			Background(lipgloss.Color("#E0A856")). // Orange/amber
+			Foreground(colors.Warning()).
 			Padding(0, 2).
 			MarginBottom(1).
 			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#E0A856"))
+			BorderForeground(colors.Warning())
 )
 
 func (m Model) View() tea.View {
@@ -228,7 +226,7 @@ func (m Model) ViewString() string {
 		return ""
 	}
 
-	var content string
+	var parts []string
 	// Stack notifications from bottom up or top down?
 	// Usually top-right means they stack downwards.
 
@@ -245,8 +243,18 @@ func (m Model) ViewString() string {
 			style = progressStyle
 		}
 
-		content = lipgloss.JoinVertical(lipgloss.Left, content, style.Render(n.Message))
+		parts = append(parts, style.Render(n.Message))
 	}
 
-	return content
+	// Join with a blank line between notifications
+	// Add spacing between notifications by inserting empty lines
+	var result []string
+	for i, part := range parts {
+		result = append(result, part)
+		// Add blank line after each notification except the last
+		if i < len(parts)-1 {
+			result = append(result, "") // Empty line for spacing
+		}
+	}
+	return strings.Join(result, "\n")
 }
