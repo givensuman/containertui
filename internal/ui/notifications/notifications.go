@@ -187,32 +187,24 @@ var (
 	infoStyle = lipgloss.NewStyle().
 			Foreground(colors.Primary()).
 			Padding(0, 2).
-			MarginBottom(1).
-			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colors.Primary())
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(colors.Error()).
 			Padding(0, 2).
-			MarginBottom(1).
-			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colors.Error())
 
 	successStyle = lipgloss.NewStyle().
 			Foreground(colors.Success()).
 			Padding(0, 2).
-			MarginBottom(1).
-			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colors.Success())
 
 	progressStyle = lipgloss.NewStyle().
 			Foreground(colors.Warning()).
 			Padding(0, 2).
-			MarginBottom(1).
-			MaxWidth(60).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colors.Warning())
 )
@@ -226,23 +218,37 @@ func (m Model) ViewString() string {
 		return ""
 	}
 
+	// Calculate max width for notifications (roughly 1/3 of screen width, but at least 40, max 80)
+	maxNotifWidth := 60
+	if m.width > 0 {
+		maxNotifWidth = m.width / 3
+		if maxNotifWidth < 40 {
+			maxNotifWidth = 40
+		}
+		if maxNotifWidth > 80 {
+			maxNotifWidth = 80
+		}
+	}
+
 	var parts []string
 	// Stack notifications from bottom up or top down?
 	// Usually top-right means they stack downwards.
 
 	for _, n := range m.notifications {
-		var style lipgloss.Style
+		var baseStyle lipgloss.Style
 		switch n.Level {
 		case Info:
-			style = infoStyle
+			baseStyle = infoStyle
 		case Error:
-			style = errorStyle
+			baseStyle = errorStyle
 		case Success:
-			style = successStyle
+			baseStyle = successStyle
 		case Progress:
-			style = progressStyle
+			baseStyle = progressStyle
 		}
 
+		// Apply the calculated max width to this notification
+		style := baseStyle.Width(maxNotifWidth)
 		parts = append(parts, style.Render(n.Message))
 	}
 
