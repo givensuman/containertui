@@ -206,6 +206,9 @@ func New() Model {
 		},
 	)
 
+	// Disable filtering for containers tab to preserve color rendering
+	resourceView.SplitView.List.SetFilteringEnabled(false)
+
 	// Set the custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)

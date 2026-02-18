@@ -166,6 +166,5 @@ func (containerItem ContainerItem) Description() string {
 }
 
 func (containerItem ContainerItem) FilterValue() string {
-	// Return unstyled text for filtering to work correctly
-	return containerItem.Name
+	return containerItem.ID
 }
