@@ -1,5 +1,4 @@
 When creating a container from an image, the "Used By" field doesn't update
-Container description different color from the rest of the tabs
 
 --- Specific ---
 Services tab keybindings has switch tab, none others do

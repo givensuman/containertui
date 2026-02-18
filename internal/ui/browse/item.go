@@ -104,7 +104,6 @@ func (item BrowseItem) formatCount(count int64) string {
 }
 
 func (item BrowseItem) Title() string {
-	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var statusIcon string
 	if item.isWorking {
 		statusIcon = item.spinner.View()
@@ -113,12 +112,16 @@ func (item BrowseItem) Title() string {
 	}
 	titleOrnament := item.getTitleOrnament()
 
-	// Simple format without padding to avoid filtering artifacts
+	// Format counts
 	stars := item.formatCount(int64(item.Image.StarCount))
 	pulls := item.formatCount(item.Image.PullCount)
 
+	// Apply themed coloring - all images use default text color
+	nameStyle := lipgloss.NewStyle().Foreground(colors.Text())
+	styledName := nameStyle.Render(item.Image.RepoName)
+
 	return fmt.Sprintf("%s %s %s ★ %s ↓ %s",
-		statusIcon, titleOrnament, item.Image.RepoName, stars, pulls)
+		statusIcon, titleOrnament, styledName, stars, pulls)
 }
 
 func (item BrowseItem) Description() string {
@@ -129,6 +132,5 @@ func (item BrowseItem) Description() string {
 }
 
 func (item BrowseItem) FilterValue() string {
-	// Return the same value as Title() since we removed styling
-	return item.Title()
+	return item.Image.RepoName
 }

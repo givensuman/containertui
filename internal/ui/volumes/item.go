@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
@@ -69,11 +71,19 @@ func (volumeItem VolumeItem) getStatusIcon() string {
 }
 
 func (volumeItem VolumeItem) Title() string {
-	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := volumeItem.getTitleOrnament()
 	statusIcon := volumeItem.getIsSelectedIcon()
 	statusStateIcon := volumeItem.getStatusIcon()
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, volumeItem.Volume.Name)
+
+	// Apply themed coloring based on mount status
+	var nameColor = colors.Text()
+	if volumeItem.IsMounted {
+		nameColor = colors.Success()
+	}
+	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
+	styledName := nameStyle.Render(volumeItem.Volume.Name)
+
+	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, styledName)
 }
 
 func (volumeItem VolumeItem) Description() string {
@@ -81,6 +91,5 @@ func (volumeItem VolumeItem) Description() string {
 }
 
 func (volumeItem VolumeItem) FilterValue() string {
-	// Return the same value as Title() since we removed styling
-	return volumeItem.Title()
+	return volumeItem.Volume.Name
 }

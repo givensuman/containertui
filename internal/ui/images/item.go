@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
@@ -69,7 +71,6 @@ func (imageItem ImageItem) getStatusIcon() string {
 }
 
 func (imageItem ImageItem) Title() string {
-	// Return unstyled text to avoid ANSI escape code issues with filtering
 	var repoTag string
 	if len(imageItem.Image.RepoTags) > 0 {
 		repoTag = imageItem.Image.RepoTags[0]
@@ -80,7 +81,16 @@ func (imageItem ImageItem) Title() string {
 	titleOrnament := imageItem.getTitleOrnament()
 	statusIcon := imageItem.getIsSelectedIcon()
 	statusStateIcon := imageItem.getStatusIcon()
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, repoTag)
+
+	// Apply themed coloring based on usage status
+	var nameColor = colors.Text()
+	if imageItem.InUse {
+		nameColor = colors.Success()
+	}
+	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
+	styledRepoTag := nameStyle.Render(repoTag)
+
+	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, styledRepoTag)
 }
 
 func (imageItem ImageItem) Description() string {
@@ -92,6 +102,8 @@ func (imageItem ImageItem) Description() string {
 }
 
 func (imageItem ImageItem) FilterValue() string {
-	// Return the same value as Title() since we removed styling
-	return imageItem.Title()
+	if len(imageItem.Image.RepoTags) > 0 {
+		return imageItem.Image.RepoTags[0]
+	}
+	return imageItem.Image.ID
 }

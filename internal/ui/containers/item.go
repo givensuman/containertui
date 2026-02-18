@@ -157,12 +157,7 @@ func (containerItem ContainerItem) Description() string {
 		shortID = containerItem.ID[:12]
 	}
 
-	// Apply status-based coloring to description as well
-	statusColor := getStatusColor(containerItem.State)
-	descStyle := lipgloss.NewStyle().Foreground(statusColor)
-	styledID := descStyle.Render(shortID)
-
-	return "   " + styledID
+	return "   " + shortID
 }
 
 func (containerItem ContainerItem) FilterValue() string {

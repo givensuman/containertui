@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
@@ -69,7 +71,6 @@ func (networkItem NetworkItem) getStatusIcon() string {
 }
 
 func (networkItem NetworkItem) Title() string {
-	// Return unstyled text to avoid ANSI escape code issues with filtering
 	titleOrnament := networkItem.getTitleOrnament()
 	statusIcon := networkItem.getIsSelectedIcon()
 	name := networkItem.Network.Name
@@ -79,7 +80,15 @@ func (networkItem NetworkItem) Title() string {
 		name = "🔒 " + name
 	}
 
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, name)
+	// Apply themed coloring based on activity status
+	var nameColor = colors.Text()
+	if networkItem.IsActive {
+		nameColor = colors.Success()
+	}
+	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
+	styledName := nameStyle.Render(name)
+
+	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, styledName)
 }
 
 func (networkItem NetworkItem) Description() string {
@@ -91,6 +100,5 @@ func (networkItem NetworkItem) Description() string {
 }
 
 func (networkItem NetworkItem) FilterValue() string {
-	// Return the same value as Title() since we removed styling
-	return networkItem.Title()
+	return networkItem.Network.Name
 }
