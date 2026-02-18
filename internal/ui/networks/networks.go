@@ -487,7 +487,7 @@ func (model *Model) handleRemove(force bool) tea.Cmd {
 	return nil
 }
 
-func (model Model) updateDetailContent() tea.Cmd {
+func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
@@ -522,7 +522,7 @@ func (model Model) getViewport() *viewport.Model {
 }
 
 // refreshInspectionContent refreshes the detail content with current inspection data
-func (model Model) refreshInspectionContent() {
+func (model *Model) refreshInspectionContent() {
 	// Use DetailsPanel to get the current format
 	format := model.detailsPanel.GetFormatForDisplay()
 
@@ -535,7 +535,7 @@ func (model Model) refreshInspectionContent() {
 }
 
 // updateUsedByPanel updates the extra pane with containers using this network
-func (model Model) updateUsedByPanel() {
+func (model *Model) updateUsedByPanel() {
 	if model.inspection.ID == "" {
 		model.SetExtraContent("")
 		return
