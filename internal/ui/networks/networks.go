@@ -139,14 +139,16 @@ func New() Model {
 			return nil, err
 		}
 
+		// Get network usage map (single API call for all networks)
+		activeNetworks, err := state.GetClient().GetAllNetworkUsage(stdcontext.Background())
+		if err != nil {
+			return nil, err
+		}
+
 		items := make([]NetworkItem, 0, len(networkList))
 		for _, network := range networkList {
-			// Check if this network has any containers
-			containersUsing, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), network.ID)
-			isActive := false
-			if err == nil && len(containersUsing) > 0 {
-				isActive = true
-			}
+			// Check if this network is in the active map (by name or ID)
+			isActive := activeNetworks[network.Name] || activeNetworks[network.ID]
 
 			items = append(items, NetworkItem{
 				Network:  network,

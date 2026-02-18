@@ -131,14 +131,16 @@ func New() Model {
 			return nil, err
 		}
 
+		// Get volume usage map (single API call for all volumes)
+		mountedVolumes, err := state.GetClient().GetAllVolumeUsage(stdcontext.Background())
+		if err != nil {
+			return nil, err
+		}
+
 		items := make([]VolumeItem, 0, len(volumeList))
 		for _, volume := range volumeList {
-			// Check if this volume is mounted by any containers
-			containersUsing, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), volume.Name)
-			isMounted := false
-			if err == nil && len(containersUsing) > 0 {
-				isMounted = true
-			}
+			// Check if this volume is in the mounted map
+			isMounted := mountedVolumes[volume.Name]
 
 			items = append(items, VolumeItem{
 				Volume:    volume,

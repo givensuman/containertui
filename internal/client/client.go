@@ -671,6 +671,48 @@ func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(ctx context.Contex
 	return usedBy, nil
 }
 
+// GetAllNetworkUsage returns a map of network IDs/names to a boolean indicating if they are in use.
+// This is more efficient than calling GetContainersUsingNetwork for each network individually.
+func (clientWrapper *ClientWrapper) GetAllNetworkUsage(ctx context.Context) (map[string]bool, error) {
+	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers for network usage check: %w", err)
+	}
+
+	networkUsage := make(map[string]bool)
+	for _, containerItem := range containers {
+		if containerItem.NetworkSettings != nil {
+			for networkName, network := range containerItem.NetworkSettings.Networks {
+				networkUsage[networkName] = true
+				networkUsage[network.NetworkID] = true
+			}
+		}
+	}
+	return networkUsage, nil
+}
+
+// GetAllVolumeUsage returns a map of volume names to a boolean indicating if they are in use.
+// This is more efficient than calling GetContainersUsingVolume for each volume individually.
+func (clientWrapper *ClientWrapper) GetAllVolumeUsage(ctx context.Context) (map[string]bool, error) {
+	containers, err := clientWrapper.client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers for volume usage check: %w", err)
+	}
+
+	volumeUsage := make(map[string]bool)
+	for _, containerItem := range containers {
+		for _, mount := range containerItem.Mounts {
+			if mount.Name != "" {
+				volumeUsage[mount.Name] = true
+			}
+			if mount.Source != "" {
+				volumeUsage[mount.Source] = true
+			}
+		}
+	}
+	return volumeUsage, nil
+}
+
 // GetContainerStats retrieves the current CPU and memory usage of a container.
 func (clientWrapper *ClientWrapper) GetContainerStats(ctx context.Context, containerID string) (ContainerStats, error) {
 	stats, err := clientWrapper.client.ContainerStats(ctx, containerID, false)
