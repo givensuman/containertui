@@ -138,6 +138,9 @@ func New() Model {
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
 
+	// Set detail panel title
+	resourceView.SplitView.SetDetailTitle("README")
+
 	// Add custom keybindings to help
 	resourceView.AdditionalHelp = []key.Binding{
 		browseKeybindings.search,
