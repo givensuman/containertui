@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -515,7 +516,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (model Model) View() string {
-	return model.ResourceView.View()
+	return lipgloss.NewStyle().MarginTop(1).Render(model.ResourceView.View())
 }
 
 func (model Model) IsFiltering() bool {

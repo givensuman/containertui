@@ -11,7 +11,7 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ContainerItem struct {
@@ -27,59 +27,54 @@ var (
 )
 
 func (containerItem ContainerItem) getIsSelectedIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch containerItem.isSelected {
 		case true:
-			return "[x]"
+			return iconSet.CheckedBox
 		case false:
-			return "[ ]"
+			return iconSet.UncheckedBox
 		}
 	case false: // Use nerd fonts.
 		switch containerItem.isSelected {
 		case true:
-			return " "
+			return iconSet.CheckedBox
 		case false:
-			return " "
+			return iconSet.UncheckedBox
 		}
 	}
 
-	return "[ ]"
-}
-
-func (containerItem ContainerItem) getTitleOrnament() string {
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		return ""
-	case false: // Use nerd fonts.
-		return " "
-	}
-
-	return ""
+	return iconSet.UncheckedBox
 }
 
 // getStatusIcon returns the appropriate icon for a container based on its state
 func (containerItem ContainerItem) getStatusIcon() string {
-	icons := infopanel.GetIcons()
+	iconSet := icons.Get()
+	statusColor := getStatusColor(containerItem.State)
 
+	var icon string
 	switch containerItem.State {
 	case "running":
-		return icons.Running
+		icon = iconSet.Running
 	case "paused":
-		return icons.Paused
+		icon = iconSet.Paused
 	case "exited":
-		return icons.Stopped
+		icon = iconSet.Stopped
 	case "restarting":
-		return icons.Restarting
+		icon = iconSet.Restarting
 	case "removing":
-		return icons.Removing
+		icon = iconSet.Removing
 	case "created":
-		return icons.Created
+		icon = iconSet.Created
 	case "dead":
-		return icons.Dead
+		icon = iconSet.Dead
 	default:
-		return icons.Stopped
+		icon = iconSet.Stopped
 	}
+
+	return icons.Styled(icon, statusColor)
 }
 
 // getStatusColor returns the appropriate color for a container based on its state
@@ -140,7 +135,6 @@ func (containerItem ContainerItem) Title() string {
 	} else {
 		statusIcon = containerItem.getIsSelectedIcon()
 	}
-	titleOrnament := containerItem.getTitleOrnament()
 	statusStateIcon := containerItem.getStatusIcon()
 
 	// Apply status-based coloring
@@ -148,7 +142,7 @@ func (containerItem ContainerItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(statusColor)
 	styledName := nameStyle.Render(containerItem.Name)
 
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, styledName)
+	return fmt.Sprintf("%s %s %s", statusIcon, statusStateIcon, styledName)
 }
 
 func (containerItem ContainerItem) Description() string {

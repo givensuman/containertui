@@ -2,13 +2,14 @@ package volumes
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type VolumeItem struct {
@@ -29,49 +30,47 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (volumeItem VolumeItem) getIsSelectedIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch volumeItem.isSelected {
 		case true:
-			return "[x]"
+			return iconSet.CheckedBox
 		case false:
-			return "[ ]"
+			return iconSet.UncheckedBox
 		}
 	case false: // Use nerd fonts.
 		switch volumeItem.isSelected {
 		case true:
-			return " "
+			return iconSet.CheckedBox
 		case false:
-			return " "
+			return iconSet.UncheckedBox
 		}
 	}
 
-	return "[ ]"
-}
-
-func (volumeItem VolumeItem) getTitleOrnament() string {
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		return ""
-	case false: // Use nerd fonts.
-		return " "
-	}
-
-	return ""
+	return iconSet.UncheckedBox
 }
 
 // getStatusIcon returns the appropriate icon for a volume based on its mount status
 func (volumeItem VolumeItem) getStatusIcon() string {
-	icons := infopanel.GetIcons()
+	iconSet := icons.Get()
+
+	var icon string
+	var iconColor color.Color
 
 	if volumeItem.IsMounted {
-		return icons.Mounted
+		icon = iconSet.Mounted
+		iconColor = colors.Success()
+	} else {
+		icon = iconSet.Unmounted
+		iconColor = colors.Text()
 	}
-	return icons.Unmounted
+
+	return icons.Styled(icon, iconColor)
 }
 
 func (volumeItem VolumeItem) Title() string {
-	titleOrnament := volumeItem.getTitleOrnament()
 	statusIcon := volumeItem.getIsSelectedIcon()
 	statusStateIcon := volumeItem.getStatusIcon()
 
@@ -83,7 +82,7 @@ func (volumeItem VolumeItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledName := nameStyle.Render(volumeItem.Volume.Name)
 
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, styledName)
+	return fmt.Sprintf("%s %s %s", statusIcon, statusStateIcon, styledName)
 }
 
 func (volumeItem VolumeItem) Description() string {

@@ -2,31 +2,62 @@ package services
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ServiceItem struct {
 	Service client.Service
 }
 
+// getServiceColor returns the color based on service state
+func (i ServiceItem) getServiceColor() color.Color {
+	hasRunning := false
+	allStopped := true
+
+	for _, container := range i.Service.Containers {
+		if container.State == "running" {
+			hasRunning = true
+			allStopped = false
+			break
+		} else if container.State != "exited" {
+			allStopped = false
+		}
+	}
+
+	if hasRunning {
+		return colors.Success()
+	} else if allStopped {
+		return colors.Text()
+	}
+	return colors.Warning() // Mixed state
+}
+
 // getServiceIcon returns the service icon (no nerd fonts option check needed here since services always show icon)
 func (i ServiceItem) getServiceIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true:
 		return ""
 	case false:
-		return " "
+		serviceColor := i.getServiceColor()
+		return icons.Styled(iconSet.Service, serviceColor)
 	}
+
 	return ""
 }
 
 // getStatusIcon returns status icon based on whether service has running containers
 func (i ServiceItem) getStatusIcon() string {
-	icons := infopanel.GetIcons()
+	iconSet := icons.Get()
+	serviceColor := i.getServiceColor()
 
 	// Check if any container in this service is running
 	hasRunning := false
@@ -41,18 +72,27 @@ func (i ServiceItem) getStatusIcon() string {
 		}
 	}
 
+	var icon string
 	if hasRunning {
-		return icons.Running
+		icon = iconSet.Running
 	} else if allStopped {
-		return icons.Stopped
+		icon = iconSet.Stopped
+	} else {
+		icon = iconSet.Paused // Mixed state
 	}
-	return icons.Paused // Mixed state or other states
+
+	return icons.Styled(icon, serviceColor)
 }
 
 func (i ServiceItem) Title() string {
-	serviceIcon := i.getServiceIcon()
 	statusIcon := i.getStatusIcon()
-	return fmt.Sprintf("%s%s %s", serviceIcon, statusIcon, i.Service.Name)
+	serviceColor := i.getServiceColor()
+
+	// Apply color to service name
+	nameStyle := lipgloss.NewStyle().Foreground(serviceColor)
+	styledName := nameStyle.Render(i.Service.Name)
+
+	return fmt.Sprintf("   %s %s", statusIcon, styledName)
 }
 
 func (i ServiceItem) Description() string {

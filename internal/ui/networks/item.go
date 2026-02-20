@@ -2,13 +2,14 @@ package networks
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type NetworkItem struct {
@@ -29,32 +30,41 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (networkItem NetworkItem) getIsSelectedIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch networkItem.isSelected {
 		case true:
-			return "[x]"
+			return iconSet.CheckedBox
 		case false:
-			return "[ ]"
+			return iconSet.UncheckedBox
 		}
 	case false: // Use nerd fonts.
 		switch networkItem.isSelected {
 		case true:
-			return " "
+			return iconSet.CheckedBox
 		case false:
-			return " "
+			return iconSet.UncheckedBox
 		}
 	}
 
-	return "[ ]"
+	return iconSet.UncheckedBox
 }
 
-func (networkItem NetworkItem) getTitleOrnament() string {
+func (networkItem NetworkItem) getNetworkIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
+	case true:
 		return ""
-	case false: // Use nerd fonts.
-		return " "
+	case false:
+		// Color the network icon based on active state
+		iconColor := colors.Text()
+		if networkItem.IsActive {
+			iconColor = colors.Success()
+		}
+		return icons.Styled(iconSet.Network, iconColor)
 	}
 
 	return ""
@@ -62,33 +72,35 @@ func (networkItem NetworkItem) getTitleOrnament() string {
 
 // getStatusIcon returns the appropriate icon for a network based on its activity status
 func (networkItem NetworkItem) getStatusIcon() string {
-	icons := infopanel.GetIcons()
+	iconSet := icons.Get()
+
+	var icon string
+	var iconColor color.Color
 
 	if networkItem.IsActive {
-		return icons.Active
+		icon = iconSet.Active
+		iconColor = colors.Success()
+	} else {
+		icon = iconSet.Empty
+		iconColor = colors.Text()
 	}
-	return icons.Empty
+
+	return icons.Styled(icon, iconColor)
 }
 
 func (networkItem NetworkItem) Title() string {
-	titleOrnament := networkItem.getTitleOrnament()
-	statusIcon := networkItem.getIsSelectedIcon()
-	name := networkItem.Network.Name
+	selectionIcon := networkItem.getIsSelectedIcon() // Checkbox
+	statusIcon := networkItem.getStatusIcon()        // Active/Empty (colored)
 
-	// Add lock icon for system networks
-	if isSystemNetwork(name) {
-		name = "🔒 " + name
-	}
-
-	// Apply themed coloring based on activity status
-	var nameColor = colors.Text()
+	// Apply themed coloring to name based on activity status
+	nameColor := colors.Text()
 	if networkItem.IsActive {
 		nameColor = colors.Success()
 	}
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
-	styledName := nameStyle.Render(name)
+	styledName := nameStyle.Render(networkItem.Network.Name)
 
-	return fmt.Sprintf("%s %s %s", statusIcon, titleOrnament, styledName)
+	return fmt.Sprintf("%s %s %s %s", selectionIcon, statusIcon, styledName)
 }
 
 func (networkItem NetworkItem) Description() string {

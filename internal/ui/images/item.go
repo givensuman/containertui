@@ -2,13 +2,14 @@ package images
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/components/infopanel"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ImageItem struct {
@@ -29,45 +30,57 @@ func newDefaultDelegate() list.DefaultDelegate {
 }
 
 func (imageItem ImageItem) getIsSelectedIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
 		switch imageItem.isSelected {
 		case true:
-			return "[x]"
+			return iconSet.CheckedBox
 		case false:
-			return "[ ]"
+			return iconSet.UncheckedBox
 		}
 	case false: // Use nerd fonts.
 		switch imageItem.isSelected {
 		case true:
-			return " "
+			return iconSet.CheckedBox
 		case false:
-			return " "
+			return iconSet.UncheckedBox
 		}
 	}
 
-	return "[ ]"
+	return iconSet.UncheckedBox
 }
 
 func (imageItem ImageItem) getTitleOrnament() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
 	case true: // Don't use nerd fonts.
-		return ""
+		switch imageItem.InUse {
+		case true:
+			return "(in use) "
+		case false:
+			return ""
+		}
 	case false: // Use nerd fonts.
-		return " "
+		// Color the icon based on usage
+		var icon string
+		var iconColor color.Color
+
+		switch imageItem.InUse {
+		case true:
+			icon = iconSet.InUse
+			iconColor = colors.Success()
+		case false:
+			icon = iconSet.Unused
+			iconColor = colors.Text()
+		}
+
+		return icons.Styled(icon, iconColor) + " "
 	}
 
 	return ""
-}
-
-// getStatusIcon returns the appropriate icon for an image based on its usage status
-func (imageItem ImageItem) getStatusIcon() string {
-	icons := infopanel.GetIcons()
-
-	if imageItem.InUse {
-		return icons.InUse
-	}
-	return icons.Unused
 }
 
 func (imageItem ImageItem) Title() string {
@@ -80,17 +93,16 @@ func (imageItem ImageItem) Title() string {
 
 	titleOrnament := imageItem.getTitleOrnament()
 	statusIcon := imageItem.getIsSelectedIcon()
-	statusStateIcon := imageItem.getStatusIcon()
 
 	// Apply themed coloring based on usage status
-	var nameColor = colors.Text()
+	nameColor := colors.Text()
 	if imageItem.InUse {
 		nameColor = colors.Success()
 	}
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledRepoTag := nameStyle.Render(repoTag)
 
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, statusStateIcon, styledRepoTag)
+	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, styledRepoTag)
 }
 
 func (imageItem ImageItem) Description() string {

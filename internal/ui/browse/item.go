@@ -10,6 +10,7 @@ import (
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 // BrowseItem wraps RegistryImage for list display.
@@ -57,36 +58,35 @@ func newSpinner() spinner.Model {
 }
 
 func (item BrowseItem) getIsSelectedIcon() string {
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		switch item.isSelected {
-		case true:
-			return "[x]"
-		case false:
-			return "[ ]"
+	case true:
+		if item.isSelected {
+			return iconSet.CheckedBox
 		}
-	case false: // Use nerd fonts.
-		switch item.isSelected {
-		case true:
-			return " "
-		case false:
-			return " "
+		return iconSet.UncheckedBox
+	case false:
+		if item.isSelected {
+			return iconSet.CheckedBox
 		}
+		return iconSet.UncheckedBox
 	}
 
-	return "[ ]"
+	return iconSet.UncheckedBox
 }
 
 func (item BrowseItem) getTitleOrnament() string {
-	// Use container/box icon for registry images
+	iconSet := icons.Get()
+
 	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
+	case true:
 		return ""
-	case false: // Use nerd fonts.
+	case false:
 		if item.Image.IsOfficial {
-			return " " // Star icon for official images
+			return icons.Styled(iconSet.Star, colors.Warning()) + " " // Star for official
 		}
-		return " " // Box icon for regular images
+		return icons.Styled(iconSet.Box, colors.Text()) + " " // Box for regular
 	}
 
 	return ""
