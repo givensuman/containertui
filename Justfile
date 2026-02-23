@@ -51,3 +51,38 @@ create-test-container quantity="1":
     for i in $(seq 1 {{ quantity }}); do
       docker run -d alpine sh -c "while true; do date; sleep 1; done"
     done
+
+# Set up Docker test environment for demos
+demo-setup:
+    #!/bin/bash
+    ./demos/setup.sh
+
+# Clean up Docker test environment
+demo-cleanup:
+    #!/bin/bash
+    ./demos/cleanup.sh
+
+# Generate a single demo GIF
+demo-single tape:
+    #!/bin/bash
+    cd demos && vhs {{ tape }}.tape
+
+# Generate all demo GIFs
+demo:
+    #!/bin/bash
+    echo "Setting up Docker test environment..."
+    ./demos/setup.sh
+    echo ""
+    echo "Generating demo GIFs..."
+    cd demos
+    for tape in overview containers images volumes networks services; do
+        echo "  Generating $tape.gif..."
+        vhs $tape.tape || echo "Warning: $tape.tape failed"
+    done
+    cd ..
+    echo ""
+    echo "Cleaning up Docker test environment..."
+    ./demos/cleanup.sh
+    echo ""
+    echo "Done! Generated GIFs are in assets/"
+    ls -lh assets/demo-*.gif

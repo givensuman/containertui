@@ -10,36 +10,32 @@ This repository is currently under heavy development. Expect frequent breaking c
 
 ## Features
 
-- **Containers** - View, start, stop, restart, and manage Docker containers
-- **Images** - View local images, pull new images, and create containers
-- **Volumes** - Manage Docker volumes
-- **Networks** - Manage Docker networks
-- **Services** - View Docker Compose services
-- **Browse** - Browse and search Docker Hub, view image details and README files, pull images directly
+### Quick Overview
+Navigate seamlessly between containers, images, volumes, networks, and services.
 
-## Browse Tab
+![Overview Demo](./assets/demo-overview.gif)
 
-The Browse tab allows you to discover and pull images from Docker Hub without leaving the terminal:
+### Container Management
+View, start, stop, inspect, and manage containers with ease.
 
-- **Popular Images**: Automatically loads the top 50 official Docker images sorted by pull count
-- **Search**: Press `s` to search Docker Hub for any image
-- **Image Details**: View comprehensive information including:
-  - Pull count, star count, and official status
-  - Full README/documentation
-  - Last updated and creation dates
-- **Pull Images**: Press `p` to pull any image directly to your local Docker daemon
-- **Filtering**: Use `/` to filter the current list locally
+![Containers Demo](./assets/demo-containers.gif)
 
-### Keybindings (Browse Tab)
+### Image Management
+Browse local images, view history, and inspect image details.
 
-| Key | Action |
-|-----|--------|
-| `6` | Switch to Browse tab |
-| `s` | Search Docker Hub |
-| `p` | Pull selected image |
-| `/` | Filter list |
-| `space` | Toggle selection |
-| `y` | Copy details to clipboard (when detail pane focused) |
-| `tab` | Switch focus between list and details |
-| `↑/↓` or `j/k` | Navigate |
-| `q` | Quit |
+![Images Demo](./assets/demo-images.gif)
+
+### Volume Management
+List and inspect Docker volumes.
+
+![Volumes Demo](./assets/demo-volumes.gif)
+
+### Network Management
+View and inspect Docker networks.
+
+![Networks Demo](./assets/demo-networks.gif)
+
+### Services View
+Monitor Docker Compose services and container stacks.
+
+![Services Demo](./assets/demo-services.gif)
