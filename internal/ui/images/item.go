@@ -102,7 +102,7 @@ func (imageItem ImageItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledRepoTag := nameStyle.Render(repoTag)
 
-	return fmt.Sprintf("%s %s%s %s", statusIcon, titleOrnament, styledRepoTag)
+	return fmt.Sprintf("%s %s%s", statusIcon, titleOrnament, styledRepoTag)
 }
 
 func (imageItem ImageItem) Description() string {

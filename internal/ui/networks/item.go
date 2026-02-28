@@ -100,7 +100,7 @@ func (networkItem NetworkItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledName := nameStyle.Render(networkItem.Network.Name)
 
-	return fmt.Sprintf("%s %s %s %s", selectionIcon, statusIcon, styledName)
+	return fmt.Sprintf("%s %s %s", selectionIcon, statusIcon, styledName)
 }
 
 func (networkItem NetworkItem) Description() string {
