@@ -65,21 +65,21 @@ demo-cleanup:
 # Generate a single demo GIF
 demo-single tape:
     #!/bin/bash
-    cd demos && vhs {{ tape }}.tape
+    PROJECT_ROOT="$(pwd)"
+    docker run -v "$PROJECT_ROOT:/vhs" -w /vhs/demos ghcr.io/charmbracelet/vhs {{ tape }}.tape
 
 # Generate all demo GIFs
 demo:
     #!/bin/bash
+    PROJECT_ROOT="$(pwd)"
     echo "Setting up Docker test environment..."
     ./demos/setup.sh
     echo ""
     echo "Generating demo GIFs..."
-    cd demos
     for tape in overview containers images volumes networks services; do
         echo "  Generating $tape.gif..."
-        vhs $tape.tape || echo "Warning: $tape.tape failed"
+        docker run -v "$PROJECT_ROOT:/vhs" -w /vhs/demos ghcr.io/charmbracelet/vhs $tape.tape || echo "Warning: $tape.tape failed"
     done
-    cd ..
     echo ""
     echo "Cleaning up Docker test environment..."
     ./demos/cleanup.sh
