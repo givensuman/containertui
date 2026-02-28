@@ -5,6 +5,10 @@ help:
     #!/bin/bash
     just --list
 
+# Note: Demo generation requires a Distrobox environment with vhs, Go, and Docker.
+# See distrobox.ini and create-distrobox.sh for setup instructions.
+# To enter the distrobox environment, run: distrobox enter containertui-demos
+
 # Build program binary
 build:
     #!/bin/bash
@@ -65,20 +69,18 @@ demo-cleanup:
 # Generate a single demo GIF
 demo-single tape:
     #!/bin/bash
-    PROJECT_ROOT="$(pwd)"
-    docker run -v "$PROJECT_ROOT:/vhs" -w /vhs/demos ghcr.io/charmbracelet/vhs {{ tape }}.tape
+    vhs demos/{{ tape }}.tape -o assets/demo-{{ tape }}.gif
 
 # Generate all demo GIFs
 demo:
     #!/bin/bash
-    PROJECT_ROOT="$(pwd)"
     echo "Setting up Docker test environment..."
     ./demos/setup.sh
     echo ""
     echo "Generating demo GIFs..."
     for tape in overview containers images volumes networks services; do
         echo "  Generating $tape.gif..."
-        docker run -v "$PROJECT_ROOT:/vhs" -w /vhs/demos ghcr.io/charmbracelet/vhs $tape.tape || echo "Warning: $tape.tape failed"
+        vhs demos/$tape.tape -o assets/demo-$tape.gif || echo "Warning: $tape.tape failed"
     done
     echo ""
     echo "Cleaning up Docker test environment..."
