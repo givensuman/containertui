@@ -3,6 +3,10 @@
 
 set -e
 
+echo "Removing binary..."
+
+rm -f containertui 2>/dev/null || true
+
 echo "Cleaning up Docker test environment..."
 
 # Stop and remove test containers

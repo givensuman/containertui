@@ -67,12 +67,13 @@ demo-cleanup:
     ./demos/cleanup.sh
 
 # Generate a single demo GIF
-demo-single tape:
+demo-single tape: demo-setup
     #!/bin/bash
     vhs demos/{{ tape }}.tape -o assets/demo-{{ tape }}.gif
+    @just demo-cleanup
 
 # Generate all demo GIFs
-demo:
+demo: demo-setup
     #!/bin/bash
     echo "Setting up Docker test environment..."
     ./demos/setup.sh
@@ -88,3 +89,5 @@ demo:
     echo ""
     echo "Done! Generated GIFs are in assets/"
     ls -lh assets/demo-*.gif
+
+    @just demo-cleanup

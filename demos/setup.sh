@@ -4,6 +4,10 @@
 
 set -e
 
+echo "Building..."
+
+go build -o containertui cmd/main.go
+
 echo "Setting up Docker test environment for VHS demos..."
 
 # Wait for Docker daemon to be ready
