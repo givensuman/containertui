@@ -455,7 +455,19 @@ func (s SplitView) View() string {
 	layoutManager := layout.NewLayoutManager(s.width, s.height)
 	_, detailLayout := layoutManager.CalculateMasterDetail(s.style)
 
-	listView := s.style.Render(s.List.View())
+	// Check if list is empty. If so, render our own "No items." instead of Bubble Tea's default.
+	var listView string
+	if len(s.List.Items()) == 0 {
+		emptyMessage := "No items."
+		// If filtering is enabled, add padding to match the space occupied by the filter input
+		if s.List.FilteringEnabled() {
+			emptyStyle := lipgloss.NewStyle().Padding(1, 0)
+			emptyMessage = emptyStyle.Render(emptyMessage)
+		}
+		listView = s.style.Render(emptyMessage)
+	} else {
+		listView = s.style.Render(s.List.View())
+	}
 
 	contentWidth := detailLayout.Width - 4
 	if contentWidth < 0 {
