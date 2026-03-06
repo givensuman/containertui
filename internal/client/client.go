@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,29 +37,6 @@ type Container struct {
 	Name  string `json:"Name"`
 	Image string `json:"Image"`
 	State string `json:"State"`
-}
-
-// Image represents a Docker image.
-type Image struct {
-	ID       string   `json:"Id"`
-	RepoTags []string `json:"RepoTags"`
-	Size     int64    `json:"Size"`
-	Created  int64    `json:"Created"`
-}
-
-// Network represents a Docker network.
-type Network struct {
-	ID     string `json:"Id"`
-	Name   string `json:"Name"`
-	Driver string `json:"Driver"`
-	Scope  string `json:"Scope"`
-}
-
-// Volume represents a Docker volume.
-type Volume struct {
-	Name       string `json:"Name"`
-	Driver     string `json:"Driver"`
-	Mountpoint string `json:"Mountpoint"`
 }
 
 // Image represents a Docker image.
@@ -774,172 +752,6 @@ func (clientWrapper *ClientWrapper) InspectContainer(ctx context.Context, contai
 	return inspect, nil
 }
 
-// RemoveImage removes a specific Docker image by its ID.
-func (clientWrapper *ClientWrapper) RemoveImage(imageID string) error {
-	options := types.ImageRemoveOptions{
-		Force:         false,
-		PruneChildren: true,
-	}
-
-	_, err := clientWrapper.client.ImageRemove(context.Background(), imageID, options)
-	return err
-}
-
-// RemoveVolume removes a specific Docker volume by its name.
-func (clientWrapper *ClientWrapper) RemoveVolume(volumeName string) error {
-	return clientWrapper.client.VolumeRemove(context.Background(), volumeName, false)
-}
-
-// RemoveNetwork removes a specific Docker network by its ID.
-func (clientWrapper *ClientWrapper) RemoveNetwork(networkID string) error {
-	return clientWrapper.client.NetworkRemove(context.Background(), networkID)
-}
-
-// PruneImages removes all unused images.
-func (clientWrapper *ClientWrapper) PruneImages() (uint64, error) {
-	report, err := clientWrapper.client.ImagesPrune(context.Background(), filters.Args{})
-	if err != nil {
-		return 0, err
-	}
-	return report.SpaceReclaimed, nil
-}
-
-// PruneVolumes removes all unused volumes.
-func (clientWrapper *ClientWrapper) PruneVolumes() (uint64, error) {
-	report, err := clientWrapper.client.VolumesPrune(context.Background(), filters.Args{})
-	if err != nil {
-		return 0, err
-	}
-	return report.SpaceReclaimed, nil
-}
-
-// PruneNetworks removes all unused networks.
-func (clientWrapper *ClientWrapper) PruneNetworks() error {
-	_, err := clientWrapper.client.NetworksPrune(context.Background(), filters.Args{})
-	return err
-}
-
-// GetContainersUsingImage returns a list of container names that are using the specified image ID.
-func (clientWrapper *ClientWrapper) GetContainersUsingImage(imageID string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
-	if err != nil {
-		return nil, err
-	}
-
-	var usedBy []string
-	for _, containerItem := range containers {
-		if containerItem.ImageID == imageID {
-			// Name usually comes with a slash, e.g., "/my-container".
-			name := containerItem.Names[0]
-			if len(name) > 0 && name[0] == '/' {
-				name = name[1:]
-			}
-			usedBy = append(usedBy, name)
-		}
-	}
-	return usedBy, nil
-}
-
-// GetContainersUsingVolume returns a list of container names that are using the specified volume name.
-func (clientWrapper *ClientWrapper) GetContainersUsingVolume(volumeName string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
-	if err != nil {
-		return nil, err
-	}
-
-	var usedBy []string
-	for _, containerItem := range containers {
-		for _, mount := range containerItem.Mounts {
-			if mount.Name == volumeName || mount.Source == volumeName {
-				name := containerItem.Names[0]
-				if len(name) > 0 && name[0] == '/' {
-					name = name[1:]
-				}
-				usedBy = append(usedBy, name)
-				break // Found usage in this container, move to next container.
-			}
-		}
-	}
-	return usedBy, nil
-}
-
-// GetContainersUsingNetwork returns a list of container names that are attached to the specified network ID.
-func (clientWrapper *ClientWrapper) GetContainersUsingNetwork(networkID string) ([]string, error) {
-	containers, err := clientWrapper.client.ContainerList(context.Background(), container.ListOptions{All: true})
-	if err != nil {
-		return nil, err
-	}
-
-	var usedBy []string
-	for _, containerItem := range containers {
-		if containerItem.NetworkSettings != nil {
-			for _, network := range containerItem.NetworkSettings.Networks {
-				if network.NetworkID == networkID {
-					name := containerItem.Names[0]
-					if len(name) > 0 && name[0] == '/' {
-						name = name[1:]
-					}
-					usedBy = append(usedBy, name)
-					break
-				}
-			}
-		}
-	}
-	return usedBy, nil
-}
-
-// GetContainerStats retrieves the current CPU and memory usage of a container.
-func (clientWrapper *ClientWrapper) GetContainerStats(containerID string) (ContainerStats, error) {
-	stats, err := clientWrapper.client.ContainerStats(context.Background(), containerID, false)
-	if err != nil {
-		return ContainerStats{}, err
-	}
-	defer stats.Body.Close()
-
-	var statsJSON types.StatsJSON
-	if err := json.NewDecoder(stats.Body).Decode(&statsJSON); err != nil {
-		return ContainerStats{}, err
-	}
-
-	var cpuPercent float64
-	cpuDelta := float64(statsJSON.CPUStats.CPUUsage.TotalUsage) - float64(statsJSON.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(statsJSON.CPUStats.SystemUsage) - float64(statsJSON.PreCPUStats.SystemUsage)
-
-	if systemDelta > 0 && cpuDelta > 0 {
-		cpuPercent = (cpuDelta / systemDelta) * float64(len(statsJSON.CPUStats.CPUUsage.PercpuUsage)) * 100.0
-	}
-
-	// Calculate memory usage.
-	// MemUsage is statsJSON.MemoryStats.Usage - statsJSON.MemoryStats.Stats["cache"].
-	var memUsage float64
-	if statsJSON.MemoryStats.Usage > 0 {
-		memUsage = float64(statsJSON.MemoryStats.Usage)
-		if cache, ok := statsJSON.MemoryStats.Stats["cache"]; ok {
-			memUsage -= float64(cache)
-		}
-	}
-
-	// Calculate network I/O.
-	var rx, tx float64
-	for _, network := range statsJSON.Networks {
-		rx += float64(network.RxBytes)
-		tx += float64(network.TxBytes)
-	}
-
-	return ContainerStats{
-		CPUPercent: cpuPercent,
-		MemUsage:   memUsage,
-		MemLimit:   float64(statsJSON.MemoryStats.Limit),
-		NetRx:      rx,
-		NetTx:      tx,
-	}, nil
-}
-
-// InspectContainer returns the detailed inspection information for a container.
-func (clientWrapper *ClientWrapper) InspectContainer(containerID string) (types.ContainerJSON, error) {
-	return clientWrapper.client.ContainerInspect(context.Background(), containerID)
-}
-
 // GetRegistryClient returns the registry client for Docker Hub operations.
 func (clientWrapper *ClientWrapper) GetRegistryClient() *registry.Client {
 	return clientWrapper.registryClient
@@ -947,8 +759,23 @@ func (clientWrapper *ClientWrapper) GetRegistryClient() *registry.Client {
 
 // PullImageFromRegistry pulls an image from a registry (Docker Hub by default).
 func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, imageName string, progressChan chan<- string) error {
-	// Use the existing PullImage method which already handles Docker Hub
-	return clientWrapper.PullImage(ctx, imageName, progressChan)
+	reader, err := clientWrapper.client.ImagePull(ctx, imageName, types.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+	}
+	defer reader.Close()
+
+	// Stream progress to the channel
+	if progressChan != nil {
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			progressChan <- scanner.Text()
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("failed to read pull progress: %w", err)
+		}
+	}
+	return nil
 }
 
 // CreateVolume creates a new Docker volume with the specified configuration.
@@ -1058,4 +885,58 @@ func createTarArchive(contextPath string) (io.ReadCloser, error) {
 	}()
 
 	return pr, nil
+}
+
+// InspectImage retrieves detailed information about a Docker image.
+func (clientWrapper *ClientWrapper) InspectImage(ctx context.Context, imageID string) (types.ImageInspect, error) {
+	imageInfo, _, err := clientWrapper.client.ImageInspectWithRaw(ctx, imageID)
+	if err != nil {
+		return types.ImageInspect{}, fmt.Errorf("failed to inspect image %s: %w", imageID, err)
+	}
+	return imageInfo, nil
+}
+
+// PullImage pulls a Docker image from a registry.
+func (clientWrapper *ClientWrapper) PullImage(ctx context.Context, imageName string, progressChan chan<- string) error {
+	reader, err := clientWrapper.client.ImagePull(ctx, imageName, types.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+	}
+	defer reader.Close()
+
+	// Stream progress to the channel if provided
+	if progressChan != nil {
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			progressChan <- scanner.Text()
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("failed to read pull progress: %w", err)
+		}
+	} else {
+		// Still need to consume the reader even if no channel
+		_, err := io.ReadAll(reader)
+		if err != nil {
+			return fmt.Errorf("failed to read pull output: %w", err)
+		}
+	}
+	return nil
+}
+
+// InspectNetwork retrieves detailed information about a Docker network.
+func (clientWrapper *ClientWrapper) InspectNetwork(ctx context.Context, networkID string) (types.NetworkResource, error) {
+	networkInfo, err := clientWrapper.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+	if err != nil {
+		return types.NetworkResource{}, fmt.Errorf("failed to inspect network %s: %w", networkID, err)
+	}
+	return networkInfo, nil
+}
+
+// InspectVolume retrieves detailed information about a Docker volume.
+func (clientWrapper *ClientWrapper) InspectVolume(ctx context.Context, volumeName string) (volume.Volume, error) {
+	volumeInfo, err := clientWrapper.client.VolumeInspect(ctx, volumeName)
+	if err != nil {
+		return volume.Volume{}, fmt.Errorf("failed to inspect volume %s: %w", volumeName, err)
+	}
+	return volumeInfo, nil
 }

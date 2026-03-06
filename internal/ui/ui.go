@@ -11,7 +11,6 @@ import (
 
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
-	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/browse"
 	"github.com/givensuman/containertui/internal/ui/containers"
 	"github.com/givensuman/containertui/internal/ui/images"
@@ -119,19 +118,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.servicesModel, servicesCmd = model.servicesModel.Update(contentMsg)
 		cmds = append(cmds, servicesCmd)
 
-		model.help.Width = msg.Width
-
-		updatedImages, _ := model.imagesModel.Update(contentMsg)
-		model.imagesModel = updatedImages.(images.Model)
-
-		updatedVolumes, _ := model.volumesModel.Update(contentMsg)
-		model.volumesModel = updatedVolumes.(volumes.Model)
-
-		updatedNetworks, _ := model.networksModel.Update(contentMsg)
-		model.networksModel = updatedNetworks.(networks.Model)
-
-		model.help.Width = msg.Width
-
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
@@ -174,16 +160,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if tabsCmd != nil {
 				cmds = append(cmds, tabsCmd)
 			}
-		}
-
-		if msg.String() == "?" {
-			model.help.ShowAll = !model.help.ShowAll
-		}
-
-		updatedTabs, tabsCmd := model.tabsModel.Update(msg)
-		model.tabsModel = updatedTabs.(tabs.Model)
-		if tabsCmd != nil {
-			cmds = append(cmds, tabsCmd)
 		}
 
 		if msg.String() == "?" {
