@@ -73,7 +73,7 @@ var (
 		Network:   " ",
 		Volume:    " ",
 		Service:   " ",
-		
+
 		// Status indicators - use play/pause/stop icons
 		Running:    " ",
 		Stopped:    " ",
