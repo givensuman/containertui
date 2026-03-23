@@ -76,8 +76,8 @@ var (
 		
 		// Status indicators - use play/pause/stop icons
 		Running:    " ",
-		Stopped:    " ",
-		Paused:     " ",
+		Stopped:    " ",
+		Paused:     " ",
 		Restarting: "󰑐 ",
 		Removing:   "󰩺 ",
 		Created:    "󰐾 ",
