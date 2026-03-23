@@ -38,11 +38,11 @@ archives:
       - LICENSE
       - README.md
 
-nfpm:
+nfpms:
   - package_name: containertui
     file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     homepage: https://github.com/givensuman/containertui
-    description: A terminal user interface for managing Docker containers
+    description: tui for managing container lifecycles
     maintainer: Given Suman <given@example.com>
     license: MIT
     formats:
