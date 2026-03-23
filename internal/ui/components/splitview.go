@@ -527,6 +527,13 @@ func (s SplitView) View() string {
 		// Stack detail and extra vertically
 		rightColumn := lipgloss.JoinVertical(lipgloss.Left, detailView, extraView)
 
+		// Account for filter input height difference when list has filtering enabled
+		if s.List.FilteringEnabled() {
+			// When filtering is enabled, the list has a filter input taking up 1 line at the top.
+			// Add top padding to the detail pane to align with the list content.
+			rightColumn = lipgloss.NewStyle().Padding(1, 0).Render(rightColumn)
+		}
+
 		return lipgloss.JoinHorizontal(lipgloss.Top, listView, rightColumn)
 	} else {
 		// Two-pane layout: List | Detail
@@ -544,6 +551,13 @@ func (s SplitView) View() string {
 		}
 
 		detailView := renderBorderWithTitle(viewportContent, s.detailTitle, contentWidth, contentHeight, borderColor, s.Focus == FocusDetail)
+
+		// Account for filter input height difference when list has filtering enabled
+		if s.List.FilteringEnabled() {
+			// When filtering is enabled, the list has a filter input taking up 1 line at the top.
+			// Add top padding to the detail pane to align its border with the list content.
+			detailView = lipgloss.NewStyle().Padding(1, 0).Render(detailView)
+		}
 
 		return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 	}
