@@ -1,39 +1,75 @@
-# from: https://github.com/jesseduffield/lazygit
 version: 2
 
+project_name: containertui
+
+before:
+  hooks:
+    - go mod tidy
+
 builds:
-  - env:
+  - id: default
+    main: ./cmd
+    binary: containertui
+    env:
       - CGO_ENABLED=0
     goos:
-      - freebsd
-      - windows
-      - darwin
       - linux
+      - darwin
+      - windows
+      - freebsd
     goarch:
       - amd64
       - arm
       - arm64
-      - '386'
-    # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}`.
+      - "386"
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.buildSource=binaryRelease
+      - -s -w
+      - -X github.com/givensuman/containertui/internal/build.Version={{.Version}}
+      - -X github.com/givensuman/containertui/internal/build.Commit={{.Commit}}
+      - -X github.com/givensuman/containertui/internal/build.Date={{.Date}}
 
 archives:
-  - name_template: >-
-      {{- .ProjectName }}_
-      {{- .Version }}_
-      {{- .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}32-bit
-      {{- else if eq .Arch "arm" }}armv6
-      {{- else }}{{ .Arch }}{{ end }}
+  - format: tar.gz
     format_overrides:
       - goos: windows
-        formats: [ zip ]
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+nfpm:
+  - package_name: containertui
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    homepage: https://github.com/givensuman/containertui
+    description: A terminal user interface for managing Docker containers
+    maintainer: Given Suman <given@example.com>
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/containertui/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/containertui/README.md
+    scripts:
+      postinstall: scripts/postinstall.sh
+
 checksum:
-  name_template: 'checksums.txt'
-snapshot:
-  version_template: '{{ .Tag }}-next'
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
 changelog:
-  use: github-native
   sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: givensuman
+    name: containertui
