@@ -98,6 +98,9 @@ func New() Model {
 		},
 	)
 
+	// Set detail panel title
+	resourceView.SplitView.SetDetailTitle("Inspect")
+
 	// Set custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
@@ -190,7 +193,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected."))
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected"))
 		return nil
 	}
 

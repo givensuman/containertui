@@ -490,7 +490,7 @@ func (model *Model) handleRemove(force bool) tea.Cmd {
 func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected."))
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No network selected"))
 		model.SetExtraContent("") // Clear extra pane when no network selected
 		return nil
 	}

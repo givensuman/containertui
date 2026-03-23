@@ -362,7 +362,7 @@ func (model Model) View() string {
 func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.SetContent("No image selected.")
+		model.SetContent("No image selected")
 		return nil
 	}
 

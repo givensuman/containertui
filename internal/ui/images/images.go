@@ -898,7 +898,7 @@ func (model *Model) handleRemove(force bool) {
 func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected."))
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected"))
 		model.SetExtraContent("") // Clear extra pane when no image selected
 		return nil
 	}
