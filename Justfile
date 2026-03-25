@@ -84,42 +84,35 @@ demo-interactive:
     echo ""
     echo "Demo environment has been cleaned up."
 
-# Set up Docker test environment for demos
-demo-setup:
-    #!/bin/bash
-    ./demos/setup.sh
-
-# Clean up Docker test environment
-demo-cleanup:
-    #!/bin/bash
-    ./demos/cleanup.sh
-
 # Run interactive Docker-in-Docker demo
 # This is the primary demo command - launches a containerized environment
 demo: demo-interactive
 
-# Generate a single demo GIF
-demo-single tape: demo-setup
+# Generate all demo GIFs (same environment as the demo container)
+demo-gifs:
     #!/bin/bash
-    vhs demos/{{ tape }}.tape -o assets/demo-{{ tape }}.gif
-    @just demo-cleanup
-
-# Generate all demo GIFs
-demo-gifs: demo-setup
-    #!/bin/bash
-    echo "Setting up Docker test environment..."
+    set -e
+    
+    echo "Ensuring demo Docker image is built..."
+    docker build -f Dockerfile.demo -t containertui-demo:latest . --quiet
+    
+    echo "Setting up demo Docker environment..."
     ./demos/setup.sh
+    
     echo ""
-    echo "Generating demo GIFs..."
+    echo "Generating demo GIFs using VHS..."
+    cd demos
+    
     for tape in overview containers images volumes networks services; do
         echo "  Generating $tape.gif..."
-        vhs demos/$tape.tape -o assets/demo-$tape.gif || echo "Warning: $tape.tape failed"
+        vhs "$tape.tape" -o "../assets/demo-$tape.gif" || echo "Warning: $tape.tape failed"
     done
+    
+    cd ..
     echo ""
-    echo "Cleaning up Docker test environment..."
+    echo "Cleaning up demo Docker environment..."
     ./demos/cleanup.sh
+    
     echo ""
     echo "Done! Generated GIFs are in assets/"
     ls -lh assets/demo-*.gif
-
-    @just demo-cleanup

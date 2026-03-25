@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     
     # Use Docker-in-Docker service for container management demos
+    # This provides the same Docker environment as the demo container
     services:
       docker:
         image: docker:24-dind
@@ -66,7 +67,7 @@ jobs:
           timeout 30 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done'
           docker info
       
-      - name: Set up Docker test environment
+      - name: Set up demo Docker environment (same as demo container)
         run: |
           chmod +x ./demos/setup.sh
           ./demos/setup.sh
@@ -99,7 +100,7 @@ jobs:
           echo "Generated GIFs:"
           ls -lh assets/demo-*.gif || echo "No GIFs generated"
       
-      - name: Clean up Docker test environment
+      - name: Clean up demo Docker environment (same as demo container)
         if: always()
         run: |
           chmod +x ./demos/cleanup.sh

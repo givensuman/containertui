@@ -8,7 +8,7 @@ Set FontSize 14
 Set Padding 10
 Set TypingSpeed 50ms
 
-Type "go run ./cmd"
+Type "go run ./cmd/main.go"
 Enter
 Sleep 3s
 
