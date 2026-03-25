@@ -1,0 +1,43 @@
+FROM golang:1.25.4-alpine AS builder
+
+RUN apk add --no-cache \
+  git \
+  ca-certificates \
+  tzdata
+
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# CGO_ENABLED=0 for static binary, -ldflags "-s -w" strips debugging info for smaller binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+  -ldflags="-s -w" \
+  -o containertui \
+  ./cmd/main.go
+
+FROM docker:dind
+
+RUN apk add --no-cache \
+  bash \
+  ca-certificates \
+  alpine \
+  nginx \
+  busybox
+
+# Copy binary from builder
+COPY --from=builder /build/containertui /usr/local/bin/containertui
+RUN chmod +x /usr/local/bin/containertui
+
+COPY demos/setup.sh /demo/setup.sh
+COPY demos/demo-entrypoint.sh /demo/demo-entrypoint.sh
+COPY demos/cleanup.sh /demo/cleanup.sh
+
+RUN chmod +x /demo/setup.sh /demo/demo-entrypoint.sh /demo/cleanup.sh
+
+WORKDIR /demo
+
+# Use the demo entrypoint script
+ENTRYPOINT ["/demo/demo-entrypoint.sh"]

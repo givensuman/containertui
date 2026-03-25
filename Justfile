@@ -56,6 +56,34 @@ create-test-container quantity="1":
       docker run -d alpine sh -c "while true; do date; sleep 1; done"
     done
 
+# Run interactive Docker demo with Docker-in-Docker
+# Launches a containerized demo environment with sample containers, images, volumes, and networks
+demo-interactive:
+    #!/bin/bash
+    set -e
+    
+    IMAGE_NAME="containertui-demo:latest"
+    CONTAINER_NAME="containertui-demo-$$"
+    
+    echo "Building demo image..."
+    docker build -f Dockerfile.demo -t "$IMAGE_NAME" . --quiet
+    
+    echo ""
+    echo "Launching interactive demo environment..."
+    echo "Press Ctrl+C to exit when you're done."
+    echo ""
+    
+    # Run the demo container with DinD capabilities
+    docker run --rm -it \
+        --privileged \
+        --name "$CONTAINER_NAME" \
+        --tmpfs /run \
+        --tmpfs /tmp \
+        "$IMAGE_NAME" || true
+    
+    echo ""
+    echo "Demo environment has been cleaned up."
+
 # Set up Docker test environment for demos
 demo-setup:
     #!/bin/bash
@@ -66,6 +94,10 @@ demo-cleanup:
     #!/bin/bash
     ./demos/cleanup.sh
 
+# Run interactive Docker-in-Docker demo
+# This is the primary demo command - launches a containerized environment
+demo: demo-interactive
+
 # Generate a single demo GIF
 demo-single tape: demo-setup
     #!/bin/bash
@@ -73,7 +105,7 @@ demo-single tape: demo-setup
     @just demo-cleanup
 
 # Generate all demo GIFs
-demo: demo-setup
+demo-gifs: demo-setup
     #!/bin/bash
     echo "Setting up Docker test environment..."
     ./demos/setup.sh

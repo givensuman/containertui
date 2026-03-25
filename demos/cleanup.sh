@@ -1,13 +1,9 @@
 #!/bin/bash
-# Cleanup script to remove test Docker resources created by setup.sh
+# Cleanup script for demo environment - removes test Docker resources created by setup.sh
 
 set -e
 
-echo "Removing binary..."
-
-rm -f containertui 2>/dev/null || true
-
-echo "Cleaning up Docker test environment..."
+echo "Cleaning up Docker demo environment..."
 
 # Stop and remove test containers
 echo "Removing test containers..."
@@ -28,12 +24,4 @@ echo "Removing test networks..."
 docker network rm containertui-network-1 2>/dev/null || true
 docker network rm containertui-network-2 2>/dev/null || true
 
-# Optionally remove pulled images (commented out by default)
-# Uncomment if you want to remove test images as well
-# echo "Removing test images..."
-# docker rmi alpine:latest 2>/dev/null || true
-# docker rmi nginx:alpine 2>/dev/null || true
-# docker rmi busybox:latest 2>/dev/null || true
-
-echo ""
 echo "Cleanup complete!"

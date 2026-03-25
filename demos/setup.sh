@@ -4,19 +4,15 @@
 
 set -e
 
-echo "Building..."
-
-go build -o containertui cmd/main.go
-
 echo "Setting up Docker test environment for VHS demos..."
 
 # Wait for Docker daemon to be ready
-echo "Waiting for Docker daemon..."
-timeout 30 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done' || {
-	echo "Docker daemon failed to start"
-	exit 1
-}
-echo "Docker daemon is ready"
+# echo "Waiting for Docker daemon..."
+# timeout 30 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done' || {
+# 	echo "Docker daemon failed to start"
+# 	exit 1
+# }
+# echo "Docker daemon is ready"
 
 # Pull base images (these will show up in images view)
 echo "Pulling base images..."
