@@ -73,6 +73,34 @@ Run containertui in a Docker container with your Docker socket mounted:
 docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/givensuman/containertui:latest
 ```
 
+## Usage
+
+### Launching Specific Tabs
+
+You can launch containertui directly to a specific tab using subcommands:
+
+```bash
+containertui containers    # Launch to containers tab (default)
+containertui images        # Launch to images tab
+containertui volumes       # Launch to volumes tab
+containertui networks      # Launch to networks tab
+containertui services      # Launch to services tab
+containertui browse        # Launch to browse tab
+```
+
+All existing flags continue to work with subcommands:
+
+```bash
+containertui images --config /path/to/config --no-nerd-fonts
+```
+
+You can also set a default startup tab in your config file:
+
+```yaml
+# ~/.config/containertui/config.yaml
+startup-tab: images
+```
+
 ## Features
 
 ### Quick Overview
