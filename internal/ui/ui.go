@@ -2,6 +2,8 @@
 package ui
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -37,10 +39,10 @@ type Model struct {
 	help               help.Model
 }
 
-func NewModel() Model {
+func NewModel(startupTab tabs.Tab) Model {
 	width, height := state.GetWindowSize()
 
-	tabsModel := tabs.New()
+	tabsModel := tabs.New(startupTab)
 	containersModel := containers.New()
 	imagesModel := images.New()
 	volumesModel := volumes.New()
@@ -54,7 +56,7 @@ func NewModel() Model {
 	return Model{
 		width:              width,
 		height:             height,
-		previousTab:        tabs.Containers,
+		previousTab:        startupTab,
 		tabsModel:          tabsModel,
 		containersModel:    containersModel,
 		imagesModel:        imagesModel,
@@ -377,8 +379,19 @@ func (model Model) View() tea.View {
 }
 
 func Start() error {
-	model := NewModel()
+	cfg := state.GetConfig()
 
+	// Determine startup tab
+	startupTab := tabs.Containers // default
+	if cfg.StartupTab != "" {
+		if !tabs.IsValidTab(cfg.StartupTab) {
+			fmt.Fprintf(os.Stderr, "warning: invalid startup tab '%s', using 'containers' instead\n", cfg.StartupTab)
+		} else {
+			startupTab = tabs.TabFromString(cfg.StartupTab)
+		}
+	}
+
+	model := NewModel(startupTab)
 	p := tea.NewProgram(model)
 	_, err := p.Run()
 	return err
