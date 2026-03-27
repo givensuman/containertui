@@ -8,9 +8,9 @@ Set FontSize 14
 Set Padding 10
 Set TypingSpeed 50ms
 
-Type "go run ./cmd/main.go"
+Type "/tmp/containertui"
 Enter
-Sleep 3s
+Sleep 5s
 
 # Switch to services tab
 Type "5"

@@ -93,6 +93,9 @@ demo-gifs:
     #!/bin/bash
     set -e
     
+    echo "Building containertui binary..."
+    go build -o /tmp/containertui ./cmd
+    
     echo "Ensuring demo Docker image is built..."
     docker build -f Dockerfile.demo -t containertui-demo:latest . --quiet
     
