@@ -33,6 +33,36 @@ func (t Tab) String() string {
 	}[t]
 }
 
+// TabFromString converts a string to a Tab, returns -1 if invalid
+func TabFromString(s string) Tab {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "containers":
+		return Containers
+	case "images":
+		return Images
+	case "volumes":
+		return Volumes
+	case "networks":
+		return Networks
+	case "services":
+		return Services
+	case "browse":
+		return Browse
+	default:
+		return -1
+	}
+}
+
+// IsValidTab checks if a tab string is valid
+func IsValidTab(s string) bool {
+	return TabFromString(s) != -1
+}
+
+// AllTabNames returns all valid tab names
+func AllTabNames() []string {
+	return []string{"containers", "images", "volumes", "networks", "services", "browse"}
+}
+
 type KeyMap struct {
 	SwitchToContainers key.Binding
 	SwitchToImages     key.Binding
@@ -78,9 +108,9 @@ type Model struct {
 	KeyMap    KeyMap
 }
 
-func New() Model {
+func New(startupTab Tab) Model {
 	return Model{
-		ActiveTab: Containers,
+		ActiveTab: startupTab,
 		Tabs:      []Tab{Containers, Images, Volumes, Networks, Services, Browse},
 		KeyMap:    NewKeyMap(),
 	}
