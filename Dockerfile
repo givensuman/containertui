@@ -23,7 +23,16 @@ FROM alpine:latest
 
 RUN apk add --no-cache \
   docker-cli \
-  ca-certificates
+  ca-certificates \
+  fontconfig \
+  curl
+
+# Install JetBrains Mono Nerd Font
+RUN mkdir -p /usr/local/share/fonts/nerd-fonts && \
+  curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.2/JetBrainsMono.zip -o /tmp/JetBrainsMono.zip && \
+  unzip -o /tmp/JetBrainsMono.zip -d /usr/local/share/fonts/nerd-fonts/ && \
+  rm /tmp/JetBrainsMono.zip && \
+  fc-cache -fv
 
 # Create non-root user
 RUN addgroup -g 1000 ctui && \

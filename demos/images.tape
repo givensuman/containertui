@@ -7,6 +7,7 @@ Set Height 600
 Set FontSize 14
 Set Padding 10
 Set TypingSpeed 50ms
+Set Font "JetBrains Mono Nerd Font"
 
 Type "/tmp/containertui"
 Enter

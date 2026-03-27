@@ -59,6 +59,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ttyd
       
+      - name: Install JetBrains Mono Nerd Font
+        run: |
+          mkdir -p ~/.local/share/fonts
+          curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.2/JetBrainsMono.zip -o /tmp/JetBrainsMono.zip
+          unzip -o /tmp/JetBrainsMono.zip -d ~/.local/share/fonts/
+          rm /tmp/JetBrainsMono.zip
+          fc-cache -fv ~/.local/share/fonts/
+      
       # Configure Docker to use the DinD service
       - name: Configure Docker client
         run: |
@@ -67,41 +75,41 @@ jobs:
           timeout 30 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done'
           docker info
       
-       - name: Set up demo Docker environment (same as demo container)
-         run: |
-           chmod +x ./demos/setup.sh
-           ./demos/setup.sh
-       
-       - name: Build containertui binary
-         run: go build -o /tmp/containertui ./cmd
-       
-       - name: Generate demo GIFs
-         run: |
-           cd demos
-           
-           echo "Generating overview demo..."
-           vhs overview.tape || echo "Warning: overview.tape failed"
-           
-           echo "Generating containers demo..."
-           vhs containers.tape || echo "Warning: containers.tape failed"
-           
-           echo "Generating images demo..."
-           vhs images.tape || echo "Warning: images.tape failed"
-           
-           echo "Generating volumes demo..."
-           vhs volumes.tape || echo "Warning: volumes.tape failed"
-           
-           echo "Generating networks demo..."
-           vhs networks.tape || echo "Warning: networks.tape failed"
-           
-           echo "Generating services demo..."
-           vhs services.tape || echo "Warning: services.tape failed"
-           
-           cd ..
-           
-           echo ""
-           echo "Generated GIFs:"
-           ls -lh assets/demo-*.gif || echo "No GIFs generated"
+      - name: Set up demo Docker environment (same as demo container)
+        run: |
+          chmod +x ./demos/setup.sh
+          ./demos/setup.sh
+      
+      - name: Build containertui binary
+        run: go build -o /tmp/containertui ./cmd
+      
+      - name: Generate demo GIFs
+        run: |
+          cd demos
+          
+          echo "Generating overview demo..."
+          vhs overview.tape || echo "Warning: overview.tape failed"
+          
+          echo "Generating containers demo..."
+          vhs containers.tape || echo "Warning: containers.tape failed"
+          
+          echo "Generating images demo..."
+          vhs images.tape || echo "Warning: images.tape failed"
+          
+          echo "Generating volumes demo..."
+          vhs volumes.tape || echo "Warning: volumes.tape failed"
+          
+          echo "Generating networks demo..."
+          vhs networks.tape || echo "Warning: networks.tape failed"
+          
+          echo "Generating services demo..."
+          vhs services.tape || echo "Warning: services.tape failed"
+          
+          cd ..
+          
+          echo ""
+          echo "Generated GIFs:"
+          ls -lh assets/demo-*.gif || echo "No GIFs generated"
       
       - name: Clean up demo Docker environment (same as demo container)
         if: always()

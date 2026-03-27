@@ -24,6 +24,18 @@ echo -e "${GREEN}  ContainerTUI Demo Environment${NC}"
 echo -e "${GREEN}================================${NC}"
 echo ""
 
+# Configure containertui with nerd fonts enabled
+CONFIG_DIR="${HOME}/.config/containertui"
+mkdir -p "${CONFIG_DIR}"
+cat >"${CONFIG_DIR}/config.yaml" <<'EOF'
+# Enable nerd fonts for proper icon rendering
+no-nerd-fonts: false
+EOF
+
+echo -e "${YELLOW}Configuring nerd fonts...${NC}"
+echo -e "${GREEN}✓ Nerd fonts enabled${NC}"
+echo ""
+
 # Start Docker daemon in the background
 echo -e "${YELLOW}Starting Docker daemon...${NC}"
 dockerd >/tmp/dockerd.log 2>&1 &
