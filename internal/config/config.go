@@ -14,6 +14,7 @@ type Config struct {
 	NoNerdFonts      ConfigBool  `yaml:"no-nerd-fonts"`
 	Theme            ThemeConfig `yaml:"colors,omitempty"`
 	InspectionFormat string      `yaml:"inspection-format,omitempty"`
+	StartupTab       string      `yaml:"startup-tab,omitempty"`
 }
 
 // DefaultConfig returns a default configuration
@@ -22,6 +23,7 @@ func DefaultConfig() *Config {
 		NoNerdFonts:      false,
 		Theme:            emptyThemeConfig(),
 		InspectionFormat: "yaml",
+		StartupTab:       "containers",
 	}
 }
 
