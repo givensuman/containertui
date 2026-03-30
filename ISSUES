@@ -1,5 +1,7 @@
 Verify keybinds work
-Improve/test logging
+  - they dont!
 "No items." -> gray and consistent to other examples
 Test in different terminals/themes
+  - adaptive colors
 Fix VHS
+  - manually?

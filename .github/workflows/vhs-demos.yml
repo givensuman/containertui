@@ -13,7 +13,7 @@ concurrency:
 jobs:
   generate-gifs:
     runs-on: ubuntu-latest
-    
+
     # Use Docker-in-Docker service for container management demos
     # This provides the same Docker environment as the demo container
     services:
@@ -24,18 +24,18 @@ jobs:
           - 2375:2375
         env:
           DOCKER_TLS_CERTDIR: ""
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Need full history for push
-      
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -43,22 +43,22 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      
+
       - name: Download Go dependencies
         run: go mod download
-      
+
       - name: Install VHS
         run: |
           wget -q https://github.com/charmbracelet/vhs/releases/latest/download/vhs_$(uname -s)_$(uname -m).tar.gz
           tar -xzf vhs_*.tar.gz
           sudo mv vhs /usr/local/bin/
           vhs --version
-      
-      - name: Install ttyd (headless terminal)
+
+      - name: Install ttyd
         run: |
           sudo apt-get update
           sudo apt-get install -y ttyd
-      
+
       - name: Install JetBrains Mono Nerd Font
         run: |
           mkdir -p ~/.local/share/fonts
@@ -66,7 +66,7 @@ jobs:
           unzip -o /tmp/JetBrainsMono.zip -d ~/.local/share/fonts/
           rm /tmp/JetBrainsMono.zip
           fc-cache -fv ~/.local/share/fonts/
-      
+
       # Configure Docker to use the DinD service
       - name: Configure Docker client
         run: |
@@ -74,68 +74,55 @@ jobs:
           # Wait for Docker daemon to be ready
           timeout 30 sh -c 'until docker info > /dev/null 2>&1; do sleep 1; done'
           docker info
-      
+
       - name: Set up demo Docker environment (same as demo container)
         run: |
-          chmod +x ./demos/setup.sh
-          ./demos/setup.sh
-      
+          bash ./demos/setup.sh
+
       - name: Build containertui binary
         run: go build -o /tmp/containertui ./cmd
-      
+
       - name: Generate demo GIFs
         run: |
           cd demos
-          
+
           echo "Generating overview demo..."
           vhs overview.tape || echo "Warning: overview.tape failed"
-          
+
           echo "Generating containers demo..."
           vhs containers.tape || echo "Warning: containers.tape failed"
-          
+
           echo "Generating images demo..."
           vhs images.tape || echo "Warning: images.tape failed"
-          
+
           echo "Generating volumes demo..."
           vhs volumes.tape || echo "Warning: volumes.tape failed"
-          
+
           echo "Generating networks demo..."
           vhs networks.tape || echo "Warning: networks.tape failed"
-          
+
           echo "Generating services demo..."
           vhs services.tape || echo "Warning: services.tape failed"
-          
+
           cd ..
-          
+
           echo ""
           echo "Generated GIFs:"
           ls -lh assets/demo-*.gif || echo "No GIFs generated"
-      
+
       - name: Clean up demo Docker environment (same as demo container)
         if: always()
         run: |
           chmod +x ./demos/cleanup.sh
           ./demos/cleanup.sh || true
-      
-      - name: Check for changes
-        id: check_changes
-        run: |
-          git add assets/*.gif
-          if git diff --staged --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "No changes to commit"
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected"
-          fi
-      
-      - name: Commit and push updated GIFs
-        if: steps.check_changes.outputs.changed == 'true'
-        run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add assets/*.gif
-          git commit -m "Update demo GIFs [skip ci]"
-          git push
+
+      - uses: stefanzweifel/git-auto-commit-action@v4
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ sercrets.GITHUB_TOKEN }}
+        with:
+          commit_message: "ci: generate new gifs"
+          branch: main
+          commit_user_name: vhs-action
+          commit_user_email: actions@github.com
+          commit_author: vhs-action <actions@github.com>
+          file_pattern: "*.gif"
