@@ -74,7 +74,6 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
-	forceRemove          key.Binding
 	pruneVolumes         key.Binding
 	createVolume         key.Binding
 	switchTab            key.Binding
@@ -93,10 +92,6 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
-		),
-		forceRemove: key.NewBinding(
-			key.WithKeys("D"),
-			key.WithHelp("D", "force remove"),
 		),
 		pruneVolumes: key.NewBinding(
 			key.WithKeys("p"),
@@ -183,10 +178,8 @@ func New() Model {
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
-		volumeKeybindings.toggleSelection,
-		volumeKeybindings.toggleSelectionOfAll,
+		volumeKeybindings.switchTab,
 		volumeKeybindings.remove,
-		volumeKeybindings.forceRemove,
 		volumeKeybindings.pruneVolumes,
 		volumeKeybindings.createVolume,
 	}
@@ -225,6 +218,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return model, notifications.ShowError(msg.Err)
 		}
 		successMsg := fmt.Sprintf("Pruned unused volumes, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
+		if msg.SpaceReclaimed == 0 {
+			successMsg = "No unused volumes to prune"
+		}
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),
@@ -291,9 +287,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
 				}
 
-				name := formValues["0"]   // First field
-				driver := formValues["1"] // Second field
-				labels := formValues["2"] // Third field
+				name := formValues["Name"]
+				driver := formValues["Driver"]
+				labels := formValues["Labels"]
 
 				if name == "" {
 					model.CloseOverlay()
@@ -336,20 +332,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
 
-			case key.Matches(msg, model.keybindings.toggleSelection):
-				model.handleToggleSelection()
-				return model, nil
-
-			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				model.handleToggleSelectionOfAll()
-				return model, nil
-
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove(false)
-				return model, nil
-
-			case key.Matches(msg, model.keybindings.forceRemove):
-				model.handleRemove(true)
+				model.handleRemove()
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.pruneVolumes):
@@ -438,22 +422,9 @@ func (model Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model Model) handleRemove(force bool) {
+func (model Model) handleRemove() {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		return
-	}
-
-	if force {
-		// Force delete - show confirmation dialog first
-		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Force delete volume %s?\n\nThis will delete the volume even if containers are using it.", selectedItem.Volume.Name),
-			[]components.DialogButton{
-				{Label: "Cancel"},
-				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteVolume", Payload: selectedItem.Volume.Name}},
-			},
-		)
-		model.SetOverlay(confirmationDialog)
 		return
 	}
 
@@ -470,14 +441,15 @@ func (model Model) handleRemove(force bool) {
 		return
 	}
 	if len(containersUsingVolume) > 0 {
-		warningDialog := components.NewDialog(
-			fmt.Sprintf("Volume %s is used by %d containers (%v).\nCannot delete.",
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Volume %s is used by %d containers (%v).\n\nForce delete anyway?",
 				selectedItem.Volume.Name, len(containersUsingVolume), containersUsingVolume),
 			[]components.DialogButton{
-				{Label: "OK"},
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteVolume", Payload: selectedItem.Volume.Name}},
 			},
 		)
-		model.SetOverlay(warningDialog)
+		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete volume %s?", selectedItem.Volume.Name),

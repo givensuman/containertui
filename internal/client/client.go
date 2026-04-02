@@ -66,8 +66,9 @@ type Volume struct {
 
 // ClientWrapper wraps the Docker client to provide container management functionalities.
 type ClientWrapper struct {
-	client         *client.Client
-	registryClient *registry.Client
+	client             *client.Client
+	registryClient     *registry.Client
+	quayRegistryClient *registry.QuayClient
 }
 
 // NewClient creates a new ClientWrapper with an initialized Docker client.
@@ -77,8 +78,9 @@ func NewClient() (*ClientWrapper, error) {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	return &ClientWrapper{
-		client:         dockerClient,
-		registryClient: registry.NewClient(),
+		client:             dockerClient,
+		registryClient:     registry.NewClient(),
+		quayRegistryClient: registry.NewQuayClient(),
 	}, nil
 }
 
@@ -565,12 +567,12 @@ func (clientWrapper *ClientWrapper) PruneVolumes(ctx context.Context) (uint64, e
 }
 
 // PruneNetworks removes all unused networks.
-func (clientWrapper *ClientWrapper) PruneNetworks(ctx context.Context) error {
-	_, err := clientWrapper.client.NetworksPrune(ctx, filters.Args{})
+func (clientWrapper *ClientWrapper) PruneNetworks(ctx context.Context) (int, error) {
+	report, err := clientWrapper.client.NetworksPrune(ctx, filters.Args{})
 	if err != nil {
-		return fmt.Errorf("failed to prune networks: %w", err)
+		return 0, fmt.Errorf("failed to prune networks: %w", err)
 	}
-	return nil
+	return len(report.NetworksDeleted), nil
 }
 
 // PruneContainers removes all stopped containers.
@@ -759,6 +761,11 @@ func (clientWrapper *ClientWrapper) GetRegistryClient() *registry.Client {
 	return clientWrapper.registryClient
 }
 
+// GetQuayRegistryClient returns the registry client for Quay search operations.
+func (clientWrapper *ClientWrapper) GetQuayRegistryClient() *registry.QuayClient {
+	return clientWrapper.quayRegistryClient
+}
+
 // PullImageFromRegistry pulls an image from a registry (Docker Hub by default).
 func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, imageName string, progressChan chan<- string) error {
 	reader, err := clientWrapper.client.ImagePull(ctx, imageName, types.ImagePullOptions{})
@@ -766,6 +773,9 @@ func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, i
 		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 	}
 	defer reader.Close()
+	if progressChan != nil {
+		defer close(progressChan)
+	}
 
 	// Stream progress to the channel
 	if progressChan != nil {
@@ -962,6 +972,9 @@ func (clientWrapper *ClientWrapper) PullImage(ctx context.Context, imageName str
 		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 	}
 	defer reader.Close()
+	if progressChan != nil {
+		defer close(progressChan)
+	}
 
 	// Stream progress to the channel if provided
 	if progressChan != nil {

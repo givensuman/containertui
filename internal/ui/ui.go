@@ -165,7 +165,11 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.String() == "?" {
-			model.help.ShowAll = !model.help.ShowAll
+			if hasOverlay {
+				model.help.ShowAll = false
+			} else {
+				model.help.ShowAll = !model.help.ShowAll
+			}
 		}
 	}
 
@@ -239,6 +243,15 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model.browseModel, browseCmd = model.browseModel.Update(msg)
 			cmds = append(cmds, browseCmd)
 		}
+	}
+
+	if model.containersModel.IsOverlayVisible() ||
+		model.imagesModel.IsOverlayVisible() ||
+		model.volumesModel.IsOverlayVisible() ||
+		model.networksModel.IsOverlayVisible() ||
+		model.servicesModel.IsOverlayVisible() ||
+		model.browseModel.IsOverlayVisible() {
+		model.help.ShowAll = false
 	}
 
 	return model, tea.Batch(cmds...)
@@ -338,6 +351,7 @@ func (model Model) View() tea.View {
 	if helpView == "" {
 		view = tea.NewView(fullView)
 		view.AltScreen = true
+		view.MouseMode = tea.MouseModeCellMotion
 
 		return view
 	}
@@ -368,12 +382,14 @@ func (model Model) View() tea.View {
 
 		view = tea.NewView(strings.Join(append(topLines, renderedHelpLines...), "\n"))
 		view.AltScreen = true
+		view.MouseMode = tea.MouseModeCellMotion
 
 		return view
 	}
 
 	view = tea.NewView(fullView)
 	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
 
 	return view
 }

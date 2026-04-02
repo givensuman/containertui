@@ -295,7 +295,7 @@ func (dialog FormDialog) renderButtons() string {
 		Padding(0, 1).
 		Margin(0, 1).
 		Bold(true).
-		Foreground(colors.Text()).
+		Foreground(colors.BrightWhite()).
 		Background(colors.Primary())
 
 	cancelStyle := defaultButtonStyle

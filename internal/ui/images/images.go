@@ -3,6 +3,7 @@ package images
 
 import (
 	stdcontext "context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -68,7 +69,10 @@ func newDetailsKeybindings() detailsKeybindings {
 
 // MsgPullProgress contains progress information from image pull.
 type MsgPullProgress struct {
-	Message string
+	ImageName    string
+	Message      string
+	ProgressChan <-chan string
+	DoneChan     <-chan error
 }
 
 // MsgPullComplete indicates the image pull has finished.
@@ -86,6 +90,25 @@ type MsgCreateContainerComplete struct {
 	Err         error
 }
 
+// MsgRunAndExecComplete indicates run-and-exec flow has finished.
+type MsgRunAndExecComplete struct {
+	ContainerID string
+	Err         error
+}
+
+// MsgTagImageComplete indicates image tagging has finished.
+type MsgTagImageComplete struct {
+	ImageID string
+	NewTag  string
+	Err     error
+}
+
+// MsgBuildImageComplete indicates image build has finished.
+type MsgBuildImageComplete struct {
+	Tag string
+	Err error
+}
+
 // MsgPruneComplete is sent when the prune operation completes
 type MsgPruneComplete struct {
 	SpaceReclaimed uint64
@@ -96,7 +119,6 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
-	forceRemove          key.Binding
 	pruneImages          key.Binding
 	tagImage             key.Binding
 	runAndExec           key.Binding
@@ -119,10 +141,6 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
-		),
-		forceRemove: key.NewBinding(
-			key.WithKeys("D"),
-			key.WithHelp("D", "force remove"),
 		),
 		pruneImages: key.NewBinding(
 			key.WithKeys("p"),
@@ -358,10 +376,8 @@ func New() Model {
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
-		imageKeybindings.toggleSelection,
-		imageKeybindings.toggleSelectionOfAll,
+		imageKeybindings.switchTab,
 		imageKeybindings.remove,
-		imageKeybindings.forceRemove,
 		imageKeybindings.pruneImages,
 		imageKeybindings.tagImage,
 		imageKeybindings.runAndExec,
@@ -416,6 +432,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 		return model, nil
+
+	case MsgPullProgress:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			progressDialog.SetStatus(msg.Message)
+			model.Foreground = progressDialog
+		}
+
+		if msg.ProgressChan != nil && msg.DoneChan != nil {
+			return model, listenToPullProgress(msg.ImageName, msg.ProgressChan, msg.DoneChan)
+		}
+		return model, nil
 	case MsgRefreshImages:
 		// Refresh the images list via ResourceView
 		return model, model.Refresh()
@@ -439,12 +466,70 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			},
 		)
 
+	case MsgRunAndExecComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+
+		successMsg := fmt.Sprintf("Created ephemeral container: %s", msg.ContainerID[:12])
+		return model, tea.Batch(
+			notifications.ShowSuccess(successMsg),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationCreated,
+					IDs:       []string{msg.ContainerID},
+				}
+			},
+		)
+
+	case MsgTagImageComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Tagged image: %s", msg.NewTag)),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationUpdated,
+					IDs:       []string{msg.ImageID},
+				}
+			},
+		)
+
+	case MsgBuildImageComplete:
+		if model.IsOverlayVisible() {
+			model.CloseOverlay()
+		}
+
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Built image: %s", msg.Tag)),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceImage,
+					Operation: base.OperationCreated,
+					IDs:       []string{msg.Tag},
+				}
+			},
+		)
+
 	case MsgPruneComplete:
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
 		successMsg := fmt.Sprintf("Pruned unused images, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
+		if msg.SpaceReclaimed == 0 {
+			successMsg = "No unused images to prune"
+		}
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),
@@ -509,17 +594,20 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				// Show progress dialog
-				progressDialog := components.NewDialog(
-					fmt.Sprintf("Pulling image: %s\n\nThis may take a few moments...", imageName),
-					[]components.DialogButton{}, // No buttons while pulling
-				)
+				progressDialog := components.NewProgressDialogWithBar(fmt.Sprintf("Pulling image: %s", imageName))
+				progressDialog.SetStatus("Preparing pull...")
 				model.SetOverlay(progressDialog)
 
-				// Start pull in goroutine
-				return model, func() tea.Msg {
-					err := state.GetClient().PullImage(stdcontext.Background(), imageName, nil)
-					return MsgPullComplete{ImageName: imageName, Err: err}
-				}
+				progressChan := make(chan string, 100)
+				doneChan := make(chan error, 1)
+
+				go func() {
+					err := state.GetClient().PullImage(stdcontext.Background(), imageName, progressChan)
+					doneChan <- err
+					close(doneChan)
+				}()
+
+				return model, listenToPullProgress(imageName, progressChan, doneChan)
 			case "CreateContainerAction":
 				// Extract form values and image ID
 				payload, ok := confirmMsg.Action.Payload.(map[string]any)
@@ -593,7 +681,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
 				}
 
-				newTag := formValues["0"] // First field
+				newTag := formValues["New Tag"]
 				if newTag == "" {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("tag is required"))
@@ -615,10 +703,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
 				}
 
-				dockerfile := formValues["0"]  // First field
-				tag := formValues["1"]         // Second field
-				contextPath := formValues["2"] // Third field
-				buildArgs := formValues["3"]   // Fourth field (optional)
+				dockerfile := formValues["Dockerfile Path"]
+				tag := formValues["Tag"]
+				contextPath := formValues["Build Context"]
+				buildArgs := formValues["Build Args"]
 
 				if dockerfile == "" || tag == "" || contextPath == "" {
 					model.CloseOverlay()
@@ -639,6 +727,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				model.CloseOverlay()
+				progressDialog := components.NewProgressDialog("Building image...\n\nThis may take a few moments...")
+				model.SetOverlay(progressDialog)
 				return model, model.performBuildImage(dockerfile, tag, contextPath, buildArgsMap)
 			}
 
@@ -661,14 +751,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
-
-			case key.Matches(msg, model.keybindings.toggleSelection):
-				model.handleToggleSelection()
-				return model, nil
-
-			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				model.handleToggleSelectionOfAll()
-				return model, nil
 
 			case key.Matches(msg, model.keybindings.pullImage):
 				// Show form dialog to get image name
@@ -734,11 +816,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 			case key.Matches(msg, model.keybindings.remove):
-				model.handleRemove(false)
-				return model, nil
-
-			case key.Matches(msg, model.keybindings.forceRemove):
-				model.handleRemove(true)
+				model.handleRemove()
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.pruneImages):
@@ -845,22 +923,9 @@ func (model *Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove(force bool) {
+func (model *Model) handleRemove() {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		return
-	}
-
-	if force {
-		// Force delete - show confirmation dialog first
-		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Force delete image %s?\n\nThis will delete the image even if containers are using it.", selectedItem.Image.ID[:12]),
-			[]components.DialogButton{
-				{Label: "Cancel"},
-				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteImage", Payload: selectedItem.Image.ID}},
-			},
-		)
-		model.SetOverlay(confirmationDialog)
 		return
 	}
 
@@ -877,13 +942,14 @@ func (model *Model) handleRemove(force bool) {
 		return
 	}
 	if len(containersUsingImage) > 0 {
-		warningDialog := components.NewDialog(
-			fmt.Sprintf("Image %s is used by %d containers (%v).\nCannot delete.", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Image %s is used by %d containers (%v).\n\nForce delete anyway?", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
 			[]components.DialogButton{
-				{Label: "OK"},
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteImage", Payload: selectedItem.Image.ID}},
 			},
 		)
-		model.SetOverlay(warningDialog)
+		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete image %s?", selectedItem.Image.ID[:12]),
@@ -1091,7 +1157,7 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 
 		containerID, err := state.GetClient().CreateContainer(ctx, config)
 		if err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to create container: %w", err))
+			return MsgRunAndExecComplete{Err: fmt.Errorf("failed to create container: %w", err)}
 		}
 
 		// Exec into it
@@ -1100,21 +1166,11 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 			// Try bash if sh fails
 			shell = []string{"/bin/bash"}
 			if _, err := state.GetClient().ExecShell(ctx, containerID, shell); err != nil {
-				return notifications.ShowError(fmt.Errorf("failed to exec shell: %w", err))
+				return MsgRunAndExecComplete{Err: fmt.Errorf("failed to exec shell: %w", err)}
 			}
 		}
 
-		// Emit cross-tab message to update Containers tab
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Created ephemeral container: %s", containerID[:12])),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceContainer,
-					Operation: base.OperationCreated,
-					IDs:       []string{containerID},
-				}
-			},
-		)
+		return MsgRunAndExecComplete{ContainerID: containerID}
 	}
 }
 
@@ -1159,19 +1215,9 @@ func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
 		ctx := stdcontext.Background()
 		err := state.GetClient().TagImage(ctx, imageID, newTag)
 		if err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to tag image: %w", err))
+			return MsgTagImageComplete{Err: fmt.Errorf("failed to tag image: %w", err)}
 		}
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Tagged image: %s", newTag)),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceImage,
-					Operation: base.OperationUpdated,
-					IDs:       []string{imageID},
-				}
-			},
-		)
+		return MsgTagImageComplete{ImageID: imageID, NewTag: newTag}
 	}
 }
 
@@ -1179,9 +1225,6 @@ func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
 func (model *Model) performBuildImage(dockerfile, tag, contextPath string, buildArgs map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-
-		// Show progress notification
-		notifications.ShowInfo("Building image... This may take a while")
 
 		// Convert buildArgs to map[string]*string
 		buildArgsPtr := make(map[string]*string)
@@ -1192,24 +1235,80 @@ func (model *Model) performBuildImage(dockerfile, tag, contextPath string, build
 
 		buildOutput, err := state.GetClient().BuildImage(ctx, dockerfile, tag, contextPath, buildArgsPtr)
 		if err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to build image: %w", err))
+			return MsgBuildImageComplete{Err: fmt.Errorf("failed to build image: %w", err)}
 		}
 		defer buildOutput.Close()
 
 		if _, err := io.Copy(io.Discard, buildOutput); err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to read build output: %w", err))
+			return MsgBuildImageComplete{Err: fmt.Errorf("failed to read build output: %w", err)}
 		}
 
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Built image: %s", tag)),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceImage,
-					Operation: base.OperationCreated,
-					IDs:       []string{tag},
-				}
-			},
-		)
+		return MsgBuildImageComplete{Tag: tag}
 	}
+}
+
+func listenToPullProgress(imageName string, progressChan <-chan string, doneChan <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case status, ok := <-progressChan:
+			if !ok {
+				err := <-doneChan
+				return MsgPullComplete{ImageName: imageName, Err: err}
+			}
+
+			return MsgPullProgress{
+				ImageName:    imageName,
+				Message:      parsePullStatusMessage(status),
+				ProgressChan: progressChan,
+				DoneChan:     doneChan,
+			}
+
+		case err := <-doneChan:
+			return MsgPullComplete{ImageName: imageName, Err: err}
+		}
+	}
+}
+
+func parsePullStatusMessage(raw string) string {
+	type pullProgressDetail struct {
+		Current int64 `json:"current"`
+		Total   int64 `json:"total"`
+	}
+
+	type pullStatus struct {
+		ID             string             `json:"id"`
+		Status         string             `json:"status"`
+		Error          string             `json:"error"`
+		Progress       string             `json:"progress"`
+		ProgressDetail pullProgressDetail `json:"progressDetail"`
+	}
+
+	var status pullStatus
+	if err := json.Unmarshal([]byte(raw), &status); err != nil {
+		return "Pulling image..."
+	}
+
+	if status.Error != "" {
+		return status.Error
+	}
+
+	message := strings.TrimSpace(status.Status)
+	if message == "" {
+		message = "Pulling image..."
+	}
+
+	if status.ID != "" {
+		message = fmt.Sprintf("%s (%s)", message, status.ID)
+	}
+
+	if status.Progress != "" {
+		return fmt.Sprintf("%s %s", message, strings.TrimSpace(status.Progress))
+	}
+
+	if status.ProgressDetail.Total > 0 {
+		percent := int((status.ProgressDetail.Current * 100) / status.ProgressDetail.Total)
+		return fmt.Sprintf("%s (%d%%)", message, percent)
+	}
+
+	return message
 }

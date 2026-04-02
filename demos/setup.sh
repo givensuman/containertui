@@ -31,6 +31,18 @@ echo "Creating test networks..."
 docker network create containertui-network-1 || true
 docker network create containertui-network-2 || true
 
+# Create a demo compose project so Services tab has data
+echo "Creating demo compose service..."
+compose_file="/tmp/containertui-demo-compose.yml"
+cat >"${compose_file}" <<'EOF'
+services:
+  demo-service:
+    image: alpine:latest
+    command: ["sh", "-c", "while true; do echo demo-service-alive; sleep 10; done"]
+EOF
+
+docker compose -f "${compose_file}" -p containertui-demo up -d || true
+
 # Create test containers (some running, some stopped)
 echo "Creating test containers..."
 

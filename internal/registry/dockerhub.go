@@ -54,6 +54,10 @@ func (c *Client) Search(ctx context.Context, query string, pageSize int) (Search
 		return SearchResponse{}, fmt.Errorf("failed to search repositories: %w", err)
 	}
 
+	for i := range response.Results {
+		response.Results[i].Registry = "dockerhub"
+	}
+
 	return response, nil
 }
 
@@ -97,6 +101,7 @@ func (c *Client) GetPopularImages(ctx context.Context, pageSize int) ([]Registry
 			PullCount:        item.PullCount,
 			IsOfficial:       item.Namespace == "library",
 			IsAutomated:      false,
+			Registry:         "dockerhub",
 		})
 	}
 

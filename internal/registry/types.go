@@ -9,6 +9,7 @@ type RegistryImage struct {
 	PullCount        int64  `json:"pull_count"`
 	IsOfficial       bool   `json:"is_official"`
 	IsAutomated      bool   `json:"is_automated"`
+	Registry         string `json:"registry,omitempty"`
 }
 
 // RegistryImageDetail represents detailed information from Docker Hub.

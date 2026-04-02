@@ -31,7 +31,8 @@ type MsgRestoreScroll struct{}
 
 // MsgPruneComplete is sent when the prune operation completes
 type MsgPruneComplete struct {
-	Err error
+	NetworksDeleted int
+	Err             error
 }
 
 // isSystemNetwork returns true if the network is a predefined system network
@@ -82,7 +83,6 @@ type keybindings struct {
 	toggleSelection      key.Binding
 	toggleSelectionOfAll key.Binding
 	remove               key.Binding
-	forceRemove          key.Binding
 	pruneNetworks        key.Binding
 	createNetwork        key.Binding
 	switchTab            key.Binding
@@ -101,10 +101,6 @@ func newKeybindings() *keybindings {
 		remove: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "remove"),
-		),
-		forceRemove: key.NewBinding(
-			key.WithKeys("D"),
-			key.WithHelp("D", "force remove"),
 		),
 		pruneNetworks: key.NewBinding(
 			key.WithKeys("p"),
@@ -191,10 +187,8 @@ func New() Model {
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
-		networkKeybindings.toggleSelection,
-		networkKeybindings.toggleSelectionOfAll,
+		networkKeybindings.switchTab,
 		networkKeybindings.remove,
-		networkKeybindings.forceRemove,
 		networkKeybindings.pruneNetworks,
 		networkKeybindings.createNetwork,
 	}
@@ -232,8 +226,16 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
+
+		successMsg := "No unused networks to prune"
+		if msg.NetworksDeleted == 1 {
+			successMsg = "Pruned 1 unused network"
+		} else if msg.NetworksDeleted > 1 {
+			successMsg = fmt.Sprintf("Pruned %d unused networks", msg.NetworksDeleted)
+		}
+
 		return model, tea.Batch(
-			notifications.ShowSuccess("Pruned unused networks"),
+			notifications.ShowSuccess(successMsg),
 			model.Refresh(),
 			func() tea.Msg {
 				return base.MsgResourceChanged{
@@ -295,12 +297,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
 				}
 
-				name := formValues["0"]    // First field
-				driver := formValues["1"]  // Second field
-				subnet := formValues["2"]  // Third field
-				gateway := formValues["3"] // Fourth field
-				ipv6 := formValues["4"]    // Fifth field
-				labels := formValues["5"]  // Sixth field
+				name := formValues["Name"]
+				driver := formValues["Driver"]
+				subnet := formValues["Subnet (CIDR)"]
+				gateway := formValues["Gateway"]
+				ipv6 := formValues["Enable IPv6"]
+				labels := formValues["Labels"]
 
 				if name == "" {
 					model.CloseOverlay()
@@ -346,19 +348,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
 
-			case key.Matches(msg, model.keybindings.toggleSelection):
-				model.handleToggleSelection()
-				return model, nil
-
-			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				model.handleToggleSelectionOfAll()
-				return model, nil
-
 			case key.Matches(msg, model.keybindings.remove):
-				return model, model.handleRemove(false)
-
-			case key.Matches(msg, model.keybindings.forceRemove):
-				return model, model.handleRemove(true)
+				return model, model.handleRemove()
 
 			case key.Matches(msg, model.keybindings.pruneNetworks):
 				if cmd := model.handlePruneNetworks(); cmd != nil {
@@ -428,7 +419,7 @@ func (model Model) handleToggleSelectionOfAll() {
 	}
 }
 
-func (model *Model) handleRemove(force bool) tea.Cmd {
+func (model *Model) handleRemove() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		return nil
@@ -439,19 +430,6 @@ func (model *Model) handleRemove(force bool) tea.Cmd {
 		return notifications.ShowInfo(
 			fmt.Sprintf("Cannot delete system network: %s", selectedItem.Network.Name),
 		)
-	}
-
-	if force {
-		// Force delete - show confirmation dialog first
-		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Force delete network %s?\n\nThis will delete the network even if containers are using it.", selectedItem.Network.Name),
-			[]components.DialogButton{
-				{Label: "Cancel"},
-				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteNetwork", Payload: selectedItem.Network.ID}},
-			},
-		)
-		model.SetOverlay(confirmationDialog)
-		return nil
 	}
 
 	containersUsingNetwork, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
@@ -467,13 +445,14 @@ func (model *Model) handleRemove(force bool) tea.Cmd {
 		return nil
 	}
 	if len(containersUsingNetwork) > 0 {
-		warningDialog := components.NewDialog(
-			fmt.Sprintf("Network %s is used by %d containers (%v).\nCannot delete.", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
+		confirmationDialog := components.NewDialog(
+			fmt.Sprintf("Network %s is used by %d containers (%v).\n\nForce delete anyway?", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
 			[]components.DialogButton{
-				{Label: "OK"},
+				{Label: "Cancel"},
+				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteNetwork", Payload: selectedItem.Network.ID}},
 			},
 		)
-		model.SetOverlay(warningDialog)
+		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
 			fmt.Sprintf("Are you sure you want to delete network %s?", selectedItem.Network.Name),
@@ -622,9 +601,10 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		err := state.GetClient().PruneNetworks(ctx)
+		networksDeleted, err := state.GetClient().PruneNetworks(ctx)
 		return MsgPruneComplete{
-			Err: err,
+			NetworksDeleted: networksDeleted,
+			Err:             err,
 		}
 	}
 }

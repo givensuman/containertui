@@ -24,4 +24,9 @@ echo "Removing test networks..."
 docker network rm containertui-network-1 2>/dev/null || true
 docker network rm containertui-network-2 2>/dev/null || true
 
+# Tear down demo compose project/service
+echo "Removing demo compose service..."
+docker compose -p containertui-demo down --remove-orphans 2>/dev/null || true
+rm -f /tmp/containertui-demo-compose.yml 2>/dev/null || true
+
 echo "Cleanup complete!"

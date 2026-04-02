@@ -111,6 +111,14 @@ This MVP targets Linux + Docker Engine first.
 - #TODO: Define clipboard fallback behavior for Linux terminals without `xclip`/`wl-clipboard`.
 - #TODO: Confirm rootless Docker support baseline and document tested limits.
 
+### Mouse Support
+
+containertui enables mouse support by default (cell-motion mode). This allows:
+
+- Clicking list items to select them.
+- Scrolling list/detail panes with the mouse wheel.
+- Interacting with dialogs and overlays using mouse events where supported by the active component.
+
 ## Features
 
 ### Quick Overview

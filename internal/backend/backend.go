@@ -53,7 +53,7 @@ type Backend interface {
 	InspectNetwork(ctx context.Context, id string) (NetworkDetail, error)
 	CreateNetwork(ctx context.Context, name, driver, subnet, gateway string, enableIPv6 bool, labels map[string]string) (string, error)
 	RemoveNetwork(ctx context.Context, id string) error
-	PruneNetworks(ctx context.Context) error
+	PruneNetworks(ctx context.Context) (int, error)
 
 	// Volume operations
 	ListVolumes(ctx context.Context) ([]Volume, error)

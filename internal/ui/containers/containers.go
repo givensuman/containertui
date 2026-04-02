@@ -143,8 +143,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
 		renameContainer: key.NewBinding(
-			key.WithKeys("f2"),
-			key.WithHelp("F2", "rename container"),
+			key.WithKeys("e"),
+			key.WithHelp("e", "rename container"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5", "6"),
@@ -226,6 +226,7 @@ func New() Model {
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
+		containerKeybindings.switchTab,
 		containerKeybindings.pauseContainer,
 		containerKeybindings.unpauseContainer,
 		containerKeybindings.startContainer,

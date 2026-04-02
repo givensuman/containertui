@@ -1,4 +1,4 @@
-// Package browse defines the browse component for Docker Hub images.
+// Package browse defines the browse component for registry images.
 package browse
 
 import (
@@ -18,6 +18,13 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 )
+
+const (
+	registryDockerHub = "dockerhub"
+	registryQuay      = "quay"
+)
+
+var supportedRegistries = []string{registryDockerHub, registryQuay}
 
 type keybindings struct {
 	search               key.Binding
@@ -92,6 +99,7 @@ type Model struct {
 	inspection         registry.RegistryImageDetail
 	isSearchMode       bool
 	currentSearchQuery string
+	currentRegistry    string
 
 	// Scroll position memory
 	scrollPositions map[string]int
@@ -145,8 +153,6 @@ func New() Model {
 	resourceView.AdditionalHelp = []key.Binding{
 		browseKeybindings.search,
 		browseKeybindings.pull,
-		browseKeybindings.toggleSelection,
-		browseKeybindings.toggleSelectionOfAll,
 		browseKeybindings.switchTab,
 	}
 
@@ -157,6 +163,7 @@ func New() Model {
 		scrollPositions:    make(map[string]int),
 		isPulling:          false,
 		currentSearchQuery: "",
+		currentRegistry:    registryDockerHub,
 	}
 }
 
@@ -205,9 +212,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Store the search query
 		model.currentSearchQuery = msg.Query
+		model.currentRegistry = normalizeRegistry(msg.Registry)
 		model.isSearchMode = true
 
-		cmds = append(cmds, notifications.ShowInfo(fmt.Sprintf("Found %d results for '%s'", len(msg.Images), msg.Query)))
+		cmds = append(cmds, notifications.ShowInfo(fmt.Sprintf("Found %d results for '%s' in %s", len(msg.Images), msg.Query, displayRegistryName(model.currentRegistry))))
 		return model, tea.Batch(cmds...)
 
 	case MsgImageInspection:
@@ -225,8 +233,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case MsgPullProgress:
 		// Progress updates are handled internally, no UI update needed
 		// Continue listening to the progress channel
-		if model.progressChan != nil && msg.DoneChan != nil {
-			return model, listenToProgressChannelWithDone(msg.ImageName, model.progressChan, msg.DoneChan)
+		if msg.ProgressChan != nil && msg.DoneChan != nil {
+			return model, listenToProgressChannelWithDone(msg.ImageName, msg.ProgressChan, msg.DoneChan)
 		}
 
 	case MsgPullComplete:
@@ -257,7 +265,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			switch confirmMsg.Action.Type {
 			case "PullImage":
-				imageName := confirmMsg.Action.Payload.(string)
+				payload, ok := confirmMsg.Action.Payload.(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid pull payload"))
+				}
+
+				imageName := payload["image"]
+				registryName := normalizeRegistry(payload["registry"])
 				model.CloseOverlay()
 
 				// Start spinner for this image
@@ -282,13 +297,19 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}()
 
 				// Start listening to progress
-				return model, tea.Batch(spinnerCmd, listenToProgressChannelWithDone(imageName, progressChan, doneChan))
+				return model, tea.Batch(
+					spinnerCmd,
+					notifications.ShowInfo(fmt.Sprintf("Pulling from %s", displayRegistryName(registryName))),
+					listenToProgressChannelWithDone(imageName, progressChan, doneChan),
+				)
 
 			case "SearchRegistry":
 				// Extract query from form values
 				var query string
+				selectedRegistry := model.currentRegistry
 				if payload, ok := confirmMsg.Action.Payload.(map[string]any); ok {
 					if values, ok := payload["values"].(map[string]string); ok {
+						selectedRegistry = normalizeRegistry(values["Search Registry"])
 						query = strings.TrimSpace(values["Search Query"])
 					}
 				}
@@ -296,15 +317,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				// If query is empty, return to popular images
 				if query == "" {
+					if selectedRegistry != registryDockerHub {
+						return model, notifications.ShowInfo("Enter a search query for non-Docker Hub registries")
+					}
+
 					model.currentSearchQuery = ""
+					model.currentRegistry = registryDockerHub
 					model.isSearchMode = false
-					return model, tea.Batch(
-						model.Refresh(),
-						notifications.ShowInfo("Returned to popular images"),
-					)
+					return model, tea.Batch(model.Refresh(), notifications.ShowInfo("Returned to popular Docker Hub images"))
 				}
 
-				return model, model.performRemoteSearch(query)
+				return model, model.performRemoteSearch(query, selectedRegistry)
 			}
 		}
 		return model, tea.Batch(cmds...)
@@ -325,11 +348,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case key.Matches(msg, model.keybindings.pull):
 				model.handlePull()
 
-			case key.Matches(msg, model.keybindings.toggleSelection):
-				model.handleToggleSelection()
-
-			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
-				model.handleToggleSelectionOfAll()
 			}
 		}
 	}
@@ -374,6 +392,12 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		model.currentItemID = itemID
 
 		// Fetch detailed data asynchronously
+		if selectedItem.Image.Registry == registryQuay {
+			model.inspection = detailFromBrowseItem(selectedItem.Image)
+			model.refreshInspectionContent()
+			return nil
+		}
+
 		return func() tea.Msg {
 			client := state.GetClient().GetRegistryClient()
 
@@ -449,11 +473,17 @@ func (model *Model) getViewport() *viewport.Model {
 // handleSearch shows a search dialog.
 func (model *Model) handleSearch() {
 	searchDialog := components.NewFormDialog(
-		"Search Docker Hub",
+		"Search Registry",
 		[]components.FormField{
 			{
+				Label:       "Search Registry",
+				Placeholder: "dockerhub or quay",
+				Value:       model.currentRegistry,
+				Required:    false,
+			},
+			{
 				Label:       "Search Query",
-				Placeholder: "e.g., nginx, postgres, redis (leave empty to return to popular images)",
+				Placeholder: "e.g., nginx, postgres, redis",
 				Value:       model.currentSearchQuery,
 				Required:    false,
 			},
@@ -475,15 +505,23 @@ func (model *Model) handlePull() {
 
 	imageName := selectedItem.Image.RepoName
 
+	registryName := normalizeRegistry(selectedItem.Image.Registry)
+	if selectedItem.Image.Registry == "" {
+		registryName = model.currentRegistry
+	}
+
 	confirmDialog := components.NewDialog(
-		fmt.Sprintf("Pull image '%s' from Docker Hub?", imageName),
+		fmt.Sprintf("Pull image '%s' from %s?", imageName, displayRegistryName(registryName)),
 		[]components.DialogButton{
 			{Label: "Cancel"},
 			{
 				Label: "Pull",
 				Action: base.SmartDialogAction{
-					Type:    "PullImage",
-					Payload: imageName,
+					Type: "PullImage",
+					Payload: map[string]string{
+						"image":    imageName,
+						"registry": registryName,
+					},
 				},
 			},
 		},
@@ -537,16 +575,73 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 	return notifications.ShowSuccess("Copied to clipboard")
 }
 
-// performRemoteSearch performs a remote search on Docker Hub.
-func (model *Model) performRemoteSearch(query string) tea.Cmd {
+// performRemoteSearch performs a remote search on a selected registry.
+func (model *Model) performRemoteSearch(query, registryName string) tea.Cmd {
 	return func() tea.Msg {
-		client := state.GetClient().GetRegistryClient()
-		response, err := client.Search(stdcontext.Background(), query, 25)
-		return MsgSearchResults{
-			Query:  query,
-			Images: response.Results,
-			Err:    err,
+		var (
+			response registry.SearchResponse
+			err      error
+		)
+
+		normalizedRegistry := normalizeRegistry(registryName)
+		switch normalizedRegistry {
+		case registryQuay:
+			client := state.GetClient().GetQuayRegistryClient()
+			response, err = client.Search(stdcontext.Background(), query, 25)
+		default:
+			client := state.GetClient().GetRegistryClient()
+			response, err = client.Search(stdcontext.Background(), query, 25)
 		}
+
+		return MsgSearchResults{
+			Query:    query,
+			Registry: normalizedRegistry,
+			Images:   response.Results,
+			Err:      err,
+		}
+	}
+}
+
+func normalizeRegistry(name string) string {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	for _, candidate := range supportedRegistries {
+		if normalized == candidate {
+			return candidate
+		}
+	}
+
+	if strings.Contains(normalized, "quay") {
+		return registryQuay
+	}
+
+	return registryDockerHub
+}
+
+func displayRegistryName(name string) string {
+	if normalizeRegistry(name) == registryQuay {
+		return "Quay"
+	}
+
+	return "Docker Hub"
+}
+
+func detailFromBrowseItem(img registry.RegistryImage) registry.RegistryImageDetail {
+	fullName := strings.TrimPrefix(img.RepoName, "quay.io/")
+	namespace := ""
+	name := fullName
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) == 2 {
+		namespace = parts[0]
+		name = parts[1]
+	}
+
+	return registry.RegistryImageDetail{
+		Name:            name,
+		Namespace:       namespace,
+		Description:     img.ShortDescription,
+		FullDescription: img.ShortDescription,
+		StarCount:       img.StarCount,
+		PullCount:       img.PullCount,
 	}
 }
 
@@ -598,9 +693,10 @@ func listenToProgressChannelWithDone(imageName string, progressChan <-chan strin
 
 			// Regular progress update
 			return MsgPullProgress{
-				ImageName: imageName,
-				Status:    status,
-				DoneChan:  doneChan,
+				ImageName:    imageName,
+				Status:       status,
+				ProgressChan: progressChan,
+				DoneChan:     doneChan,
 			}
 
 		case err := <-doneChan:

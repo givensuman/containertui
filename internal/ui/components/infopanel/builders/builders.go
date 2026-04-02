@@ -3,6 +3,7 @@ package builders
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
@@ -48,6 +49,8 @@ func BuildBrowsePanel(detail registry.RegistryImageDetail, width int) string {
 		description = "No description available."
 	}
 
+	description = normalizeReadmeWhitespace(description)
+
 	// Render the markdown description
 	rendered, err := infopanel.RenderMarkdown(description, width)
 	if err != nil {
@@ -56,6 +59,19 @@ func BuildBrowsePanel(detail registry.RegistryImageDetail, width int) string {
 	}
 
 	return rendered
+}
+
+func normalizeReadmeWhitespace(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+
+	joined := strings.Join(lines, "\n")
+	return strings.TrimSpace(joined)
 }
 
 // BuildImagePanel builds an informational panel for an image with raw YAML/JSON output.

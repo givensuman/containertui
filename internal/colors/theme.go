@@ -2,10 +2,29 @@ package colors
 
 import (
 	"image/color"
+	"os"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/state"
 )
+
+var (
+	backgroundOnce   sync.Once
+	detectedDarkMode bool
+)
+
+func hasDarkBackground() bool {
+	backgroundOnce.Do(func() {
+		detectedDarkMode = lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+	})
+
+	return detectedDarkMode
+}
+
+func adaptiveColor(light, dark color.Color) color.Color {
+	return lipgloss.LightDark(hasDarkBackground())(light, dark)
+}
 
 func Primary() color.Color {
 	cfg := state.GetConfig()
@@ -13,7 +32,7 @@ func Primary() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Primary))
 	}
 
-	return Blue()
+	return adaptiveColor(lipgloss.Color(ColorBlue.String()), lipgloss.Color(ColorBrightBlue.String()))
 }
 
 func Border() color.Color {
@@ -22,7 +41,7 @@ func Border() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Border))
 	}
 
-	return Gray()
+	return adaptiveColor(lipgloss.Color(ColorBlack.String()), lipgloss.Color(ColorBrightBlack.String()))
 }
 
 func Text() color.Color {
@@ -31,7 +50,7 @@ func Text() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Text))
 	}
 
-	return White()
+	return adaptiveColor(lipgloss.Color(ColorBlack.String()), lipgloss.Color(ColorBrightWhite.String()))
 }
 
 func Muted() color.Color {
@@ -40,7 +59,7 @@ func Muted() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Muted))
 	}
 
-	return Gray()
+	return adaptiveColor(lipgloss.Color(ColorBrightBlack.String()), lipgloss.Color(ColorWhite.String()))
 }
 
 func Selected() color.Color {
@@ -58,7 +77,7 @@ func Success() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Success))
 	}
 
-	return Green()
+	return adaptiveColor(lipgloss.Color(ColorGreen.String()), lipgloss.Color(ColorBrightGreen.String()))
 }
 
 func Warning() color.Color {
@@ -67,7 +86,7 @@ func Warning() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Warning))
 	}
 
-	return Yellow()
+	return adaptiveColor(lipgloss.Color(ColorYellow.String()), lipgloss.Color(ColorBrightYellow.String()))
 }
 
 func Error() color.Color {
@@ -76,5 +95,5 @@ func Error() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Error))
 	}
 
-	return Red()
+	return adaptiveColor(lipgloss.Color(ColorRed.String()), lipgloss.Color(ColorBrightRed.String()))
 }

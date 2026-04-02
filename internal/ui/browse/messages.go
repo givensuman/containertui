@@ -14,9 +14,10 @@ type MsgPopularImages struct {
 
 // MsgSearchResults is received after remote search.
 type MsgSearchResults struct {
-	Query  string
-	Images []registry.RegistryImage
-	Err    error
+	Query    string
+	Registry string
+	Images   []registry.RegistryImage
+	Err      error
 }
 
 // MsgImageInspection is received after fetching detailed info.
@@ -28,9 +29,10 @@ type MsgImageInspection struct {
 
 // MsgPullProgress provides progress updates during image pull.
 type MsgPullProgress struct {
-	ImageName string
-	Status    string
-	DoneChan  <-chan error // Channel to signal completion with error status
+	ImageName    string
+	Status       string
+	ProgressChan <-chan string
+	DoneChan     <-chan error // Channel to signal completion with error status
 }
 
 // MsgPullComplete indicates pull operation completed.

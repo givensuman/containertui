@@ -627,12 +627,12 @@ func (d *DockerBackend) RemoveNetwork(ctx context.Context, id string) error {
 }
 
 // PruneNetworks removes unused networks.
-func (d *DockerBackend) PruneNetworks(ctx context.Context) error {
-	_, err := d.client.NetworksPrune(ctx, filters.Args{})
+func (d *DockerBackend) PruneNetworks(ctx context.Context) (int, error) {
+	report, err := d.client.NetworksPrune(ctx, filters.Args{})
 	if err != nil {
-		return fmt.Errorf("failed to prune networks: %w", err)
+		return 0, fmt.Errorf("failed to prune networks: %w", err)
 	}
-	return nil
+	return len(report.NetworksDeleted), nil
 }
 
 // ListVolumes lists all volumes.
