@@ -101,6 +101,16 @@ You can also set a default startup tab in your config file:
 startup-tab: images
 ```
 
+### Linux-First Runtime Notes
+
+This MVP targets Linux + Docker Engine first.
+
+- Docker socket support currently assumes `/var/run/docker.sock` for local Linux usage.
+- #TODO: Define Linux socket precedence when both `DOCKER_HOST` and default Unix socket are available.
+- #TODO: Define shell fallback order for exec flows (`/bin/sh`, `/bin/bash`, and optional pager behavior such as `less`).
+- #TODO: Define clipboard fallback behavior for Linux terminals without `xclip`/`wl-clipboard`.
+- #TODO: Confirm rootless Docker support baseline and document tested limits.
+
 ## Features
 
 ### Quick Overview

@@ -312,7 +312,7 @@ func (s SplitView) Init() tea.Cmd {
 func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if keyMsg.String() == "tab" && s.List.FilterState() != list.Filtering {
 			// Cycle through focus states
 			if s.Extra != nil {

@@ -23,6 +23,7 @@ type ResourceView[ID comparable, Item list.Item] struct {
 	SessionState    SessionState
 	DetailsKeyBinds DetailsKeybindings
 	Foreground      any
+	loadErr         error
 
 	Title          string
 	AdditionalHelp []key.Binding
@@ -81,8 +82,10 @@ func (rv *ResourceView[ID, Item]) Refresh() tea.Cmd {
 
 	items, err := rv.LoadItems()
 	if err != nil {
+		rv.loadErr = err
 		return nil
 	}
+	rv.loadErr = nil
 
 	listItems := make([]list.Item, len(items))
 	for i, item := range items {
@@ -343,6 +346,10 @@ func (rv *ResourceView[ID, Item]) UpdateWindowDimensions(msg tea.WindowSizeMsg) 
 }
 
 func (rv *ResourceView[ID, Item]) View() string {
+	if rv.loadErr != nil && len(rv.SplitView.List.Items()) == 0 {
+		return fmt.Sprintf("Failed to load %s\n\n%s", rv.Title, rv.loadErr.Error())
+	}
+
 	if rv.SessionState == ViewOverlay && rv.Foreground != nil {
 		var fgView string
 

@@ -2,12 +2,14 @@
 package client
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -872,16 +874,73 @@ func (clientWrapper *ClientWrapper) BuildImage(ctx context.Context, dockerfilePa
 
 // createTarArchive creates a tar archive of the build context directory
 func createTarArchive(contextPath string) (io.ReadCloser, error) {
-	// For now, we'll use a simple implementation
-	// In production, you'd want to properly handle .dockerignore, etc.
+	cleanContextPath := filepath.Clean(contextPath)
+
+	contextInfo, err := os.Stat(cleanContextPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat build context: %w", err)
+	}
+	if !contextInfo.IsDir() {
+		return nil, fmt.Errorf("build context must be a directory: %s", cleanContextPath)
+	}
+
 	pr, pw := io.Pipe()
 
 	go func() {
 		defer pw.Close()
-		// This is a simplified implementation
-		// You'd typically use archive/tar to create a proper tar
-		// For now, we'll just return an error that needs proper implementation
-		pw.CloseWithError(fmt.Errorf("tar archive creation not yet fully implemented"))
+
+		tarWriter := tar.NewWriter(pw)
+		defer tarWriter.Close()
+
+		walkErr := filepath.Walk(cleanContextPath, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+
+			relPath, err := filepath.Rel(cleanContextPath, path)
+			if err != nil {
+				return fmt.Errorf("failed to compute relative path for %s: %w", path, err)
+			}
+			if relPath == "." {
+				return nil
+			}
+
+			archivePath := filepath.ToSlash(relPath)
+
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+			}
+			header.Name = archivePath
+
+			if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+				header.Name += "/"
+			}
+
+			if err := tarWriter.WriteHeader(header); err != nil {
+				return fmt.Errorf("failed to write tar header for %s: %w", path, err)
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			file, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to open file %s: %w", path, err)
+			}
+			defer file.Close()
+
+			if _, err := io.Copy(tarWriter, file); err != nil {
+				return fmt.Errorf("failed to write file %s to tar: %w", path, err)
+			}
+
+			return nil
+		})
+
+		if walkErr != nil {
+			pw.CloseWithError(walkErr)
+		}
 	}()
 
 	return pr, nil

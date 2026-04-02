@@ -1,7 +1,13 @@
 package client
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -140,5 +146,75 @@ func TestMultiError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCreateTarArchiveIncludesBuildContextFiles(t *testing.T) {
+	contextDir := t.TempDir()
+
+	dockerfilePath := filepath.Join(contextDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte("FROM alpine\n"), 0o644); err != nil {
+		t.Fatalf("failed to write Dockerfile: %v", err)
+	}
+
+	nestedDir := filepath.Join(contextDir, "app")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
+
+	nestedFilePath := filepath.Join(nestedDir, "main.txt")
+	if err := os.WriteFile(nestedFilePath, []byte("hello from context\n"), 0o644); err != nil {
+		t.Fatalf("failed to write nested file: %v", err)
+	}
+
+	tarReader, err := createTarArchive(contextDir)
+	if err != nil {
+		t.Fatalf("createTarArchive returned error: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := tarReader.Close(); closeErr != nil {
+			t.Fatalf("failed to close tar reader: %v", closeErr)
+		}
+	})
+
+	tarBytes, err := io.ReadAll(tarReader)
+	if err != nil {
+		t.Fatalf("failed to read tar stream: %v", err)
+	}
+
+	entries := map[string]string{}
+	tarStream := tar.NewReader(bytes.NewReader(tarBytes))
+	for {
+		hdr, readErr := tarStream.Next()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			t.Fatalf("failed reading tar entry: %v", readErr)
+		}
+
+		if hdr.FileInfo().IsDir() {
+			continue
+		}
+
+		body, readBodyErr := io.ReadAll(tarStream)
+		if readBodyErr != nil {
+			t.Fatalf("failed reading tar body for %s: %v", hdr.Name, readBodyErr)
+		}
+		entries[hdr.Name] = string(body)
+	}
+
+	if entries["Dockerfile"] != "FROM alpine\n" {
+		t.Fatalf("Dockerfile content = %q, want %q", entries["Dockerfile"], "FROM alpine\n")
+	}
+
+	if entries["app/main.txt"] != "hello from context\n" {
+		t.Fatalf("app/main.txt content = %q, want %q", entries["app/main.txt"], "hello from context\n")
+	}
+
+	for name := range entries {
+		if strings.HasPrefix(name, "/") {
+			t.Fatalf("tar entry %q is absolute path, expected relative path", name)
+		}
 	}
 }

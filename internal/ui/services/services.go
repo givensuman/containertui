@@ -4,9 +4,11 @@ import (
 	stdcontext "context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
@@ -15,9 +17,13 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
+	"github.com/givensuman/containertui/internal/ui/notifications"
 )
 
 type MsgRefreshServices time.Time
+type MsgServicesLoaded struct {
+	Items []ServiceItem
+}
 
 type detailsKeybindings struct {
 	Up         key.Binding
@@ -53,15 +59,72 @@ func newDetailsKeybindings() detailsKeybindings {
 }
 
 type keybindings struct {
-	switchTab key.Binding
+	switchTab      key.Binding
+	startService   key.Binding
+	stopService    key.Binding
+	restartService key.Binding
 }
 
 func newKeybindings() *keybindings {
 	return &keybindings{
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5"),
-			key.WithHelp("1-5", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5", "6"),
+			key.WithHelp("1-6", "switch tab"),
 		),
+		startService: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "start service"),
+		),
+		stopService: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "stop service"),
+		),
+		restartService: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "restart service"),
+		),
+	}
+}
+
+func serviceContainerIDs(service client.Service) []string {
+	ids := make([]string, 0, len(service.Containers))
+	for _, container := range service.Containers {
+		if strings.TrimSpace(container.ID) == "" {
+			continue
+		}
+		ids = append(ids, container.ID)
+	}
+	return ids
+}
+
+func (model *Model) serviceActionCmd(actionName string, action func(stdcontext.Context, []string) error) tea.Cmd {
+	selectedItem := model.GetSelectedItem()
+	if selectedItem == nil {
+		return nil
+	}
+
+	containerIDs := serviceContainerIDs(selectedItem.Service)
+	if len(containerIDs) == 0 {
+		return notifications.ShowError(fmt.Errorf("service %q has no containers", selectedItem.Service.Name))
+	}
+
+	serviceName := selectedItem.Service.Name
+
+	return func() tea.Msg {
+		if err := action(stdcontext.Background(), containerIDs); err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to %s service %q: %w", actionName, serviceName, err))
+		}
+
+		actionLabel := map[string]string{
+			"start":   "Started",
+			"stop":    "Stopped",
+			"restart": "Restarted",
+		}[actionName]
+		if actionLabel == "" {
+			actionLabel = "Updated"
+		}
+
+		return tea.Batch(notifications.ShowSuccess(fmt.Sprintf("%s service %q", actionLabel, serviceName)), model.refreshServicesCmd())
 	}
 }
 
@@ -79,7 +142,7 @@ func New() Model {
 	fetchServices := func() ([]ServiceItem, error) {
 		services, err := state.GetClient().GetServices(stdcontext.Background())
 		if err != nil {
-			return []ServiceItem{}, nil
+			return nil, err
 		}
 		items := make([]ServiceItem, 0, len(services))
 		for _, service := range services {
@@ -115,6 +178,9 @@ func New() Model {
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
 		serviceKeybindings.switchTab,
+		serviceKeybindings.startService,
+		serviceKeybindings.stopService,
+		serviceKeybindings.restartService,
 	}
 
 	return model
@@ -127,7 +193,23 @@ func tickCmd() tea.Cmd {
 }
 
 func (model Model) Init() tea.Cmd {
-	return tea.Batch(model.ResourceView.Init(), tickCmd())
+	return tea.Batch(model.ResourceView.Init(), tickCmd(), model.refreshServicesCmd())
+}
+
+func (model Model) refreshServicesCmd() tea.Cmd {
+	return func() tea.Msg {
+		services, err := state.GetClient().GetServices(stdcontext.Background())
+		if err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to load services: %w", err))
+		}
+
+		items := make([]ServiceItem, 0, len(services))
+		for _, service := range services {
+			items = append(items, ServiceItem{Service: service})
+		}
+
+		return MsgServicesLoaded{Items: items}
+	}
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -147,8 +229,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgRefreshServices:
 		cmds = append(cmds, tickCmd())
-		// Refresh the services list via ResourceView
-		cmds = append(cmds, model.Refresh())
+		cmds = append(cmds, model.refreshServicesCmd())
+
+	case MsgServicesLoaded:
+		listItems := make([]list.Item, len(msg.Items))
+		for i, item := range msg.Items {
+			listItems[i] = item
+		}
+		cmds = append(cmds, model.SplitView.List.SetItems(listItems))
 	}
 
 	// Main View Logic (only when no overlay)
@@ -162,6 +250,21 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
+			case key.Matches(msg, model.keybindings.startService):
+				if cmd := model.serviceActionCmd("start", state.GetClient().StartContainers); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+			case key.Matches(msg, model.keybindings.stopService):
+				if cmd := model.serviceActionCmd("stop", state.GetClient().StopContainers); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
+			case key.Matches(msg, model.keybindings.restartService):
+				if cmd := model.serviceActionCmd("restart", state.GetClient().RestartContainers); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return model, tea.Batch(cmds...)
 			}
 		}
 	} else if !model.IsOverlayVisible() && !model.IsListFocused() {

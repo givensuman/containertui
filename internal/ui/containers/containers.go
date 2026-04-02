@@ -147,8 +147,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("F2", "rename container"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5"),
-			key.WithHelp("1-5", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5", "6"),
+			key.WithHelp("1-6", "switch tab"),
 		),
 	}
 }

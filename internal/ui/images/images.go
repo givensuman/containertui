@@ -4,6 +4,7 @@ package images
 import (
 	stdcontext "context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -148,8 +149,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("c", "create container"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5"),
-			key.WithHelp("1-5", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5", "6"),
+			key.WithHelp("1-6", "switch tab"),
 		),
 	}
 }
@@ -1193,11 +1194,10 @@ func (model *Model) performBuildImage(dockerfile, tag, contextPath string, build
 		if err != nil {
 			return notifications.ShowError(fmt.Errorf("failed to build image: %w", err))
 		}
+		defer buildOutput.Close()
 
-		// Read and discard the build output (for now)
-		// TODO: Stream build output to user
-		if buildOutput != nil {
-			buildOutput.Close()
+		if _, err := io.Copy(io.Discard, buildOutput); err != nil {
+			return notifications.ShowError(fmt.Errorf("failed to read build output: %w", err))
 		}
 
 		return tea.Batch(

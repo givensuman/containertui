@@ -120,7 +120,7 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.servicesModel, servicesCmd = model.servicesModel.Update(contentMsg)
 		cmds = append(cmds, servicesCmd)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
 			return model, tea.Quit
