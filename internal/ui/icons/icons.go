@@ -5,6 +5,7 @@ import (
 	"image/color"
 
 	"charm.land/lipgloss/v2"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 )
 
@@ -193,4 +194,13 @@ func Styled(icon string, color color.Color) string {
 	}
 	style := lipgloss.NewStyle().Foreground(color)
 	return style.Render(icon)
+}
+
+// SelectionCheckbox returns the themed checkbox icon for multi-select rows.
+func SelectionCheckbox(selected bool) string {
+	iconSet := Get()
+	if selected {
+		return Styled(iconSet.CheckedBox, colors.Primary())
+	}
+	return iconSet.UncheckedBox
 }

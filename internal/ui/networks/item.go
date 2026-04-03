@@ -29,29 +29,6 @@ func newDefaultDelegate() list.DefaultDelegate {
 	return delegate
 }
 
-func (networkItem NetworkItem) getIsSelectedIcon() string {
-	iconSet := icons.Get()
-
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		switch networkItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	case false: // Use nerd fonts.
-		switch networkItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	}
-
-	return iconSet.UncheckedBox
-}
-
 func (networkItem NetworkItem) getNetworkIcon() string {
 	iconSet := icons.Get()
 
@@ -89,8 +66,7 @@ func (networkItem NetworkItem) getStatusIcon() string {
 }
 
 func (networkItem NetworkItem) Title() string {
-	selectionIcon := networkItem.getIsSelectedIcon() // Checkbox
-	statusIcon := networkItem.getStatusIcon()        // Active/Empty (colored)
+	statusIcon := networkItem.getStatusIcon() // Active/Empty (colored)
 
 	// Apply themed coloring to name based on activity status
 	nameColor := colors.Text()
@@ -100,7 +76,7 @@ func (networkItem NetworkItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledName := nameStyle.Render(networkItem.Network.Name)
 
-	return fmt.Sprintf("%s %s %s", selectionIcon, statusIcon, styledName)
+	return fmt.Sprintf("%s %s", statusIcon, styledName)
 }
 
 func (networkItem NetworkItem) Description() string {

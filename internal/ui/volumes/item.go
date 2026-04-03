@@ -8,7 +8,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
@@ -27,29 +26,6 @@ func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
 
 	return delegate
-}
-
-func (volumeItem VolumeItem) getIsSelectedIcon() string {
-	iconSet := icons.Get()
-
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		switch volumeItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	case false: // Use nerd fonts.
-		switch volumeItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	}
-
-	return iconSet.UncheckedBox
 }
 
 // getStatusIcon returns the appropriate icon for a volume based on its mount status
@@ -71,7 +47,6 @@ func (volumeItem VolumeItem) getStatusIcon() string {
 }
 
 func (volumeItem VolumeItem) Title() string {
-	statusIcon := volumeItem.getIsSelectedIcon()
 	statusStateIcon := volumeItem.getStatusIcon()
 
 	// Apply themed coloring based on mount status
@@ -82,7 +57,7 @@ func (volumeItem VolumeItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledName := nameStyle.Render(volumeItem.Volume.Name)
 
-	return fmt.Sprintf("%s %s %s", statusIcon, statusStateIcon, styledName)
+	return fmt.Sprintf("%s %s", statusStateIcon, styledName)
 }
 
 func (volumeItem VolumeItem) Description() string {

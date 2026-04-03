@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
-	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
@@ -27,26 +26,7 @@ var (
 )
 
 func (containerItem ContainerItem) getIsSelectedIcon() string {
-	iconSet := icons.Get()
-
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		switch containerItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	case false: // Use nerd fonts.
-		switch containerItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	}
-
-	return iconSet.UncheckedBox
+	return icons.SelectionCheckbox(containerItem.isSelected)
 }
 
 // getStatusIcon returns the appropriate icon for a container based on its state

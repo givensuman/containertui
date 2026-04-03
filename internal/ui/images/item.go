@@ -29,29 +29,6 @@ func newDefaultDelegate() list.DefaultDelegate {
 	return delegate
 }
 
-func (imageItem ImageItem) getIsSelectedIcon() string {
-	iconSet := icons.Get()
-
-	switch state.GetConfig().NoNerdFonts {
-	case true: // Don't use nerd fonts.
-		switch imageItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	case false: // Use nerd fonts.
-		switch imageItem.isSelected {
-		case true:
-			return iconSet.CheckedBox
-		case false:
-			return iconSet.UncheckedBox
-		}
-	}
-
-	return iconSet.UncheckedBox
-}
-
 func (imageItem ImageItem) getTitleOrnament() string {
 	iconSet := icons.Get()
 
@@ -92,7 +69,6 @@ func (imageItem ImageItem) Title() string {
 	}
 
 	titleOrnament := imageItem.getTitleOrnament()
-	statusIcon := imageItem.getIsSelectedIcon()
 
 	// Apply themed coloring based on usage status
 	nameColor := colors.Text()
@@ -102,7 +78,7 @@ func (imageItem ImageItem) Title() string {
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
 	styledRepoTag := nameStyle.Render(repoTag)
 
-	return fmt.Sprintf("%s %s%s", statusIcon, titleOrnament, styledRepoTag)
+	return fmt.Sprintf("%s%s", titleOrnament, styledRepoTag)
 }
 
 func (imageItem ImageItem) Description() string {

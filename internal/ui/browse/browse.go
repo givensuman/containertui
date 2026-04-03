@@ -108,6 +108,14 @@ type Model struct {
 	isPulling      bool
 	progressChan   <-chan string
 	currentPulling string // Name of image currently being pulled
+	pendingPulls   []pullTarget
+	batchPullTotal int
+	batchPulled    int
+}
+
+type pullTarget struct {
+	ImageName string
+	Registry  string
 }
 
 // New creates a new Browse model.
@@ -164,6 +172,9 @@ func New() Model {
 		isPulling:          false,
 		currentSearchQuery: "",
 		currentRegistry:    registryDockerHub,
+		pendingPulls:       nil,
+		batchPullTotal:     0,
+		batchPulled:        0,
 	}
 }
 
@@ -248,12 +259,32 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		if msg.Err != nil {
+			model.pendingPulls = nil
+			model.batchPullTotal = 0
+			model.batchPulled = 0
 			return model, notifications.ShowError(fmt.Errorf("pull failed: %w", msg.Err))
 		}
 
+		model.batchPulled++
+		if len(model.pendingPulls) > 0 {
+			next := model.pendingPulls[0]
+			model.pendingPulls = model.pendingPulls[1:]
+			return model, tea.Batch(
+				notifications.ShowInfo(fmt.Sprintf("Pulled %s (%d/%d)", msg.ImageName, model.batchPulled, model.batchPullTotal)),
+				model.startPull(next),
+			)
+		}
+
+		successMsg := fmt.Sprintf("Pulled %s successfully", msg.ImageName)
+		if model.batchPullTotal > 1 {
+			successMsg = fmt.Sprintf("Pulled %d images successfully", model.batchPullTotal)
+		}
+		model.batchPullTotal = 0
+		model.batchPulled = 0
+
 		// Send message to refresh Images tab
 		return model, tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Pulled %s successfully", msg.ImageName)),
+			notifications.ShowSuccess(successMsg),
 			func() tea.Msg {
 				return base.MsgImagePulled{ImageName: msg.ImageName}
 			},
@@ -265,43 +296,20 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			switch confirmMsg.Action.Type {
 			case "PullImage":
-				payload, ok := confirmMsg.Action.Payload.(map[string]string)
+				payload, ok := confirmMsg.Action.Payload.([]pullTarget)
 				if !ok {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid pull payload"))
 				}
-
-				imageName := payload["image"]
-				registryName := normalizeRegistry(payload["registry"])
 				model.CloseOverlay()
+				if len(payload) == 0 {
+					return model, nil
+				}
 
-				// Start spinner for this image
-				spinnerCmd := model.setWorkingState([]string{imageName}, true)
-
-				model.isPulling = true
-				model.currentPulling = imageName
-
-				// Create channels for progress and completion
-				progressChan := make(chan string, 100)
-				doneChan := make(chan error, 1)
-				model.progressChan = progressChan
-
-				// Start pull in background
-				go func() {
-					ctx := stdcontext.Background()
-					err := state.GetClient().PullImageFromRegistry(ctx, imageName, progressChan)
-					// PullImage closes progressChan when done
-					// Send the error result through doneChan
-					doneChan <- err
-					close(doneChan)
-				}()
-
-				// Start listening to progress
-				return model, tea.Batch(
-					spinnerCmd,
-					notifications.ShowInfo(fmt.Sprintf("Pulling from %s", displayRegistryName(registryName))),
-					listenToProgressChannelWithDone(imageName, progressChan, doneChan),
-				)
+				model.batchPullTotal = len(payload)
+				model.batchPulled = 0
+				model.pendingPulls = append([]pullTarget(nil), payload[1:]...)
+				return model, model.startPull(payload[0])
 
 			case "SearchRegistry":
 				// Extract query from form values
@@ -347,6 +355,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			case key.Matches(msg, model.keybindings.pull):
 				model.handlePull()
+
+			case key.Matches(msg, model.keybindings.toggleSelection):
+				model.handleToggleSelection()
+
+			case key.Matches(msg, model.keybindings.toggleSelectionOfAll):
+				model.handleToggleSelectionOfAll()
 
 			}
 		}
@@ -498,35 +512,89 @@ func (model *Model) handleSearch() {
 
 // handlePull shows a pull confirmation dialog.
 func (model *Model) handlePull() {
-	selectedItem := model.GetSelectedItem()
-	if selectedItem == nil {
+	targets := model.pullImageTargets()
+	if len(targets) == 0 {
 		return
 	}
 
-	imageName := selectedItem.Image.RepoName
+	message := ""
+	if len(targets) == 1 {
+		message = fmt.Sprintf("Pull image '%s' from %s?", targets[0].ImageName, displayRegistryName(targets[0].Registry))
+	} else {
+		message = fmt.Sprintf("Pull %d selected images?", len(targets))
+	}
+
+	confirmDialog := components.NewDialog(
+		message,
+		[]components.DialogButton{
+			{Label: "Cancel"},
+			{
+				Label: "Pull",
+				Action: base.SmartDialogAction{
+					Type:    "PullImage",
+					Payload: targets,
+				},
+			},
+		},
+	)
+	model.SetOverlay(confirmDialog)
+}
+
+func (model *Model) pullImageTargets() []pullTarget {
+	selectedIDs := model.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
+		targets := make([]pullTarget, 0, len(selectedIDs))
+		for _, item := range model.GetItems() {
+			if !contains(selectedIDs, item.Image.RepoName) {
+				continue
+			}
+			registryName := normalizeRegistry(item.Image.Registry)
+			if item.Image.Registry == "" {
+				registryName = model.currentRegistry
+			}
+			targets = append(targets, pullTarget{ImageName: item.Image.RepoName, Registry: registryName})
+		}
+		return targets
+	}
+
+	selectedItem := model.GetSelectedItem()
+	if selectedItem == nil {
+		return nil
+	}
 
 	registryName := normalizeRegistry(selectedItem.Image.Registry)
 	if selectedItem.Image.Registry == "" {
 		registryName = model.currentRegistry
 	}
 
-	confirmDialog := components.NewDialog(
-		fmt.Sprintf("Pull image '%s' from %s?", imageName, displayRegistryName(registryName)),
-		[]components.DialogButton{
-			{Label: "Cancel"},
-			{
-				Label: "Pull",
-				Action: base.SmartDialogAction{
-					Type: "PullImage",
-					Payload: map[string]string{
-						"image":    imageName,
-						"registry": registryName,
-					},
-				},
-			},
-		},
+	return []pullTarget{{ImageName: selectedItem.Image.RepoName, Registry: registryName}}
+}
+
+func (model *Model) startPull(target pullTarget) tea.Cmd {
+	imageName := target.ImageName
+	registryName := normalizeRegistry(target.Registry)
+
+	spinnerCmd := model.setWorkingState([]string{imageName}, true)
+
+	model.isPulling = true
+	model.currentPulling = imageName
+
+	progressChan := make(chan string, 100)
+	doneChan := make(chan error, 1)
+	model.progressChan = progressChan
+
+	go func() {
+		ctx := stdcontext.Background()
+		err := state.GetClient().PullImageFromRegistry(ctx, imageName, progressChan)
+		doneChan <- err
+		close(doneChan)
+	}()
+
+	return tea.Batch(
+		spinnerCmd,
+		notifications.ShowInfo(fmt.Sprintf("Pulling from %s", displayRegistryName(registryName))),
+		listenToProgressChannelWithDone(imageName, progressChan, doneChan),
 	)
-	model.SetOverlay(confirmDialog)
 }
 
 // handleToggleSelection toggles selection of the current item.

@@ -58,22 +58,7 @@ func newSpinner() spinner.Model {
 }
 
 func (item BrowseItem) getIsSelectedIcon() string {
-	iconSet := icons.Get()
-
-	switch state.GetConfig().NoNerdFonts {
-	case true:
-		if item.isSelected {
-			return iconSet.CheckedBox
-		}
-		return iconSet.UncheckedBox
-	case false:
-		if item.isSelected {
-			return iconSet.CheckedBox
-		}
-		return iconSet.UncheckedBox
-	}
-
-	return iconSet.UncheckedBox
+	return icons.SelectionCheckbox(item.isSelected)
 }
 
 func (item BrowseItem) getTitleOrnament() string {
