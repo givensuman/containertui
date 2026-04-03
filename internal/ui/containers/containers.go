@@ -630,7 +630,7 @@ func (model *Model) fetchContainerStats(containerID, containerState string) tea.
 		return nil
 	}
 
-	if containerState != "running" {
+	if shouldShortCircuitStatsFetch(containerState) {
 		return func() tea.Msg {
 			return MsgContainerStats{
 				ID:             containerID,
@@ -651,6 +651,14 @@ func (model *Model) fetchContainerStats(containerID, containerState string) tea.
 
 		return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: &stats, FetchedAt: fetchedAt}
 	}
+}
+
+func shouldShortCircuitStatsFetch(containerState string) bool {
+	if containerState == "" {
+		return false
+	}
+
+	return containerState != "running"
 }
 
 func (model Model) updateStatsPane(containerState string, stats *client.ContainerStats, statsErr error) Model {

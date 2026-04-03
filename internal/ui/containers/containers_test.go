@@ -86,3 +86,26 @@ func TestUpdateStatsPaneShowsLoadingForRunningWithoutStatsYet(t *testing.T) {
 		t.Fatalf("expected loading message, got %q", vp.View())
 	}
 }
+
+func TestShouldShortCircuitStatsFetch(t *testing.T) {
+	tests := []struct {
+		name           string
+		containerState string
+		want           bool
+	}{
+		{name: "running container does not short-circuit", containerState: "running", want: false},
+		{name: "unknown container state does not short-circuit", containerState: "", want: false},
+		{name: "paused container short-circuits", containerState: "paused", want: true},
+		{name: "exited container short-circuits", containerState: "exited", want: true},
+		{name: "created container short-circuits", containerState: "created", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldShortCircuitStatsFetch(tt.containerState)
+			if got != tt.want {
+				t.Fatalf("shouldShortCircuitStatsFetch(%q) = %v, want %v", tt.containerState, got, tt.want)
+			}
+		})
+	}
+}
