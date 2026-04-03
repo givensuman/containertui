@@ -161,8 +161,7 @@ func New() Model {
 		},
 	)
 
-	// Set detail panel title
-	resourceView.SplitView.SetDetailTitle("Inspect")
+	configureServiceSplitView(resourceView)
 
 	// Set custom delegate
 	delegate := newDefaultDelegate()
@@ -184,6 +183,14 @@ func New() Model {
 	}
 
 	return model
+}
+
+func configureServiceSplitView(resourceView *components.ResourceView[string, ServiceItem]) {
+	resourceView.SplitView.SetDetailTitle("Inspect")
+	extraPane := components.NewViewportPane()
+	extraPane.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No compose file available"))
+	resourceView.SplitView.SetExtraPane(extraPane, 0.4)
+	resourceView.SplitView.SetExtraTitle("Compose File")
 }
 
 func tickCmd() tea.Cmd {
@@ -297,6 +304,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
 		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No service selected"))
+		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No compose file available"))
 		return nil
 	}
 
@@ -311,6 +319,14 @@ func (model *Model) updateDetailContent() tea.Cmd {
 
 func (model *Model) refreshServiceDetails(service client.Service) {
 	model.SetContent(model.buildInspectContent(service, model.GetContentWidth()))
+	model.SetExtraContent(model.buildComposeContent(service, model.getComposeContentWidth()))
+}
+
+func (model *Model) getComposeContentWidth() int {
+	if vp, ok := model.SplitView.Extra.(*components.ViewportPane); ok {
+		return vp.Viewport.Width()
+	}
+	return model.GetContentWidth()
 }
 
 func (model *Model) buildInspectContent(service client.Service, width int) string {
