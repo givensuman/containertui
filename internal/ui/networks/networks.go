@@ -35,6 +35,12 @@ type MsgPruneComplete struct {
 	Err             error
 }
 
+// MsgCreateNetworkComplete indicates network creation finished.
+type MsgCreateNetworkComplete struct {
+	NetworkID string
+	Err       error
+}
+
 // isSystemNetwork returns true if the network is a predefined system network
 func isSystemNetwork(name string) bool {
 	systemNetworks := []string{"bridge", "host", "none", "podman"}
@@ -245,6 +251,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			},
 		)
+
+	case MsgCreateNetworkComplete:
+		return model.handleCreateNetworkComplete(msg)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -358,7 +367,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, tea.Batch(cmds...)
 
 			case key.Matches(msg, model.keybindings.createNetwork):
-				model.handleCreateNetwork()
+				model = model.withCreateNetworkDialog()
 				return model, nil
 			}
 		}
@@ -389,6 +398,24 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func (model Model) handleCreateNetworkComplete(msg MsgCreateNetworkComplete) (Model, tea.Cmd) {
+	if msg.Err != nil {
+		return model, notifications.ShowError(msg.Err)
+	}
+
+	return model, tea.Batch(
+		notifications.ShowSuccess(fmt.Sprintf("Created network: %s", msg.NetworkID[:12])),
+		model.Refresh(),
+		func() tea.Msg {
+			return base.MsgResourceChanged{
+				Resource:  base.ResourceNetwork,
+				Operation: base.OperationCreated,
+				IDs:       []string{msg.NetworkID},
+			}
+		},
+	)
 }
 
 func (model Model) View() string {
@@ -609,8 +636,8 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 	}
 }
 
-// handleCreateNetwork shows dialog to create a network
-func (model Model) handleCreateNetwork() {
+// withCreateNetworkDialog returns model with create-network dialog shown.
+func (model Model) withCreateNetworkDialog() Model {
 	fields := []components.FormField{
 		{
 			Label:       "Name",
@@ -652,6 +679,7 @@ func (model Model) handleCreateNetwork() {
 	)
 
 	model.SetOverlay(dialog)
+	return model
 }
 
 // performCreateNetwork creates a network
@@ -666,18 +694,9 @@ func (model Model) performCreateNetwork(name, driver, subnet, gateway string, en
 
 		networkID, err := state.GetClient().CreateNetwork(ctx, name, driver, subnet, gateway, enableIPv6, labels)
 		if err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to create network: %w", err))
+			return MsgCreateNetworkComplete{Err: fmt.Errorf("failed to create network: %w", err)}
 		}
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Created network: %s", networkID[:12])),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceNetwork,
-					Operation: base.OperationCreated,
-					IDs:       []string{networkID},
-				}
-			},
-		)
+
+		return MsgCreateNetworkComplete{NetworkID: networkID}
 	}
 }

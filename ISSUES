@@ -1,5 +1,6 @@
 -- General --
 Mouse support?
+"No unused networks to prune" message is good, not all containers use this message template (e.g. "Pruned stoped containers, freed 0B")
 
 -- Containers Tab --
 We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
@@ -8,12 +9,6 @@ We should have a second informational panel with CPU/RAM usage, network, and oth
 Pulling image opens an overlay saying "This may take a while...", should have a progress bar instead?
 Prune unused images/networks/volumes doesn't appear to do anything? Could be wrong. It brings up a notification that says 0B freed but I see unused images/networks/volumes.
 Having a remove and a force remove doesn't make a ton of sense, especially when remove fails if a force remove would be needed (e.g. containers using image/network/volume). We may be able to combine these into one?
-
--- Volumes Tab --
-Create volume ('n') does nothing, and I'm not sure what it was supposed to do? Is it reasonable to create volumes outside of when you would create an image/container?
-
--- Network Tab --
-Create network ('n') does nothing. Is it reasonable to create networks outside of when you would create a image/container?
 
 -- Search Tab --
 Should support multiple registries, and be able to change with a dropdown component.

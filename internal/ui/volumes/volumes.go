@@ -37,6 +37,12 @@ type MsgPruneComplete struct {
 	Err            error
 }
 
+// MsgCreateVolumeComplete indicates volume creation finished.
+type MsgCreateVolumeComplete struct {
+	VolumeName string
+	Err        error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -235,6 +241,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			},
 		)
+
+	case MsgCreateVolumeComplete:
+		return model.handleCreateVolumeComplete(msg)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -343,7 +352,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, tea.Batch(cmds...)
 
 			case key.Matches(msg, model.keybindings.createVolume):
-				model.handleCreateVolume()
+				model = model.withCreateVolumeDialog()
 				return model, nil
 			}
 		}
@@ -374,6 +383,24 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func (model Model) handleCreateVolumeComplete(msg MsgCreateVolumeComplete) (Model, tea.Cmd) {
+	if msg.Err != nil {
+		return model, notifications.ShowError(msg.Err)
+	}
+
+	return model, tea.Batch(
+		notifications.ShowSuccess(fmt.Sprintf("Created volume: %s", msg.VolumeName)),
+		model.Refresh(),
+		func() tea.Msg {
+			return base.MsgResourceChanged{
+				Resource:  base.ResourceVolume,
+				Operation: base.OperationCreated,
+				IDs:       []string{msg.VolumeName},
+			}
+		},
+	)
 }
 
 func (model Model) handleToggleSelection() {
@@ -616,8 +643,8 @@ func (model *Model) handlePruneVolumes() tea.Cmd {
 	}
 }
 
-// handleCreateVolume shows dialog to create a volume
-func (model Model) handleCreateVolume() {
+// withCreateVolumeDialog returns model with create-volume dialog shown.
+func (model Model) withCreateVolumeDialog() Model {
 	fields := []components.FormField{
 		{
 			Label:       "Name",
@@ -644,6 +671,7 @@ func (model Model) handleCreateVolume() {
 	)
 
 	model.SetOverlay(dialog)
+	return model
 }
 
 // performCreateVolume creates a volume
@@ -656,20 +684,11 @@ func (model Model) performCreateVolume(name, driver string, labels map[string]st
 			driver = "local"
 		}
 
-		volumeID, err := state.GetClient().CreateVolume(ctx, name, driver, labels)
+		volumeName, err := state.GetClient().CreateVolume(ctx, name, driver, labels)
 		if err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to create volume: %w", err))
+			return MsgCreateVolumeComplete{Err: fmt.Errorf("failed to create volume: %w", err)}
 		}
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Created volume: %s", volumeID)),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceVolume,
-					Operation: base.OperationCreated,
-					IDs:       []string{volumeID},
-				}
-			},
-		)
+
+		return MsgCreateVolumeComplete{VolumeName: volumeName}
 	}
 }
