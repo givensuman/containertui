@@ -530,6 +530,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
 		if selectedItem.ID != model.detailsPanel.GetCurrentID() {
+			if selectedItem.State == "running" || selectedItem.State == "" {
+				model.SetExtraContent("Loading stats...")
+			} else {
+				model.SetExtraContent("Container is not running")
+			}
+
 			// SetCurrentID will save scroll position for previous ID
 			model.detailsPanel.SetCurrentID(selectedItem.ID, model.getViewport())
 
@@ -626,6 +632,11 @@ func (model Model) updateStatsPane(containerState string, stats *client.Containe
 		return model
 	}
 
+	if containerState == "" {
+		model.SetExtraContent("Loading stats...")
+		return model
+	}
+
 	if containerState != "running" {
 		model.SetExtraContent("Container is not running")
 		return model
@@ -637,7 +648,7 @@ func (model Model) updateStatsPane(containerState string, stats *client.Containe
 	}
 
 	if stats == nil {
-		model.SetExtraContent("No stats available")
+		model.SetExtraContent("Loading stats...")
 		return model
 	}
 

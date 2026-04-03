@@ -1,8 +1,31 @@
 -- General --
 Mouse support?
-Revise search dropdown
-The README renders rather odd, with apparent extra whitespace all over the place.
+  - List hover should change selection, click support for tabs, buttons, and forms. Hover support for buttons as well.
+Revise search dropdown style/implementation.
+Revise input style globally to have some kind of background.
 The position of the "1-6 switch tab" help text is different in the Browse tab than other tabs; it appears at the bottom of the column whereas it's at the top of the column in other tabs.
+Where else can we put progress bars like the ones shown during image pulling? They're sick. 
+  - Maybe when pruning? Currently we see an overlay that says "This may take a while"
+Better tab design?
+Filtering causes display artifacts like "____[93m" to show up in titles. Quite strange.
+Support podman, integrate this into UI somehow
 
 -- Containers Tab --
-We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
+We should revise the stats tab to use some kind of progress bar; maybe a vertical one?
+If container is running but data hasn't quite been fetched we're told "Container is not running", instead we should show some kind of loading state.
+Change the multi-select checkbox to be blue even when not hovered.
+
+-- Services --
+Split Inspect data and Compose File content into seperate split views.
+
+-- Volumes --
+Shorten title with some kind of max length and add ellipsis.
+
+-- Other --
+Polish up demo experience.
+Get VHS tapes working.
+Test configuration, --no-nerd-fonts, etc.
+
+-- Other, 'post release' --
+Global code review/cleanup.
+Write poster, paper, and powerpoint.
