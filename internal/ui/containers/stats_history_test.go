@@ -53,3 +53,53 @@ func TestStatsHistoryWindowIsBounded(t *testing.T) {
 		t.Fatalf("expected newest retained point CPU=3, got %v", history.points[1].CPUPercent)
 	}
 }
+
+func TestStatsHistoryPushCounterResetProducesZeroRates(t *testing.T) {
+	history := newStatsHistory(10)
+	base := time.Unix(400, 0)
+
+	history.push(client.ContainerStats{NetRx: 500, NetTx: 900}, base)
+	point := history.push(client.ContainerStats{NetRx: 120, NetTx: 80}, base.Add(2*time.Second))
+
+	if point.NetRxRate != 0 {
+		t.Fatalf("expected RX rate 0 bytes/s after counter reset, got %v", point.NetRxRate)
+	}
+
+	if point.NetTxRate != 0 {
+		t.Fatalf("expected TX rate 0 bytes/s after counter reset, got %v", point.NetTxRate)
+	}
+}
+
+func TestStatsHistoryPushNonPositiveTimeDeltaProducesZeroRates(t *testing.T) {
+	t.Run("zero delta", func(t *testing.T) {
+		history := newStatsHistory(10)
+		base := time.Unix(500, 0)
+
+		history.push(client.ContainerStats{NetRx: 100, NetTx: 200}, base)
+		point := history.push(client.ContainerStats{NetRx: 160, NetTx: 320}, base)
+
+		if point.NetRxRate != 0 {
+			t.Fatalf("expected RX rate 0 bytes/s for zero time delta, got %v", point.NetRxRate)
+		}
+
+		if point.NetTxRate != 0 {
+			t.Fatalf("expected TX rate 0 bytes/s for zero time delta, got %v", point.NetTxRate)
+		}
+	})
+
+	t.Run("negative delta", func(t *testing.T) {
+		history := newStatsHistory(10)
+		base := time.Unix(600, 0)
+
+		history.push(client.ContainerStats{NetRx: 100, NetTx: 200}, base)
+		point := history.push(client.ContainerStats{NetRx: 160, NetTx: 320}, base.Add(-1*time.Second))
+
+		if point.NetRxRate != 0 {
+			t.Fatalf("expected RX rate 0 bytes/s for negative time delta, got %v", point.NetRxRate)
+		}
+
+		if point.NetTxRate != 0 {
+			t.Fatalf("expected TX rate 0 bytes/s for negative time delta, got %v", point.NetTxRate)
+		}
+	})
+}

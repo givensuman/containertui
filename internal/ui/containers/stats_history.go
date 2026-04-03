@@ -52,8 +52,18 @@ func (h *statsHistory) push(stats client.ContainerStats, at time.Time) statsPoin
 		prev := h.points[len(h.points)-1]
 		deltaSeconds := at.Sub(prev.Timestamp).Seconds()
 		if deltaSeconds > 0 {
-			point.NetRxRate = (stats.NetRx - prev.NetRx) / deltaSeconds
-			point.NetTxRate = (stats.NetTx - prev.NetTx) / deltaSeconds
+			rxDelta := stats.NetRx - prev.NetRx
+			if rxDelta < 0 {
+				rxDelta = 0
+			}
+
+			txDelta := stats.NetTx - prev.NetTx
+			if txDelta < 0 {
+				txDelta = 0
+			}
+
+			point.NetRxRate = rxDelta / deltaSeconds
+			point.NetTxRate = txDelta / deltaSeconds
 		}
 	}
 
