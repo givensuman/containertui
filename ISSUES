@@ -1,19 +1,8 @@
 -- General --
 Mouse support?
 Revise search dropdown
+The README renders rather odd, with apparent extra whitespace all over the place.
+The position of the "1-6 switch tab" help text is different in the Browse tab than other tabs; it appears at the bottom of the column whereas it's at the top of the column in other tabs.
 
 -- Containers Tab --
 We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
-
--- Images, Volumes, and Networks ---
-Pulling image opens an overlay saying "This may take a while...", should have a progress bar instead?
-Prune unused images/networks/volumes doesn't appear to do anything? Could be wrong. It brings up a notification that says 0B freed but I see unused images/networks/volumes.
-Having a remove and a force remove doesn't make a ton of sense, especially when remove fails if a force remove would be needed (e.g. containers using image/network/volume). We may be able to combine these into one?
-
--- Search Tab --
-The README renders rather odd, with apparent extra whitespace all over the place.
-
--- Other --
-The Services and Search tab have "1 - 6 Switch Tab" as keybinding help text, but the other tabs don't... this should be consolidated so its consistent across all tabs! I think it should be included as it's an important binding.
-We need to make sure things render nicely across multiple terminal setups. A good start would be adaptive colors provided by lipgloss.
-Our demo should create a service so that can be looked at as well.

@@ -74,6 +74,7 @@ func newDetailsKeybindings() detailsKeybindings {
 type MsgPullProgress struct {
 	ImageName    string
 	Message      string
+	Raw          string
 	ProgressChan <-chan string
 	DoneChan     <-chan error
 }
@@ -307,6 +308,13 @@ type Model struct {
 	detailsKeybindings detailsKeybindings
 	inspection         types.ImageInspect
 	detailsPanel       components.DetailsPanel
+	pullLayers         map[string]pullLayerProgress
+	pullPercent        float64
+}
+
+type pullLayerProgress struct {
+	current int64
+	total   int64
 }
 
 func New() Model {
@@ -381,6 +389,7 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 		inspection:         types.ImageInspect{},
 		detailsPanel:       components.NewDetailsPanel(),
+		pullLayers:         make(map[string]pullLayerProgress),
 	}
 
 	// Add custom keybindings to help
@@ -433,8 +442,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			)
 			model.SetOverlay(errorDialog)
 		} else {
+			if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+				_ = progressDialog.SetPercent(1.0)
+			}
+
 			// Success - close dialog and refresh list
 			model.CloseOverlay()
+			model.pullLayers = make(map[string]pullLayerProgress)
+			model.pullPercent = 0
 			// Trigger images refresh
 			return model, func() tea.Msg {
 				return MsgRefreshImages{}
@@ -443,15 +458,19 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return model, nil
 
 	case MsgPullProgress:
+		var progressCmd tea.Cmd
 		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
 			progressDialog.SetStatus(msg.Message)
+			if percent, hasPercent := model.estimatePullProgress(msg.Raw); hasPercent {
+				progressCmd = progressDialog.SetPercent(percent)
+			}
 			model.Foreground = progressDialog
 		}
 
 		if msg.ProgressChan != nil && msg.DoneChan != nil {
-			return model, listenToPullProgress(msg.ImageName, msg.ProgressChan, msg.DoneChan)
+			return model, tea.Batch(progressCmd, listenToPullProgress(msg.ImageName, msg.ProgressChan, msg.DoneChan))
 		}
-		return model, nil
+		return model, progressCmd
 	case MsgRefreshImages:
 		// Refresh the images list via ResourceView
 		return model, model.Refresh()
@@ -625,6 +644,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				progressDialog := components.NewProgressDialogWithBar(fmt.Sprintf("Pulling image: %s", imageName))
 				progressDialog.SetStatus("Preparing pull...")
 				model.SetOverlay(progressDialog)
+				model.pullLayers = make(map[string]pullLayerProgress)
+				model.pullPercent = 0
 
 				progressChan := make(chan string, 100)
 				doneChan := make(chan error, 1)
@@ -1296,6 +1317,7 @@ func listenToPullProgress(imageName string, progressChan <-chan string, doneChan
 			return MsgPullProgress{
 				ImageName:    imageName,
 				Message:      parsePullStatusMessage(status),
+				Raw:          status,
 				ProgressChan: progressChan,
 				DoneChan:     doneChan,
 			}
@@ -1304,6 +1326,68 @@ func listenToPullProgress(imageName string, progressChan <-chan string, doneChan
 			return MsgPullComplete{ImageName: imageName, Err: err}
 		}
 	}
+}
+
+func (model *Model) estimatePullProgress(raw string) (float64, bool) {
+	layerID, current, total, ok := parsePullLayerProgress(raw)
+	if !ok {
+		return 0, false
+	}
+
+	model.pullLayers[layerID] = pullLayerProgress{current: current, total: total}
+
+	var sumCurrent int64
+	var sumTotal int64
+	for _, layer := range model.pullLayers {
+		sumCurrent += layer.current
+		sumTotal += layer.total
+	}
+
+	if sumTotal <= 0 {
+		return 0, false
+	}
+
+	percent := float64(sumCurrent) / float64(sumTotal)
+	if percent > 0.98 {
+		percent = 0.98
+	}
+	if percent < model.pullPercent {
+		percent = model.pullPercent
+	}
+
+	model.pullPercent = percent
+	return percent, true
+}
+
+func parsePullLayerProgress(raw string) (string, int64, int64, bool) {
+	type pullProgressDetail struct {
+		Current int64 `json:"current"`
+		Total   int64 `json:"total"`
+	}
+
+	type pullStatus struct {
+		ID             string             `json:"id"`
+		ProgressDetail pullProgressDetail `json:"progressDetail"`
+	}
+
+	var status pullStatus
+	if err := json.Unmarshal([]byte(raw), &status); err != nil {
+		return "", 0, 0, false
+	}
+
+	if status.ID == "" || status.ProgressDetail.Total <= 0 {
+		return "", 0, 0, false
+	}
+
+	current := status.ProgressDetail.Current
+	if current < 0 {
+		current = 0
+	}
+	if current > status.ProgressDetail.Total {
+		current = status.ProgressDetail.Total
+	}
+
+	return status.ID, current, status.ProgressDetail.Total, true
 }
 
 func parsePullStatusMessage(raw string) string {

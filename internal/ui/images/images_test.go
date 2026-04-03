@@ -6,6 +6,59 @@ import (
 	"time"
 )
 
+func TestParsePullLayerProgressValid(t *testing.T) {
+	raw := `{"id":"layer-1","progressDetail":{"current":50,"total":100}}`
+
+	id, current, total, ok := parsePullLayerProgress(raw)
+	if !ok {
+		t.Fatal("expected valid progress payload")
+	}
+	if id != "layer-1" || current != 50 || total != 100 {
+		t.Fatalf("unexpected parsed values: id=%q current=%d total=%d", id, current, total)
+	}
+}
+
+func TestEstimatePullProgressAggregatesLayers(t *testing.T) {
+	model := Model{pullLayers: map[string]pullLayerProgress{}}
+
+	first, ok := model.estimatePullProgress(`{"id":"a","progressDetail":{"current":50,"total":100}}`)
+	if !ok {
+		t.Fatal("expected first progress estimate")
+	}
+	if first != 0.5 {
+		t.Fatalf("expected 0.5, got %f", first)
+	}
+
+	second, ok := model.estimatePullProgress(`{"id":"b","progressDetail":{"current":50,"total":100}}`)
+	if !ok {
+		t.Fatal("expected second progress estimate")
+	}
+	if second != 0.5 {
+		t.Fatalf("expected 0.5 aggregate, got %f", second)
+	}
+}
+
+func TestEstimatePullProgressIsMonotonicAndCapped(t *testing.T) {
+	model := Model{pullLayers: map[string]pullLayerProgress{}}
+
+	_, ok := model.estimatePullProgress(`{"id":"a","progressDetail":{"current":99,"total":100}}`)
+	if !ok {
+		t.Fatal("expected progress estimate")
+	}
+
+	if model.pullPercent != 0.98 {
+		t.Fatalf("expected cap at 0.98, got %f", model.pullPercent)
+	}
+
+	percent, ok := model.estimatePullProgress(`{"id":"a","progressDetail":{"current":10,"total":100}}`)
+	if !ok {
+		t.Fatal("expected progress estimate")
+	}
+	if percent != 0.98 {
+		t.Fatalf("expected monotonic percent 0.98, got %f", percent)
+	}
+}
+
 func TestBuildTempShellContainerConfigSetsLifecycleFields(t *testing.T) {
 	config := buildTempShellContainerConfig("sha256:abcdef0123456789", time.Unix(1700000000, 0))
 
