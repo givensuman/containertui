@@ -26,7 +26,7 @@ func renderStatsGraph(input statsRenderInput) string {
 	return fmt.Sprintf(
 		"CPU [%s] %.1f%%\nCPU trend %s\nMEM [%s] %.1f%%\nMEM trend %s",
 		cpuBar,
-		clamp(input.CPUPercent, 0, 100),
+		input.CPUPercent,
 		sparkline(input.CPUSeries),
 		memBar,
 		clamp(input.MemPercent, 0, 100),
@@ -60,8 +60,15 @@ func sparkline(series []float64) string {
 	var out strings.Builder
 	out.Grow(len(series) * 3)
 
+	ceiling := 100.0
 	for _, v := range series {
-		normalized := clamp(v, 0, 100) / 100
+		if v > ceiling {
+			ceiling = v
+		}
+	}
+
+	for _, v := range series {
+		normalized := clamp(v, 0, ceiling) / ceiling
 		idx := int(math.Round(normalized * float64(len(levels)-1)))
 		if idx < 0 {
 			idx = 0

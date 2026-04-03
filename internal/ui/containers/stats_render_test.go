@@ -39,6 +39,32 @@ func TestSparklineMapsSeriesToGlyphs(t *testing.T) {
 	}
 }
 
+func TestRenderStatsGraphPreservesHighCPUText(t *testing.T) {
+	input := statsRenderInput{
+		CPUPercent: 175,
+		MemPercent: 40,
+		CPUSeries:  []float64{120, 140, 175},
+		MemSeries:  []float64{20, 30, 40},
+		BarWidth:   10,
+	}
+
+	rendered := renderStatsGraph(input)
+
+	if !strings.Contains(rendered, "175.0%") {
+		t.Fatalf("expected CPU text to preserve high value, got %q", rendered)
+	}
+}
+
+func TestSparklineRetainsVariationAbove100(t *testing.T) {
+	series := []float64{100, 120, 140, 160}
+
+	got := sparkline(series)
+
+	if got != "▅▆▇█" {
+		t.Fatalf("expected varied high-cpu sparkline %q, got %q", "▅▆▇█", got)
+	}
+}
+
 func TestPercentBarClampsRange(t *testing.T) {
 	if got := percentBar(-20, 10); got != "----------" {
 		t.Fatalf("expected lower clamp bar %q, got %q", "----------", got)
