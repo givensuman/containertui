@@ -476,10 +476,10 @@ func (model *Model) handleSearch() {
 		"Search Registry",
 		[]components.FormField{
 			{
-				Label:       "Search Registry",
-				Placeholder: "dockerhub or quay",
-				Value:       model.currentRegistry,
-				Required:    false,
+				Label:    "Search Registry",
+				Value:    model.currentRegistry,
+				Options:  supportedRegistries,
+				Required: false,
 			},
 			{
 				Label:       "Search Query",

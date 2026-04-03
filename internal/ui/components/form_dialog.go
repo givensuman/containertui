@@ -17,6 +17,7 @@ type FormField struct {
 	Label       string
 	Placeholder string
 	Value       string
+	Options     []string
 	Validator   func(string) error
 	Required    bool
 }
@@ -57,11 +58,17 @@ func NewFormDialogWithSize(title string, fields []FormField, action base.SmartDi
 	// We'll set width after creating the style
 	for i, field := range fields {
 		ti := textinput.New()
-		ti.Placeholder = field.Placeholder
-		ti.SetValue(field.Value)
+		if len(field.Options) > 0 {
+			selectedValue := selectFieldValue(field.Value, field.Options)
+			fields[i].Value = selectedValue
+			ti.SetValue(selectedValue)
+		} else {
+			ti.Placeholder = field.Placeholder
+			ti.SetValue(field.Value)
+		}
 		ti.CharLimit = 256
 
-		if i == 0 {
+		if i == 0 && len(field.Options) == 0 {
 			ti.Focus()
 		}
 
@@ -92,6 +99,83 @@ func NewFormDialogWithSize(title string, fields []FormField, action base.SmartDi
 
 	dialog.updateStyle()
 	return dialog
+}
+
+func selectFieldValue(value string, options []string) string {
+	if len(options) == 0 {
+		return value
+	}
+
+	trimmed := strings.TrimSpace(value)
+	for _, option := range options {
+		if trimmed == option {
+			return option
+		}
+	}
+
+	return options[0]
+}
+
+func (dialog FormDialog) isSelectField(index int) bool {
+	if index < 0 || index >= len(dialog.fields) {
+		return false
+	}
+
+	return len(dialog.fields[index].Options) > 0
+}
+
+func (dialog *FormDialog) focusField(index int) tea.Cmd {
+	if index < 0 || index >= len(dialog.fields) {
+		return nil
+	}
+
+	dialog.focusIndex = index
+	if dialog.isSelectField(index) {
+		dialog.textInputs[index].Blur()
+		return nil
+	}
+
+	dialog.textInputs[index].Focus()
+	return textinput.Blink
+}
+
+func (dialog *FormDialog) moveToField(index int) tea.Cmd {
+	dialog.textInputs[dialog.focusIndex].Blur()
+	dialog.errorMessage = ""
+	return dialog.focusField(index)
+}
+
+func (dialog *FormDialog) cycleSelectField(direction int) {
+	if !dialog.isSelectField(dialog.focusIndex) {
+		return
+	}
+
+	options := dialog.fields[dialog.focusIndex].Options
+	if len(options) == 0 {
+		return
+	}
+
+	current := selectFieldValue(dialog.textInputs[dialog.focusIndex].Value(), options)
+	currentIndex := 0
+	for i, option := range options {
+		if option == current {
+			currentIndex = i
+			break
+		}
+	}
+
+	nextIndex := (currentIndex + direction + len(options)) % len(options)
+	nextValue := options[nextIndex]
+	dialog.textInputs[dialog.focusIndex].SetValue(nextValue)
+	dialog.fields[dialog.focusIndex].Value = nextValue
+}
+
+func (dialog FormDialog) fieldValue(index int) string {
+	if dialog.isSelectField(index) {
+		return selectFieldValue(dialog.textInputs[index].Value(), dialog.fields[index].Options)
+	}
+
+	return dialog.textInputs[index].Value()
 }
 
 // updateStyle applies the current dialog size to the style
@@ -153,11 +237,7 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Move to next field or to buttons if at last field
 				if dialog.focusIndex < len(dialog.textInputs)-1 {
-					dialog.textInputs[dialog.focusIndex].Blur()
-					dialog.focusIndex++
-					dialog.textInputs[dialog.focusIndex].Focus()
-					dialog.errorMessage = ""
-					return dialog, textinput.Blink
+					return dialog, dialog.moveToField(dialog.focusIndex + 1)
 				} else {
 					// Move to buttons
 					dialog.textInputs[dialog.focusIndex].Blur()
@@ -175,18 +255,12 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					// Go back to last field
 					dialog.onButtons = false
-					dialog.focusIndex = len(dialog.textInputs) - 1
-					dialog.textInputs[dialog.focusIndex].Focus()
-					return dialog, textinput.Blink
+					return dialog, dialog.focusField(len(dialog.textInputs) - 1)
 				}
 			} else {
 				// Move to previous field
 				if dialog.focusIndex > 0 {
-					dialog.textInputs[dialog.focusIndex].Blur()
-					dialog.focusIndex--
-					dialog.textInputs[dialog.focusIndex].Focus()
-					dialog.errorMessage = ""
-					return dialog, textinput.Blink
+					return dialog, dialog.moveToField(dialog.focusIndex - 1)
 				}
 			}
 
@@ -202,14 +276,12 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						dialog.errorMessage = err.Error()
 						// Return to form fields
 						dialog.onButtons = false
-						dialog.focusIndex = 0
-						dialog.textInputs[dialog.focusIndex].Focus()
-						return dialog, textinput.Blink
+						return dialog, dialog.focusField(0)
 					}
 
 					values := make(map[string]string)
 					for i, field := range dialog.fields {
-						values[field.Label] = dialog.textInputs[i].Value()
+						values[field.Label] = dialog.fieldValue(i)
 					}
 
 					action := dialog.action
@@ -227,11 +299,7 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Enter on field moves to next field or buttons
 				if dialog.focusIndex < len(dialog.textInputs)-1 {
-					dialog.textInputs[dialog.focusIndex].Blur()
-					dialog.focusIndex++
-					dialog.textInputs[dialog.focusIndex].Focus()
-					dialog.errorMessage = ""
-					return dialog, textinput.Blink
+					return dialog, dialog.moveToField(dialog.focusIndex + 1)
 				} else {
 					// Move to buttons
 					dialog.textInputs[dialog.focusIndex].Blur()
@@ -244,17 +312,21 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "h":
 			if dialog.onButtons {
 				dialog.selectedButton = (dialog.selectedButton - 1 + 2) % 2
+			} else {
+				dialog.cycleSelectField(-1)
 			}
 
 		case "right", "l":
 			if dialog.onButtons {
 				dialog.selectedButton = (dialog.selectedButton + 1) % 2
+			} else {
+				dialog.cycleSelectField(1)
 			}
 		}
 	}
 
 	// Update the focused text input only if we're on form fields
-	if !dialog.onButtons {
+	if !dialog.onButtons && !dialog.isSelectField(dialog.focusIndex) {
 		var cmd tea.Cmd
 		dialog.textInputs[dialog.focusIndex], cmd = dialog.textInputs[dialog.focusIndex].Update(msg)
 		cmds = append(cmds, cmd)
@@ -266,7 +338,7 @@ func (dialog FormDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // validate checks all fields and returns the first error found.
 func (dialog FormDialog) validate() error {
 	for i, field := range dialog.fields {
-		value := dialog.textInputs[i].Value()
+		value := dialog.fieldValue(i)
 
 		// Check required fields
 		if field.Required && strings.TrimSpace(value) == "" {
@@ -295,7 +367,7 @@ func (dialog FormDialog) renderButtons() string {
 		Padding(0, 1).
 		Margin(0, 1).
 		Bold(true).
-		Foreground(colors.BrightWhite()).
+		Foreground(colors.PrimaryText()).
 		Background(colors.Primary())
 
 	cancelStyle := defaultButtonStyle
@@ -353,7 +425,13 @@ func (dialog FormDialog) View() tea.View {
 		} else {
 			inputStyle = inputStyle.Foreground(colors.Muted())
 		}
-		b.WriteString(inputStyle.Render(dialog.textInputs[i].View()))
+
+		fieldValue := dialog.textInputs[i].View()
+		if dialog.isSelectField(i) {
+			fieldValue = fmt.Sprintf("< %s >", dialog.fieldValue(i))
+		}
+
+		b.WriteString(inputStyle.Render(fieldValue))
 		b.WriteString("\n\n")
 	}
 
@@ -411,7 +489,13 @@ func (dialog FormDialog) String() string {
 		} else {
 			inputStyle = inputStyle.Foreground(colors.Muted())
 		}
-		b.WriteString(inputStyle.Render(dialog.textInputs[i].View()))
+
+		fieldValue := dialog.textInputs[i].View()
+		if dialog.isSelectField(i) {
+			fieldValue = fmt.Sprintf("< %s >", dialog.fieldValue(i))
+		}
+
+		b.WriteString(inputStyle.Render(fieldValue))
 		b.WriteString("\n\n")
 	}
 

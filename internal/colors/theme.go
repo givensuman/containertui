@@ -59,7 +59,12 @@ func Muted() color.Color {
 		return lipgloss.Color(string(cfg.Theme.Muted))
 	}
 
-	return adaptiveColor(lipgloss.Color(ColorBrightBlack.String()), lipgloss.Color(ColorWhite.String()))
+	return adaptiveColor(lipgloss.Color(ColorBrightBlack.String()), lipgloss.Color(ColorBrightBlack.String()))
+}
+
+// PrimaryText returns a high-contrast foreground for primary backgrounds.
+func PrimaryText() color.Color {
+	return adaptiveColor(lipgloss.Color(ColorBrightWhite.String()), lipgloss.Color(ColorBlack.String()))
 }
 
 func Selected() color.Color {

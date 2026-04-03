@@ -2,7 +2,7 @@ name := "containertui"
 
 # Print help message
 help:
-    #!/bin/bash
+    #!/usr/bin/env bash
     just --list
 
 # Note: Demo generation requires a Distrobox environment with vhs, Go, and Docker.
@@ -11,24 +11,24 @@ help:
 
 # Build program binary
 build:
-    #!/bin/bash
+    #!/usr/bin/env bash
     mkdir -p bin
     go build -ldflags="-s -w" -trimpath -o bin/$({{ name }}) ./cmd
 
 # Install program binary
 install:
-    #!/bin/bash
+    #!/usr/bin/env bash
     go install ./cmd
 
 # Run the program
 run args="":
-    #!/bin/bash
+    #!/usr/bin/env bash
     DEBUG=true
     go run ./cmd {{ args }}
 
 # Run program tests
 test:
-    #!/bin/bash
+    #!/usr/bin/env bash
     go test --cover -parallel=1 -v -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out | sort -rnk3
 
@@ -51,7 +51,7 @@ lint:
 
 # Create a test container which logs the date every second.
 create-test-container quantity="1":
-    #!/bin/bash
+    #!/usr/bin/env bash
     for i in $(seq 1 {{ quantity }}); do
       docker run -d alpine sh -c "while true; do date; sleep 1; done"
     done
@@ -59,7 +59,7 @@ create-test-container quantity="1":
 # Run interactive Docker demo with Docker-in-Docker
 # Launches a containerized demo environment with sample containers, images, volumes, and networks
 demo-interactive:
-    #!/bin/bash
+    #!/usr/bin/env bash
     set -e
     
     IMAGE_NAME="containertui-demo:latest"
@@ -90,7 +90,7 @@ demo: demo-interactive
 
 # Generate all demo GIFs (same environment as the demo container)
 demo-gifs:
-    #!/bin/bash
+    #!/usr/bin/env bash
     set -e
     
     echo "Building containertui binary..."

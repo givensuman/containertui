@@ -1,7 +1,33 @@
-Verify keybinds work
-  - they dont!
-"No items." -> gray and consistent to other examples
-Test in different terminals/themes
-  - adaptive colors
-Fix VHS
-  - manually?
+-- General --
+Buttons, when hovered, use a light blue with white text which is unreadable, and when not hovered use a gray background with white text which is even less readable.
+Mouse support?
+Having multi-select for tabs that aren't the Containers tab doesn't make a lot of sense. The only real use case for that is removal of a bunch of containers, but we already have a prune function.
+Overlays like "Create container from image ('c')" in the Images Tab, when the help dialog is open ('?'), should close the help dialog. Pressing ? while inputting in a form should not open the help dialog. Performing an action (e.g. pressing 'r' to remove) should also close the help dialog.
+
+-- Containers Tab --
+F2 as a binding for renaming is bad, we should stick to alphabetic keys.
+We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
+
+-- Images Tab --
+Run and exec ('x') does nothing
+
+-- Images, Volumes, and Networks ---
+Pulling image opens an overlay saying "This may take a while...", should have a progress bar instead?
+Prune unused images/networks/volumes doesn't appear to do anything? Could be wrong. It brings up a notification that says 0B freed but I see unused images/networks/volumes.
+Having a remove and a force remove doesn't make a ton of sense, especially when remove fails if a force remove would be needed (e.g. containers using image/network/volume). We may be able to combine these into one?
+
+-- Volumes Tab --
+Create volume ('n') does nothing, and I'm not sure what it was supposed to do? Is it reasonable to create volumes outside of when you would create an image/container?
+
+-- Network Tab --
+Create network ('n') does nothing. Is it reasonable to create networks outside of when you would create a image/container?
+
+-- Search Tab --
+Should support multiple registries, and be able to change with a dropdown component.
+Placeholder text in the "Search Query" input overflows and you can't see the end of it.
+The README renders rather odd, with apparent extra whitespace all over the place.
+
+-- Other --
+The Services and Search tab have "1 - 6 Switch Tab" as keybinding help text, but the other tabs don't... this should be consolidated so its consistent across all tabs! I think it should be included as it's an important binding.
+We need to make sure things render nicely across multiple terminal setups. A good start would be adaptive colors provided by lipgloss.
+Our demo should create a service so that can be looked at as well.

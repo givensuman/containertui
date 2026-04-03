@@ -39,3 +39,6 @@ result
 result-*
 .direnv
 .envrc.log
+
+# Local development worktrees
+.worktrees/

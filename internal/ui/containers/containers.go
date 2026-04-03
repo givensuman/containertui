@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
+	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
@@ -39,6 +40,14 @@ type MsgRefreshContainers time.Time
 // MsgPruneComplete is sent when the prune operation completes
 type MsgPruneComplete struct {
 	SpaceReclaimed uint64
+	Err            error
+}
+
+// MsgContainerStats contains runtime stats for a container.
+type MsgContainerStats struct {
+	ID             string
+	ContainerState string
+	Stats          *client.ContainerStats
 	Err            error
 }
 
@@ -213,6 +222,12 @@ func New() Model {
 	// Set detail panel title
 	resourceView.SplitView.SetDetailTitle("Inspect")
 
+	// Add extra pane below detail pane for runtime stats
+	extraPane := components.NewViewportPane()
+	extraPane.SetContent("")
+	resourceView.SplitView.SetExtraPane(extraPane, 0.3)
+	resourceView.SplitView.SetExtraTitle("Stats")
+
 	// Set the custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
@@ -332,6 +347,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cmds = append(cmds, tickCmd())
 		// Refresh the containers list via custom refresh that preserves state
 		cmds = append(cmds, model.refreshWithState())
+		// Refresh stats for currently selected container
+		if selected := model.GetSelectedItem(); selected != nil {
+			cmds = append(cmds, model.fetchContainerStats(selected.ID, selected.State))
+		}
 
 	case MsgContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
@@ -370,6 +389,11 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			},
 		)
+
+	case MsgContainerStats:
+		if msg.ID == model.detailsPanel.GetCurrentID() {
+			model = model.updateStatsPane(msg.ContainerState, msg.Stats, msg.Err)
+		}
 	}
 
 	if model.IsOverlayVisible() {
@@ -415,7 +439,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return model, notifications.ShowError(fmt.Errorf("invalid container ID"))
 				}
 
-				newName := formValues["0"] // FormDialog uses index as key
+				newName := formValues["New Name"]
 				if newName == "" {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("name cannot be empty"))
@@ -484,15 +508,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
-				newFormat, cmd := model.detailsPanel.HandleToggleFormat()
-				_ = newFormat // format is tracked internally
-				model.refreshInspectionContent()
-				cmds = append(cmds, cmd)
-			}
-			if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
-				cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
-				cmds = append(cmds, cmd)
+			if model.IsDetailFocused() {
+				if key.Matches(msg, model.detailsKeybindings.ToggleJSON) {
+					newFormat, cmd := model.detailsPanel.HandleToggleFormat()
+					_ = newFormat // format is tracked internally
+					model.refreshInspectionContent()
+					cmds = append(cmds, cmd)
+				}
+				if key.Matches(msg, model.detailsKeybindings.CopyOutput) {
+					cmd := model.detailsPanel.HandleCopyToClipboard(model.inspection)
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 	}
@@ -510,7 +536,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				containerInfo, err := state.GetClient().InspectContainer(stdcontext.Background(), id)
 				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
 			})
+			cmds = append(cmds, model.fetchContainerStats(selectedItem.ID, selectedItem.State))
 		}
+	} else {
+		model.SetExtraContent("")
 	}
 
 	return model, tea.Batch(cmds...)
@@ -526,12 +555,20 @@ func (model Model) IsFiltering() bool {
 
 func (model Model) ShortHelp() []key.Binding {
 	// If detail pane is focused, show detail keybindings
-	if !model.IsListFocused() {
+	if model.IsDetailFocused() {
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
 			model.detailsKeybindings.ToggleJSON,
 			model.detailsKeybindings.CopyOutput,
+			model.detailsKeybindings.Switch,
+		}
+	}
+
+	if model.IsExtraFocused() {
+		return []key.Binding{
+			model.detailsKeybindings.Up,
+			model.detailsKeybindings.Down,
 			model.detailsKeybindings.Switch,
 		}
 	}
@@ -560,9 +597,64 @@ func (model *Model) refreshInspectionContent() {
 	model.SetContent(content)
 }
 
+func (model *Model) fetchContainerStats(containerID, containerState string) tea.Cmd {
+	if containerID == "" {
+		return nil
+	}
+
+	if containerState != "running" {
+		return func() tea.Msg {
+			return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: nil, Err: nil}
+		}
+	}
+
+	return func() tea.Msg {
+		stats, err := state.GetClient().GetContainerStats(stdcontext.Background(), containerID)
+		if err != nil {
+			return MsgContainerStats{ID: containerID, ContainerState: containerState, Err: err}
+		}
+
+		return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: &stats}
+	}
+}
+
+func (model Model) updateStatsPane(containerState string, stats *client.ContainerStats, statsErr error) Model {
+	if model.SplitView.Extra == nil {
+		return model
+	}
+
+	if containerState != "running" {
+		model.SetExtraContent("Container is not running")
+		return model
+	}
+
+	if statsErr != nil {
+		model.SetExtraContent(fmt.Sprintf("Failed to load stats: %v", statsErr))
+		return model
+	}
+
+	if stats == nil {
+		model.SetExtraContent("No stats available")
+		return model
+	}
+
+	content := fmt.Sprintf(
+		"CPU: %.2f%%\nMemory: %s / %s\nNetwork RX: %s\nNetwork TX: %s",
+		stats.CPUPercent,
+		utils.HumanizeBytes(uint64(stats.MemUsage)),
+		utils.HumanizeBytes(uint64(stats.MemLimit)),
+		utils.HumanizeBytes(uint64(stats.NetRx)),
+		utils.HumanizeBytes(uint64(stats.NetTx)),
+	)
+
+	model.SetExtraContent(content)
+
+	return model
+}
+
 func (model Model) FullHelp() [][]key.Binding {
 	// If detail pane is focused, show detail keybindings
-	if !model.IsListFocused() {
+	if model.IsDetailFocused() {
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
@@ -572,6 +664,16 @@ func (model Model) FullHelp() [][]key.Binding {
 			{
 				model.detailsKeybindings.ToggleJSON,
 				model.detailsKeybindings.CopyOutput,
+			},
+		}
+	}
+
+	if model.IsExtraFocused() {
+		return [][]key.Binding{
+			{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
 			},
 		}
 	}

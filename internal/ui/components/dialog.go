@@ -218,7 +218,7 @@ func (dialog Dialog) renderButtons() string {
 		Padding(0, 1).
 		Margin(0, 1).
 		Bold(true).
-		Foreground(colors.BrightWhite()).
+		Foreground(colors.PrimaryText()).
 		Background(colors.Primary())
 
 	for index, button := range dialog.buttons {
