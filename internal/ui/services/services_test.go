@@ -95,3 +95,42 @@ func TestUpdateDetailContentClearsBothPanesWhenNoSelection(t *testing.T) {
 		t.Fatalf("expected no compose file content, got %q", extraVp.View())
 	}
 }
+
+func TestHandleToggleFormatRefreshesInspectAndKeepsComposePane(t *testing.T) {
+	detailsPanel := components.NewDetailsPanel()
+	detailsPanel.SetCurrentFormat("yaml")
+
+	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{ResourceView: rv, detailsPanel: detailsPanel}
+	svc := client.Service{Name: "api", ComposeFile: ""}
+	model.refreshServiceDetails(svc)
+
+	beforeExtra, ok := model.SplitView.Extra.(*components.ViewportPane)
+	if !ok {
+		t.Fatal("expected extra pane viewport")
+	}
+	beforeExtra.SetSize(80, 8)
+	before := beforeExtra.View()
+
+	_ = model.handleToggleFormat()
+	model.refreshServiceDetails(svc)
+
+	afterExtra, ok := model.SplitView.Extra.(*components.ViewportPane)
+	if !ok {
+		t.Fatal("expected extra pane viewport")
+	}
+	afterExtra.SetSize(80, 8)
+	after := afterExtra.View()
+
+	if before == "" || after == "" {
+		t.Fatal("expected non-empty compose view before/after format toggle")
+	}
+	if !strings.Contains(after, "No compose file available") {
+		t.Fatalf("expected compose fallback after toggle, got %q", after)
+	}
+}
