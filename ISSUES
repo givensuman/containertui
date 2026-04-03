@@ -1,15 +1,8 @@
 -- General --
-Buttons, when hovered, use a light blue with white text which is unreadable, and when not hovered use a gray background with white text which is even less readable.
 Mouse support?
-Having multi-select for tabs that aren't the Containers tab doesn't make a lot of sense. The only real use case for that is removal of a bunch of containers, but we already have a prune function.
-Overlays like "Create container from image ('c')" in the Images Tab, when the help dialog is open ('?'), should close the help dialog. Pressing ? while inputting in a form should not open the help dialog. Performing an action (e.g. pressing 'r' to remove) should also close the help dialog.
 
 -- Containers Tab --
-F2 as a binding for renaming is bad, we should stick to alphabetic keys.
 We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
-
--- Images Tab --
-Run and exec ('x') does nothing
 
 -- Images, Volumes, and Networks ---
 Pulling image opens an overlay saying "This may take a while...", should have a progress bar instead?

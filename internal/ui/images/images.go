@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
+	"os/exec"
 	"slices"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -94,6 +97,12 @@ type MsgCreateContainerComplete struct {
 type MsgRunAndExecComplete struct {
 	ContainerID string
 	Err         error
+	CleanupErr  error
+}
+
+// MsgRunAndExecReady indicates container setup is complete and shell can start.
+type MsgRunAndExecReady struct {
+	ContainerID string
 }
 
 // MsgTagImageComplete indicates image tagging has finished.
@@ -467,21 +476,40 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		)
 
 	case MsgRunAndExecComplete:
+		if msg.CleanupErr != nil {
+			return model, notifications.ShowError(msg.CleanupErr)
+		}
+
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
 		}
 
-		successMsg := fmt.Sprintf("Created ephemeral container: %s", msg.ContainerID[:12])
+		successMsg := fmt.Sprintf("Temporary shell ended and container removed: %s", msg.ContainerID[:12])
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			func() tea.Msg {
 				return base.MsgResourceChanged{
 					Resource:  base.ResourceContainer,
-					Operation: base.OperationCreated,
+					Operation: base.OperationDeleted,
 					IDs:       []string{msg.ContainerID},
 				}
 			},
 		)
+
+	case MsgRunAndExecReady:
+		command := exec.Command("docker", "exec", "-it", msg.ContainerID, "/bin/sh")
+		return model, tea.ExecProcess(command, func(err error) tea.Msg {
+			cleanupErr := state.GetClient().RemoveContainer(stdcontext.Background(), msg.ContainerID, true)
+			if cleanupErr != nil {
+				cleanupErr = fmt.Errorf("shell exited but failed to clean up container %s: %w", msg.ContainerID[:12], cleanupErr)
+			}
+
+			if err != nil {
+				err = fmt.Errorf("shell session failed for container %s: %w", msg.ContainerID[:12], err)
+			}
+
+			return MsgRunAndExecComplete{ContainerID: msg.ContainerID, Err: err, CleanupErr: cleanupErr}
+		})
 
 	case MsgTagImageComplete:
 		if msg.Err != nil {
@@ -1134,7 +1162,7 @@ func (model *Model) handleTagImage() {
 	model.SetOverlay(dialog)
 }
 
-// handleRunAndExec creates an ephemeral container and execs into it
+// handleRunAndExec creates a temporary container and execs into it.
 func (model *Model) handleRunAndExec() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
@@ -1144,34 +1172,43 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 
-		// Create ephemeral container
-		config := client.CreateContainerConfig{
-			Name:      fmt.Sprintf("temp-%d", selectedItem.Image.Created),
-			ImageID:   selectedItem.Image.ID,
-			Ports:     nil,
-			Volumes:   nil,
-			Env:       nil,
-			AutoStart: true,
-			Network:   "bridge",
-		}
+		config := buildTempShellContainerConfig(selectedItem.Image.ID, time.Now())
 
 		containerID, err := state.GetClient().CreateContainer(ctx, config)
 		if err != nil {
 			return MsgRunAndExecComplete{Err: fmt.Errorf("failed to create container: %w", err)}
 		}
 
-		// Exec into it
-		shell := []string{"/bin/sh"}
-		if _, err := state.GetClient().ExecShell(ctx, containerID, shell); err != nil {
-			// Try bash if sh fails
-			shell = []string{"/bin/bash"}
-			if _, err := state.GetClient().ExecShell(ctx, containerID, shell); err != nil {
-				return MsgRunAndExecComplete{Err: fmt.Errorf("failed to exec shell: %w", err)}
-			}
+		if err := state.GetClient().StartContainer(ctx, containerID); err != nil {
+			_ = state.GetClient().RemoveContainer(ctx, containerID, true)
+			return MsgRunAndExecComplete{Err: fmt.Errorf("failed to start container: %w", err)}
 		}
 
-		return MsgRunAndExecComplete{ContainerID: containerID}
+		return MsgRunAndExecReady{ContainerID: containerID}
 	}
+}
+
+func buildTempShellContainerConfig(imageID string, now time.Time) client.CreateContainerConfig {
+	return client.CreateContainerConfig{
+		Name:       generateTempContainerName(imageID, now),
+		ImageID:    imageID,
+		Ports:      nil,
+		Volumes:    nil,
+		Env:        nil,
+		AutoStart:  false,
+		AutoRemove: false,
+		Network:    "bridge",
+	}
+}
+
+func generateTempContainerName(imageID string, now time.Time) string {
+	trimmed := strings.TrimPrefix(imageID, "sha256:")
+	if len(trimmed) > 12 {
+		trimmed = trimmed[:12]
+	}
+
+	randomSuffix := rand.New(rand.NewSource(now.UnixNano())).Intn(1_000_000)
+	return fmt.Sprintf("tmp-shell-%s-%d-%06d", trimmed, now.Unix(), randomSuffix)
 }
 
 // handleBuildImage shows dialog to build an image

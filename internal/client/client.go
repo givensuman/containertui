@@ -225,13 +225,14 @@ func (clientWrapper *ClientWrapper) PauseContainers(ctx context.Context, contain
 
 // CreateContainerConfig holds configuration for creating a container.
 type CreateContainerConfig struct {
-	Name      string
-	ImageID   string
-	Ports     map[string]string // "hostPort" -> "containerPort"
-	Volumes   []string          // "hostPath:containerPath" format
-	Env       []string          // "KEY=value" format
-	AutoStart bool
-	Network   string // Network name (default: "bridge")
+	Name       string
+	ImageID    string
+	Ports      map[string]string // "hostPort" -> "containerPort"
+	Volumes    []string          // "hostPath:containerPath" format
+	Env        []string          // "KEY=value" format
+	AutoStart  bool
+	AutoRemove bool
+	Network    string // Network name (default: "bridge")
 }
 
 // CreateContainer creates a new container with the specified configuration.
@@ -266,6 +267,7 @@ func (clientWrapper *ClientWrapper) CreateContainer(ctx context.Context, config 
 	hostConfig := &container.HostConfig{
 		PortBindings: portBindings,
 		Binds:        config.Volumes,
+		AutoRemove:   config.AutoRemove,
 		NetworkMode:  container.NetworkMode(networkMode),
 	}
 
