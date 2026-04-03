@@ -85,6 +85,14 @@ func TestStatsHistoryPushNonPositiveTimeDeltaProducesZeroRates(t *testing.T) {
 		if point.NetTxRate != 0 {
 			t.Fatalf("expected TX rate 0 bytes/s for zero time delta, got %v", point.NetTxRate)
 		}
+
+		if len(history.points) != 1 {
+			t.Fatalf("expected stale zero-delta sample to be ignored, got history length %d", len(history.points))
+		}
+
+		if !history.points[0].Timestamp.Equal(base) {
+			t.Fatalf("expected latest timestamp to remain %v, got %v", base, history.points[0].Timestamp)
+		}
 	})
 
 	t.Run("negative delta", func(t *testing.T) {
@@ -101,5 +109,40 @@ func TestStatsHistoryPushNonPositiveTimeDeltaProducesZeroRates(t *testing.T) {
 		if point.NetTxRate != 0 {
 			t.Fatalf("expected TX rate 0 bytes/s for negative time delta, got %v", point.NetTxRate)
 		}
+
+		if len(history.points) != 1 {
+			t.Fatalf("expected stale negative-delta sample to be ignored, got history length %d", len(history.points))
+		}
+
+		if !history.points[0].Timestamp.Equal(base) {
+			t.Fatalf("expected latest timestamp to remain %v, got %v", base, history.points[0].Timestamp)
+		}
 	})
+}
+
+func TestStatsHistoryPushRejectsNonMonotonicTimestamps(t *testing.T) {
+	history := newStatsHistory(10)
+	base := time.Unix(700, 0)
+
+	history.push(client.ContainerStats{CPUPercent: 10, NetRx: 100, NetTx: 200}, base)
+	history.push(client.ContainerStats{CPUPercent: 40, NetRx: 400, NetTx: 800}, base.Add(2*time.Second))
+
+	point := history.push(client.ContainerStats{CPUPercent: 5, NetRx: 50, NetTx: 75}, base.Add(time.Second))
+
+	if len(history.points) != 2 {
+		t.Fatalf("expected stale sample to be ignored, got history length %d", len(history.points))
+	}
+
+	latest := history.points[len(history.points)-1]
+	if latest.CPUPercent != 40 {
+		t.Fatalf("expected latest CPU to remain 40, got %v", latest.CPUPercent)
+	}
+
+	if !latest.Timestamp.Equal(base.Add(2 * time.Second)) {
+		t.Fatalf("expected latest timestamp to remain %v, got %v", base.Add(2*time.Second), latest.Timestamp)
+	}
+
+	if point != latest {
+		t.Fatalf("expected returned point to remain latest history point %+v, got %+v", latest, point)
+	}
 }

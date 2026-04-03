@@ -35,6 +35,13 @@ func newStatsHistory(window int) *statsHistory {
 }
 
 func (h *statsHistory) push(stats client.ContainerStats, at time.Time) statsPoint {
+	if len(h.points) > 0 {
+		last := h.points[len(h.points)-1]
+		if !at.After(last.Timestamp) {
+			return last
+		}
+	}
+
 	point := statsPoint{
 		Timestamp:  at,
 		CPUPercent: stats.CPUPercent,
