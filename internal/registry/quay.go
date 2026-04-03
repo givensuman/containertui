@@ -26,16 +26,16 @@ func NewQuayClient() *QuayClient {
 }
 
 type quaySearchResponse struct {
-	Repositories []quayRepository `json:"repositories"`
+	Results []quaySearchResult `json:"results"`
 }
 
-type quayRepository struct {
+type quaySearchResult struct {
+	Kind        string `json:"kind"`
 	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
 	Description string `json:"description"`
-	StarCount   int    `json:"star_count"`
-
-	Popularity float64 `json:"popularity"`
+	Namespace   struct {
+		Name string `json:"name"`
+	} `json:"namespace"`
 }
 
 // Search queries Quay for repositories matching the query.
@@ -46,7 +46,7 @@ func (c *QuayClient) Search(ctx context.Context, query string, pageSize int) (Se
 
 	params := url.Values{}
 	params.Set("query", query)
-	params.Set("limit", fmt.Sprintf("%d", pageSize))
+	params.Set("page_size", fmt.Sprintf("%d", pageSize))
 
 	endpoint := fmt.Sprintf("%s/find/repositories?%s", c.baseURL, params.Encode())
 
@@ -55,21 +55,35 @@ func (c *QuayClient) Search(ctx context.Context, query string, pageSize int) (Se
 		return SearchResponse{}, fmt.Errorf("failed to search quay repositories: %w", err)
 	}
 
-	results := make([]RegistryImage, 0, len(raw.Repositories))
-	for _, repo := range raw.Repositories {
-		fullName := fmt.Sprintf("quay.io/%s/%s", repo.Namespace, repo.Name)
+	results := mapQuaySearchResults(raw)
+
+	return SearchResponse{Count: len(results), Results: results}, nil
+}
+
+func mapQuaySearchResults(raw quaySearchResponse) []RegistryImage {
+	results := make([]RegistryImage, 0, len(raw.Results))
+	for _, repo := range raw.Results {
+		if repo.Kind != "repository" {
+			continue
+		}
+
+		if repo.Namespace.Name == "" || repo.Name == "" {
+			continue
+		}
+
+		fullName := fmt.Sprintf("quay.io/%s/%s", repo.Namespace.Name, repo.Name)
 		results = append(results, RegistryImage{
 			RepoName:         fullName,
 			ShortDescription: repo.Description,
-			StarCount:        repo.StarCount,
-			PullCount:        int64(repo.Popularity),
+			StarCount:        0,
+			PullCount:        0,
 			IsOfficial:       false,
 			IsAutomated:      false,
 			Registry:         "quay",
 		})
 	}
 
-	return SearchResponse{Count: len(results), Results: results}, nil
+	return results
 }
 
 func (c *QuayClient) doRequest(ctx context.Context, endpoint string, result any) error {

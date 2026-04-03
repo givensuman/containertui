@@ -1,6 +1,6 @@
 -- General --
 Mouse support?
-"No unused networks to prune" message is good, not all containers use this message template (e.g. "Pruned stoped containers, freed 0B")
+Revise search dropdown
 
 -- Containers Tab --
 We should have a second informational panel with CPU/RAM usage, network, and other staWe should have a second informational panel with CPU/RAM usage, network, and other stats. Maybe with "Stats" as its title? Reasonable fallbacks, e.g. if its not running (maybe just nothing)
@@ -11,8 +11,6 @@ Prune unused images/networks/volumes doesn't appear to do anything? Could be wro
 Having a remove and a force remove doesn't make a ton of sense, especially when remove fails if a force remove would be needed (e.g. containers using image/network/volume). We may be able to combine these into one?
 
 -- Search Tab --
-Should support multiple registries, and be able to change with a dropdown component.
-Placeholder text in the "Search Query" input overflows and you can't see the end of it.
 The README renders rather odd, with apparent extra whitespace all over the place.
 
 -- Other --
