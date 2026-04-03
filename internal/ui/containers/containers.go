@@ -48,6 +48,7 @@ type MsgContainerStats struct {
 	ID             string
 	ContainerState string
 	Stats          *client.ContainerStats
+	FetchedAt      time.Time
 	Err            error
 }
 
@@ -171,6 +172,9 @@ type Model struct {
 	detailsKeybindings detailsKeybindings
 	detailsPanel       components.DetailsPanel
 
+	statsHistoryByContainer map[string]*statsHistory
+	activeStatsContainerID  string
+
 	WindowWidth  int
 	WindowHeight int
 }
@@ -233,10 +237,12 @@ func New() Model {
 	resourceView.SetDelegate(delegate)
 
 	model := Model{
-		ResourceView:       *resourceView,
-		keybindings:        containerKeybindings,
-		detailsKeybindings: newDetailsKeybindings(),
-		detailsPanel:       components.NewDetailsPanel(),
+		ResourceView:            *resourceView,
+		keybindings:             containerKeybindings,
+		detailsKeybindings:      newDetailsKeybindings(),
+		detailsPanel:            components.NewDetailsPanel(),
+		statsHistoryByContainer: make(map[string]*statsHistory),
+		activeStatsContainerID:  "",
 	}
 
 	// Add custom keybindings to help
@@ -394,6 +400,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		)
 
 	case MsgContainerStats:
+		if msg.ID == model.activeStatsContainerID {
+			if msg.Stats != nil && msg.ContainerState == "running" {
+				history, ok := model.statsHistoryByContainer[msg.ID]
+				if !ok {
+					history = newStatsHistory(32)
+					model.statsHistoryByContainer[msg.ID] = history
+				}
+				history.push(*msg.Stats, msg.FetchedAt)
+			}
+		}
+
 		if msg.ID == model.detailsPanel.GetCurrentID() {
 			model = model.updateStatsPane(msg.ContainerState, msg.Stats, msg.Err)
 		}
@@ -530,6 +547,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
 		if selectedItem.ID != model.detailsPanel.GetCurrentID() {
+			model.activeStatsContainerID = selectedItem.ID
 			if selectedItem.State == "running" || selectedItem.State == "" {
 				model.SetExtraContent("Loading stats...")
 			} else {
@@ -548,6 +566,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			cmds = append(cmds, model.fetchContainerStats(selectedItem.ID, selectedItem.State))
 		}
 	} else {
+		model.activeStatsContainerID = ""
 		model.SetExtraContent("")
 	}
 
@@ -613,17 +632,24 @@ func (model *Model) fetchContainerStats(containerID, containerState string) tea.
 
 	if containerState != "running" {
 		return func() tea.Msg {
-			return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: nil, Err: nil}
+			return MsgContainerStats{
+				ID:             containerID,
+				ContainerState: containerState,
+				Stats:          nil,
+				FetchedAt:      time.Now(),
+				Err:            nil,
+			}
 		}
 	}
 
 	return func() tea.Msg {
+		fetchedAt := time.Now()
 		stats, err := state.GetClient().GetContainerStats(stdcontext.Background(), containerID)
 		if err != nil {
-			return MsgContainerStats{ID: containerID, ContainerState: containerState, Err: err}
+			return MsgContainerStats{ID: containerID, ContainerState: containerState, FetchedAt: fetchedAt, Err: err}
 		}
 
-		return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: &stats}
+		return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: &stats, FetchedAt: fetchedAt}
 	}
 }
 
@@ -652,13 +678,37 @@ func (model Model) updateStatsPane(containerState string, stats *client.Containe
 		return model
 	}
 
+	history, ok := model.statsHistoryByContainer[model.activeStatsContainerID]
+	if !ok || len(history.points) == 0 {
+		model.SetExtraContent("Loading stats...")
+		return model
+	}
+
+	point := history.points[len(history.points)-1]
+	cpuSeries := make([]float64, 0, len(history.points))
+	memSeries := make([]float64, 0, len(history.points))
+	for _, p := range history.points {
+		cpuSeries = append(cpuSeries, p.CPUPercent)
+		memSeries = append(memSeries, p.MemPercent)
+	}
+
+	graph := renderStatsGraph(statsRenderInput{
+		CPUPercent: point.CPUPercent,
+		MemPercent: point.MemPercent,
+		CPUSeries:  cpuSeries,
+		MemSeries:  memSeries,
+		BarWidth:   24,
+	})
+
 	content := fmt.Sprintf(
-		"CPU: %.2f%%\nMemory: %s / %s\nNetwork RX: %s\nNetwork TX: %s",
-		stats.CPUPercent,
-		utils.HumanizeBytes(uint64(stats.MemUsage)),
-		utils.HumanizeBytes(uint64(stats.MemLimit)),
-		utils.HumanizeBytes(uint64(stats.NetRx)),
-		utils.HumanizeBytes(uint64(stats.NetTx)),
+		"%s\nMemory: %s / %s\nNetwork RX: %s (%s/s)\nNetwork TX: %s (%s/s)",
+		graph,
+		utils.HumanizeBytes(uint64(point.MemUsage)),
+		utils.HumanizeBytes(uint64(point.MemLimit)),
+		utils.HumanizeBytes(uint64(point.NetRx)),
+		utils.HumanizeBytes(uint64(point.NetRxRate)),
+		utils.HumanizeBytes(uint64(point.NetTx)),
+		utils.HumanizeBytes(uint64(point.NetTxRate)),
 	)
 
 	model.SetExtraContent(content)
