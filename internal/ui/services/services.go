@@ -310,29 +310,33 @@ func (model *Model) updateDetailContent() tea.Cmd {
 }
 
 func (model *Model) refreshServiceDetails(service client.Service) {
-	// Get format from detailsPanel
+	model.SetContent(model.buildInspectContent(service, model.GetContentWidth()))
+}
+
+func (model *Model) buildInspectContent(service client.Service, width int) string {
 	format := model.detailsPanel.GetFormatForDisplay()
+	return builders.BuildServicePanel(service, width, false, format)
+}
 
-	// Use the panel builder with selected format
-	panelContent := builders.BuildServicePanel(service, model.GetContentWidth(), false, format)
-
-	// Add compose file content if available
-	if service.ComposeFile != "" {
-		data, err := os.ReadFile(service.ComposeFile)
-		if err == nil {
-			// Wrap compose file content in markdown code block
-			composeMarkdown := fmt.Sprintf("## Compose File Content\n\n```yaml\n%s\n```", string(data))
-			renderedCompose, err := infopanel.RenderMarkdown(composeMarkdown, model.GetContentWidth())
-			if err == nil {
-				panelContent += "\n\n" + renderedCompose
-			} else {
-				// Fallback to plain text if markdown rendering fails
-				panelContent += "\n\n" + composeMarkdown
-			}
-		}
+func (model *Model) buildComposeContent(service client.Service, width int) string {
+	if strings.TrimSpace(service.ComposeFile) == "" {
+		return lipgloss.NewStyle().Foreground(colors.Muted()).Render("No compose file available")
 	}
 
-	model.SetContent(panelContent)
+	data, err := os.ReadFile(service.ComposeFile)
+	if err != nil {
+		return lipgloss.NewStyle().Foreground(colors.Muted()).Render(
+			fmt.Sprintf("Failed to read compose file: %s", service.ComposeFile),
+		)
+	}
+
+	composeMarkdown := fmt.Sprintf("## Compose File Content\n\n```yaml\n%s\n```", string(data))
+	rendered, renderErr := infopanel.RenderMarkdown(composeMarkdown, width)
+	if renderErr != nil {
+		return composeMarkdown
+	}
+
+	return rendered
 }
 
 // handleCopyToClipboard copies the current service details to clipboard
