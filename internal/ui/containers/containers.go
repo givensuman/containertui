@@ -375,6 +375,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return model, notifications.ShowError(msg.Err)
 		}
 		successMsg := fmt.Sprintf("Pruned stopped containers, freed %s", utils.HumanizeBytes(msg.SpaceReclaimed))
+		if msg.SpaceReclaimed == 0 {
+			successMsg = "No stopped containers to prune"
+		}
 		return model, tea.Batch(
 			notifications.ShowSuccess(successMsg),
 			model.Refresh(),
