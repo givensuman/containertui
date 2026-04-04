@@ -59,6 +59,14 @@ func newKeybindings() *keybindings {
 	}
 }
 
+func additionalHelpBindings(bindings *keybindings) []key.Binding {
+	return []key.Binding{
+		bindings.switchTab,
+		bindings.search,
+		bindings.pull,
+	}
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -158,11 +166,7 @@ func New() Model {
 	resourceView.SplitView.SetDetailTitle("README")
 
 	// Add custom keybindings to help
-	resourceView.AdditionalHelp = []key.Binding{
-		browseKeybindings.search,
-		browseKeybindings.pull,
-		browseKeybindings.switchTab,
-	}
+	resourceView.AdditionalHelp = additionalHelpBindings(browseKeybindings)
 
 	return Model{
 		ResourceView:       *resourceView,

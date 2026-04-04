@@ -82,3 +82,15 @@ func TestBrowseTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
 		t.Fatalf("expected fully plain title without ANSI, got %q", title)
 	}
 }
+
+func TestAdditionalHelpBindingsSwitchTabFirst(t *testing.T) {
+	bindings := newKeybindings()
+	help := additionalHelpBindings(bindings)
+
+	if len(help) == 0 {
+		t.Fatal("expected non-empty additional help bindings")
+	}
+	if help[0].Help().Desc != "switch tab" {
+		t.Fatalf("expected first additional help to be switch tab, got %q", help[0].Help().Desc)
+	}
+}
