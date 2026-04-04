@@ -1,10 +1,12 @@
 package services
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
@@ -132,5 +134,68 @@ func TestHandleToggleFormatRefreshesInspectAndKeepsComposePane(t *testing.T) {
 	}
 	if !strings.Contains(after, "No compose file available") {
 		t.Fatalf("expected compose fallback after toggle, got %q", after)
+	}
+}
+
+func TestShortHelpHidesToggleJSONWhenComposePaneFocused(t *testing.T) {
+	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{
+		ResourceView:       rv,
+		detailsKeybindings: newDetailsKeybindings(),
+	}
+	model.SplitView.Focus = components.FocusExtra
+
+	help := model.ShortHelp()
+	for _, binding := range help {
+		if binding.Help().Desc == "toggle JSON/YAML" {
+			t.Fatal("did not expect toggle JSON/YAML help in compose pane")
+		}
+	}
+}
+
+func TestUpdateIgnoresToggleJSONWhenComposePaneFocused(t *testing.T) {
+	detailsPanel := components.NewDetailsPanel()
+	detailsPanel.SetCurrentFormat("yaml")
+
+	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{
+		ResourceView:       rv,
+		detailsPanel:       detailsPanel,
+		detailsKeybindings: newDetailsKeybindings(),
+	}
+	model.SplitView.Focus = components.FocusExtra
+
+	updated, _ := model.Update(tea.KeyPressMsg{Code: 'J', Text: "J"})
+	if updated.detailsPanel.GetCurrentFormat() != "yaml" {
+		t.Fatalf("expected format to remain yaml, got %q", updated.detailsPanel.GetCurrentFormat())
+	}
+}
+
+func TestComposeClipboardContentReturnsFileContent(t *testing.T) {
+	dir := t.TempDir()
+	composePath := dir + "/compose.yaml"
+	want := "services:\n  api:\n    image: nginx:latest\n"
+
+	if err := os.WriteFile(composePath, []byte(want), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service := client.Service{Name: "api", ComposeFile: composePath}
+	got, err := composeClipboardContent(service)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got != want {
+		t.Fatalf("unexpected compose clipboard content: got %q want %q", got, want)
 	}
 }

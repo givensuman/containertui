@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
@@ -275,14 +276,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 	} else if !model.IsOverlayVisible() && !model.IsListFocused() {
-		// Detail pane is focused
+		// Detail or compose pane is focused
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
 			switch {
-			case key.Matches(msg, model.detailsKeybindings.ToggleJSON):
+			case model.IsDetailFocused() && key.Matches(msg, model.detailsKeybindings.ToggleJSON):
 				cmd := model.handleToggleFormat()
 				cmds = append(cmds, cmd)
-			case key.Matches(msg, model.detailsKeybindings.CopyOutput):
+			case (model.IsDetailFocused() || model.IsExtraFocused()) && key.Matches(msg, model.detailsKeybindings.CopyOutput):
 				cmd := model.handleCopyToClipboard()
 				if cmd != nil {
 					cmds = append(cmds, cmd)
@@ -346,7 +347,7 @@ func (model *Model) buildComposeContent(service client.Service, width int) strin
 		)
 	}
 
-	composeMarkdown := fmt.Sprintf("## Compose File Content\n\n```yaml\n%s\n```", string(data))
+	composeMarkdown := fmt.Sprintf("```yaml\n%s\n```", string(data))
 	rendered, renderErr := infopanel.RenderMarkdown(composeMarkdown, width)
 	if renderErr != nil {
 		return composeMarkdown
@@ -362,7 +363,31 @@ func (model *Model) handleCopyToClipboard() tea.Cmd {
 		return nil
 	}
 
+	if model.IsExtraFocused() {
+		content, err := composeClipboardContent(selectedItem.Service)
+		if err != nil {
+			return notifications.ShowError(err)
+		}
+		if err := clipboard.WriteAll(content); err != nil {
+			return notifications.ShowError(err)
+		}
+		return notifications.ShowSuccess("Copied compose file to clipboard")
+	}
+
 	return model.detailsPanel.HandleCopyToClipboard(selectedItem.Service)
+}
+
+func composeClipboardContent(service client.Service) (string, error) {
+	if strings.TrimSpace(service.ComposeFile) == "" {
+		return "", fmt.Errorf("service %q has no compose file", service.Name)
+	}
+
+	data, err := os.ReadFile(service.ComposeFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read compose file: %w", err)
+	}
+
+	return string(data), nil
 }
 
 // handleToggleFormat toggles between JSON and YAML format
@@ -389,6 +414,14 @@ func (model Model) IsFiltering() bool {
 
 func (model Model) ShortHelp() []key.Binding {
 	if !model.IsListFocused() {
+		if model.IsExtraFocused() {
+			return []key.Binding{
+				model.detailsKeybindings.Up,
+				model.detailsKeybindings.Down,
+				model.detailsKeybindings.Switch,
+				model.detailsKeybindings.CopyOutput,
+			}
+		}
 		return []key.Binding{
 			model.detailsKeybindings.Up,
 			model.detailsKeybindings.Down,
@@ -402,6 +435,18 @@ func (model Model) ShortHelp() []key.Binding {
 
 func (model Model) FullHelp() [][]key.Binding {
 	if !model.IsListFocused() {
+		if model.IsExtraFocused() {
+			return [][]key.Binding{
+				{
+					model.detailsKeybindings.Up,
+					model.detailsKeybindings.Down,
+					model.detailsKeybindings.Switch,
+				},
+				{
+					model.detailsKeybindings.CopyOutput,
+				},
+			}
+		}
 		return [][]key.Binding{
 			{
 				model.detailsKeybindings.Up,
