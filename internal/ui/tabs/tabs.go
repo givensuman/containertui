@@ -172,17 +172,19 @@ func maxInt(a, b int) int {
 }
 
 var (
-	// Active tab: Primary color background, distinct text
+	// Active tab: filled pill/box to make selected section explicit.
 	activeTabStyle = lipgloss.NewStyle().
-			Foreground(colors.Primary()).
+			Foreground(colors.PrimaryText()).
+			Background(colors.Primary()).
 			Padding(0, 1).
+			MarginRight(1).
 			Bold(true)
 
-	// Inactive tab: Muted color, still needs rounded border structure to align with active tab but we hide top/sides?
-	// Actually, standard TUI tab design often puts a bottom border on the GAP, and NO bottom border on the active tab.
-	// But let's try to make them all visible first.
+	// Inactive tab: outlined pill/box for stronger affordance than plain text.
 	inactiveTabStyle = lipgloss.NewStyle().
-				Foreground(colors.Muted()).
+				Foreground(colors.Text()).
+				Background(colors.Border()).
 				Padding(0, 1).
+				MarginRight(1).
 				Bold(false)
 )
