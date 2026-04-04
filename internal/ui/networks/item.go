@@ -2,12 +2,9 @@ package networks
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
@@ -36,12 +33,7 @@ func (networkItem NetworkItem) getNetworkIcon() string {
 	case true:
 		return ""
 	case false:
-		// Color the network icon based on active state
-		iconColor := colors.Text()
-		if networkItem.IsActive {
-			iconColor = colors.Success()
-		}
-		return icons.Styled(iconSet.Network, iconColor)
+		return iconSet.Network
 	}
 
 	return ""
@@ -51,32 +43,16 @@ func (networkItem NetworkItem) getNetworkIcon() string {
 func (networkItem NetworkItem) getStatusIcon() string {
 	iconSet := icons.Get()
 
-	var icon string
-	var iconColor color.Color
-
 	if networkItem.IsActive {
-		icon = iconSet.Active
-		iconColor = colors.Success()
-	} else {
-		icon = iconSet.Empty
-		iconColor = colors.Text()
+		return iconSet.Active
 	}
-
-	return icons.Styled(icon, iconColor)
+	return iconSet.Empty
 }
 
 func (networkItem NetworkItem) Title() string {
 	statusIcon := networkItem.getStatusIcon() // Active/Empty (colored)
 
-	// Apply themed coloring to name based on activity status
-	nameColor := colors.Text()
-	if networkItem.IsActive {
-		nameColor = colors.Success()
-	}
-	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
-	styledName := nameStyle.Render(networkItem.Network.Name)
-
-	return fmt.Sprintf("%s %s", statusIcon, styledName)
+	return fmt.Sprintf("%s %s", statusIcon, networkItem.Network.Name)
 }
 
 func (networkItem NetworkItem) Description() string {

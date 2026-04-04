@@ -2,12 +2,9 @@ package volumes
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
@@ -33,41 +30,24 @@ func newDefaultDelegate() list.DefaultDelegate {
 // getStatusIcon returns the appropriate icon for a volume based on its mount status
 func (volumeItem VolumeItem) getStatusIcon() string {
 	iconSet := icons.Get()
-
-	var icon string
-	var iconColor color.Color
-
 	if volumeItem.IsMounted {
-		icon = iconSet.Mounted
-		iconColor = colors.Success()
-	} else {
-		icon = iconSet.Unmounted
-		iconColor = colors.Text()
+		return iconSet.Mounted
 	}
-
-	return icons.Styled(icon, iconColor)
+	return iconSet.Unmounted
 }
 
 func (volumeItem VolumeItem) Title() string {
 	statusStateIcon := volumeItem.getStatusIcon()
-
-	// Apply themed coloring based on mount status
-	var nameColor = colors.Text()
-	if volumeItem.IsMounted {
-		nameColor = colors.Success()
-	}
-	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
-	styledName := nameStyle.Render(truncateVolumeName(volumeItem.Volume.Name, volumeTitleMaxLength))
-
-	return fmt.Sprintf("%s %s", statusStateIcon, styledName)
+	return fmt.Sprintf("%s %s", statusStateIcon, truncateVolumeName(volumeItem.Volume.Name, volumeTitleMaxLength))
 }
 
 func truncateVolumeName(name string, maxLen int) string {
-	if maxLen <= 3 || len(name) <= maxLen {
+	runes := []rune(name)
+	if maxLen <= 3 || len(runes) <= maxLen {
 		return name
 	}
 
-	return name[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func (volumeItem VolumeItem) Description() string {

@@ -2,12 +2,15 @@ package services
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/config"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
 
@@ -197,5 +200,19 @@ func TestComposeClipboardContentReturnsFileContent(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("unexpected compose clipboard content: got %q want %q", got, want)
+	}
+}
+
+func TestServiceTitleDoesNotWrapNameWithANSI(t *testing.T) {
+	state.SetConfig(config.DefaultConfig())
+	name := "api-service"
+	item := ServiceItem{Service: client.Service{Name: name, Containers: []client.Container{{State: "running"}}}}
+	title := item.Title()
+
+	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(name) + "\\x1b\\[[0-9;]*m").MatchString(title) {
+		t.Fatalf("expected service name to be plain text, got %q", title)
+	}
+	if strings.Contains(title, "\x1b[") {
+		t.Fatalf("expected fully plain title without ANSI, got %q", title)
 	}
 }

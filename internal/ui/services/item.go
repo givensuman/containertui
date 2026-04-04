@@ -2,41 +2,15 @@ package services
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ServiceItem struct {
 	Service client.Service
-}
-
-// getServiceColor returns the color based on service state
-func (i ServiceItem) getServiceColor() color.Color {
-	hasRunning := false
-	allStopped := true
-
-	for _, container := range i.Service.Containers {
-		if container.State == "running" {
-			hasRunning = true
-			allStopped = false
-			break
-		} else if container.State != "exited" {
-			allStopped = false
-		}
-	}
-
-	if hasRunning {
-		return colors.Success()
-	} else if allStopped {
-		return colors.Text()
-	}
-	return colors.Warning() // Mixed state
 }
 
 // getServiceIcon returns the service icon (no nerd fonts option check needed here since services always show icon)
@@ -47,8 +21,7 @@ func (i ServiceItem) getServiceIcon() string {
 	case true:
 		return ""
 	case false:
-		serviceColor := i.getServiceColor()
-		return icons.Styled(iconSet.Service, serviceColor)
+		return iconSet.Service
 	}
 
 	return ""
@@ -57,7 +30,6 @@ func (i ServiceItem) getServiceIcon() string {
 // getStatusIcon returns status icon based on whether service has running containers
 func (i ServiceItem) getStatusIcon() string {
 	iconSet := icons.Get()
-	serviceColor := i.getServiceColor()
 
 	// Check if any container in this service is running
 	hasRunning := false
@@ -81,18 +53,12 @@ func (i ServiceItem) getStatusIcon() string {
 		icon = iconSet.Paused // Mixed state
 	}
 
-	return icons.Styled(icon, serviceColor)
+	return icon
 }
 
 func (i ServiceItem) Title() string {
 	statusIcon := i.getStatusIcon()
-	serviceColor := i.getServiceColor()
-
-	// Apply color to service name
-	nameStyle := lipgloss.NewStyle().Foreground(serviceColor)
-	styledName := nameStyle.Render(i.Service.Name)
-
-	return fmt.Sprintf("   %s %s", statusIcon, styledName)
+	return fmt.Sprintf("   %s %s", statusIcon, i.Service.Name)
 }
 
 func (i ServiceItem) Description() string {

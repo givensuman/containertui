@@ -1,11 +1,15 @@
 package browse
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/registry"
+	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
 
@@ -62,5 +66,19 @@ func TestPullImageTargetsPrefersMultiSelection(t *testing.T) {
 	}
 	if targets[0].ImageName != "library/nginx" || targets[1].ImageName != "library/redis" {
 		t.Fatalf("unexpected pull targets: %#v", targets)
+	}
+}
+
+func TestBrowseTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
+	state.SetConfig(config.DefaultConfig())
+	repo := "library/nginx"
+	model := newTestBrowseModel([]BrowseItem{{Image: registry.RegistryImage{RepoName: repo}}})
+	title := model.GetItems()[0].Title()
+
+	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(repo) + "\\x1b\\[[0-9;]*m").MatchString(title) {
+		t.Fatalf("expected repo name to be plain text, got %q", title)
+	}
+	if strings.Contains(title, "\x1b[") {
+		t.Fatalf("expected fully plain title without ANSI, got %q", title)
 	}
 }

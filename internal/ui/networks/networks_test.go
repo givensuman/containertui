@@ -1,6 +1,12 @@
 package networks
 
-import "testing"
+import (
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/givensuman/containertui/internal/client"
+)
 
 func TestHandleCreateNetworkCompleteSuccess(t *testing.T) {
 	model := Model{}
@@ -36,4 +42,17 @@ type testError string
 
 func (e testError) Error() string {
 	return string(e)
+}
+
+func TestNetworkTitleDoesNotWrapNameWithANSI(t *testing.T) {
+	name := "very-long-network-name"
+	item := NetworkItem{Network: client.Network{Name: name}, IsActive: true}
+	title := item.Title()
+
+	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(name) + "\\x1b\\[[0-9;]*m").MatchString(title) {
+		t.Fatalf("expected network name to be plain text, got %q", title)
+	}
+	if strings.Contains(title, "\x1b[") {
+		t.Fatalf("expected fully plain title without ANSI, got %q", title)
+	}
 }

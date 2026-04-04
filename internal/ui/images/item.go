@@ -2,12 +2,9 @@ package images
 
 import (
 	"fmt"
-	"image/color"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
-	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
@@ -41,20 +38,12 @@ func (imageItem ImageItem) getTitleOrnament() string {
 			return ""
 		}
 	case false: // Use nerd fonts.
-		// Color the icon based on usage
-		var icon string
-		var iconColor color.Color
-
 		switch imageItem.InUse {
 		case true:
-			icon = iconSet.InUse
-			iconColor = colors.Success()
+			return iconSet.InUse + " "
 		case false:
-			icon = iconSet.Unused
-			iconColor = colors.Text()
+			return iconSet.Unused + " "
 		}
-
-		return icons.Styled(icon, iconColor) + " "
 	}
 
 	return ""
@@ -70,15 +59,7 @@ func (imageItem ImageItem) Title() string {
 
 	titleOrnament := imageItem.getTitleOrnament()
 
-	// Apply themed coloring based on usage status
-	nameColor := colors.Text()
-	if imageItem.InUse {
-		nameColor = colors.Success()
-	}
-	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
-	styledRepoTag := nameStyle.Render(repoTag)
-
-	return fmt.Sprintf("%s%s", titleOrnament, styledRepoTag)
+	return fmt.Sprintf("%s%s", titleOrnament, repoTag)
 }
 
 func (imageItem ImageItem) Description() string {

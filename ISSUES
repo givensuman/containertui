@@ -7,19 +7,13 @@ The position of the "1-6 switch tab" help text is different in the Browse tab th
 Where else can we put progress bars like the ones shown during image pulling? They're sick. 
   - Maybe when pruning? Currently we see an overlay that says "This may take a while"
 Better tab design?
-Filtering causes display artifacts like "____[93m" to show up in titles. Quite strange.
 Support podman, integrate this into UI somehow
 
 -- Containers Tab --
 Remove Stats tab or heavily revise it
 
--- Services --
-Split Inspect data and Compose File content into seperate split views.
-
--- Volumes --
-Shorten title with some kind of max length and add ellipsis.
-
 -- Other --
+Service keybindings don't work.
 Polish up demo experience.
 Get VHS tapes working.
 Test configuration, --no-nerd-fonts, etc.

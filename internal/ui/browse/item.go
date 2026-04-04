@@ -69,9 +69,9 @@ func (item BrowseItem) getTitleOrnament() string {
 		return ""
 	case false:
 		if item.Image.IsOfficial {
-			return icons.Styled(iconSet.Star, colors.Warning()) + " " // Star for official
+			return iconSet.Star + " " // Star for official
 		}
-		return icons.Styled(iconSet.Box, colors.Text()) + " " // Box for regular
+		return iconSet.Box + " " // Box for regular
 	}
 
 	return ""
@@ -101,12 +101,8 @@ func (item BrowseItem) Title() string {
 	stars := item.formatCount(int64(item.Image.StarCount))
 	pulls := item.formatCount(item.Image.PullCount)
 
-	// Apply themed coloring - all images use default text color
-	nameStyle := lipgloss.NewStyle().Foreground(colors.Text())
-	styledName := nameStyle.Render(item.Image.RepoName)
-
 	return fmt.Sprintf("%s %s %s ★ %s ↓ %s",
-		statusIcon, titleOrnament, styledName, stars, pulls)
+		statusIcon, titleOrnament, item.Image.RepoName, stars, pulls)
 }
 
 func (item BrowseItem) Description() string {

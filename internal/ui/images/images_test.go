@@ -1,9 +1,14 @@
 package images
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/config"
+	"github.com/givensuman/containertui/internal/state"
 )
 
 func TestParsePullLayerProgressValid(t *testing.T) {
@@ -101,5 +106,20 @@ func TestGenerateTempContainerNameChangesWithTime(t *testing.T) {
 
 	if first == second {
 		t.Fatalf("expected unique names, got %q and %q", first, second)
+	}
+}
+
+func TestImageTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
+	state.SetConfig(config.DefaultConfig())
+
+	repo := "library/nginx:latest"
+	item := ImageItem{Image: client.Image{RepoTags: []string{repo}}, InUse: true}
+	title := item.Title()
+
+	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(repo) + "\\x1b\\[[0-9;]*m").MatchString(title) {
+		t.Fatalf("expected repo name to be plain text, got %q", title)
+	}
+	if strings.Contains(title, "\x1b[") {
+		t.Fatalf("expected fully plain title without ANSI, got %q", title)
 	}
 }

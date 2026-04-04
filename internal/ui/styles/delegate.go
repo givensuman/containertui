@@ -11,7 +11,7 @@ func ChangeDelegateStyles(delegate list.DefaultDelegate) list.DefaultDelegate {
 		Foreground(colors.Primary())
 
 	delegate.Styles.DimmedTitle = delegate.Styles.DimmedTitle.
-		Foreground(colors.Error())
+		Foreground(colors.Muted())
 
 	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.
 		BorderLeftForeground(colors.Primary()).
@@ -23,7 +23,8 @@ func ChangeDelegateStyles(delegate list.DefaultDelegate) list.DefaultDelegate {
 
 	delegate.Styles.FilterMatch = delegate.Styles.FilterMatch.
 		Foreground(colors.Primary()).
-		Bold(true)
+		Bold(true).
+		Underline(false)
 
 	return delegate
 }
