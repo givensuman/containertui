@@ -11,6 +11,8 @@ import (
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
+const volumeTitleMaxLength = 32
+
 type VolumeItem struct {
 	Volume     client.Volume
 	isSelected bool
@@ -55,9 +57,17 @@ func (volumeItem VolumeItem) Title() string {
 		nameColor = colors.Success()
 	}
 	nameStyle := lipgloss.NewStyle().Foreground(nameColor)
-	styledName := nameStyle.Render(volumeItem.Volume.Name)
+	styledName := nameStyle.Render(truncateVolumeName(volumeItem.Volume.Name, volumeTitleMaxLength))
 
 	return fmt.Sprintf("%s %s", statusStateIcon, styledName)
+}
+
+func truncateVolumeName(name string, maxLen int) string {
+	if maxLen <= 3 || len(name) <= maxLen {
+		return name
+	}
+
+	return name[:maxLen-3] + "..."
 }
 
 func (volumeItem VolumeItem) Description() string {
