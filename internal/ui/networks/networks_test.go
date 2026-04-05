@@ -5,8 +5,21 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/ui/components"
 )
+
+func newPruneTestModel(items []NetworkItem) Model {
+	listItems := make([]list.Item, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, item)
+	}
+
+	listModel := list.New(listItems, list.NewDefaultDelegate(), 0, 0)
+	splitView := components.NewSplitView(listModel, components.NewViewportPane())
+	return Model{ResourceView: components.ResourceView[string, NetworkItem]{SplitView: splitView}}
+}
 
 func TestHandleCreateNetworkCompleteSuccess(t *testing.T) {
 	model := Model{}
@@ -54,5 +67,27 @@ func TestNetworkTitleDoesNotWrapNameWithANSI(t *testing.T) {
 	}
 	if strings.Contains(title, "\x1b[") {
 		t.Fatalf("expected fully plain title without ANSI, got %q", title)
+	}
+}
+
+func TestHasPrunableNetworks(t *testing.T) {
+	model := newPruneTestModel([]NetworkItem{
+		{Network: client.Network{Name: "host", ID: "n-host"}, IsActive: false},
+		{Network: client.Network{Name: "custom-unused", ID: "n-custom"}, IsActive: false},
+	})
+
+	if !model.hasPrunableNetworks() {
+		t.Fatal("expected prunable networks when a non-system inactive network exists")
+	}
+}
+
+func TestHasPrunableNetworksNone(t *testing.T) {
+	model := newPruneTestModel([]NetworkItem{
+		{Network: client.Network{Name: "bridge", ID: "n-bridge"}, IsActive: false},
+		{Network: client.Network{Name: "custom-active", ID: "n-active"}, IsActive: true},
+	})
+
+	if model.hasPrunableNetworks() {
+		t.Fatal("expected no prunable networks when only system/in-use networks exist")
 	}
 }

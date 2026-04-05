@@ -219,6 +219,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
@@ -346,6 +349,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.pruneVolumes):
+				if !model.hasPrunableVolumes() {
+					return model, notifications.ShowSuccess("No unused volumes to prune")
+				}
 				if cmd := model.handlePruneVolumes(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
@@ -624,12 +630,21 @@ func (model Model) FullHelp() [][]key.Binding {
 	return model.ResourceView.FullHelp()
 }
 
+func (model Model) hasPrunableVolumes() bool {
+	for _, item := range model.GetItems() {
+		if !item.IsMounted {
+			return true
+		}
+	}
+
+	return false
+}
+
 // handlePruneVolumes prunes unused volumes
 func (model *Model) handlePruneVolumes() tea.Cmd {
-	// Show progress dialog
-	progressDialog := components.NewProgressDialog(
-		"Pruning unused volumes...\n\nThis may take a few moments...",
-	)
+	progressDialog := components.NewProgressDialogWithBar("Pruning unused volumes")
+	progressDialog.EnableAutoAdvance(0.95, 0.04)
+	progressDialog.SetStatus("Discovering unused volumes to prune...")
 	model.SetOverlay(progressDialog)
 
 	// Start async prune operation

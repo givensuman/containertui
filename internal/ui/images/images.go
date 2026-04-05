@@ -5,7 +5,6 @@ import (
 	stdcontext "context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"os/exec"
 	"slices"
@@ -24,6 +23,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/progress"
 	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
@@ -94,6 +94,25 @@ type MsgCreateContainerComplete struct {
 	Err         error
 }
 
+// MsgCreateContainerStart indicates create flow should begin execution.
+type MsgCreateContainerStart struct {
+	Config    client.CreateContainerConfig
+	AutoStart bool
+}
+
+// MsgCreateContainerCreated indicates container create API call finished.
+type MsgCreateContainerCreated struct {
+	ContainerID string
+	AutoStart   bool
+	Err         error
+}
+
+// MsgCreateContainerStarted indicates optional start API call finished.
+type MsgCreateContainerStarted struct {
+	ContainerID string
+	Err         error
+}
+
 // MsgRunAndExecComplete indicates run-and-exec flow has finished.
 type MsgRunAndExecComplete struct {
 	ContainerID string
@@ -117,6 +136,16 @@ type MsgTagImageComplete struct {
 type MsgBuildImageComplete struct {
 	Tag string
 	Err error
+}
+
+// MsgBuildImageProgress contains streamed build progress updates.
+type MsgBuildImageProgress struct {
+	Tag          string
+	Message      string
+	Percent      float64
+	HasPercent   bool
+	ProgressChan <-chan string
+	DoneChan     <-chan error
 }
 
 // MsgPruneComplete is sent when the prune operation completes
@@ -310,6 +339,7 @@ type Model struct {
 	detailsPanel       components.DetailsPanel
 	pullLayers         map[string]pullLayerProgress
 	pullPercent        float64
+	buildPercent       float64
 }
 
 type pullLayerProgress struct {
@@ -471,11 +501,82 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return model, tea.Batch(progressCmd, listenToPullProgress(msg.ImageName, msg.ProgressChan, msg.DoneChan))
 		}
 		return model, progressCmd
+
+	case MsgBuildImageProgress:
+		var progressCmd tea.Cmd
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			progressDialog.SetStatus(msg.Message)
+			if msg.HasPercent {
+				if msg.Percent < model.buildPercent {
+					msg.Percent = model.buildPercent
+				}
+				model.buildPercent = msg.Percent
+				progressCmd = progressDialog.SetPercent(msg.Percent)
+			}
+			model.Foreground = progressDialog
+		}
+
+		if msg.ProgressChan != nil && msg.DoneChan != nil {
+			return model, tea.Batch(progressCmd, listenToBuildProgress(msg.Tag, msg.Percent, msg.ProgressChan, msg.DoneChan))
+		}
+		return model, progressCmd
+
+	case MsgCreateContainerStart:
+		var progressCmd tea.Cmd
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			stages := createContainerStages(msg.AutoStart)
+			index := min(1, len(stages)-1)
+			progressDialog.SetStatus(stages[index])
+			progressCmd = progressDialog.SetPercent(progress.StagePercent(index, len(stages)))
+			model.Foreground = progressDialog
+		}
+
+		createCmd := func() tea.Msg {
+			containerID, err := state.GetClient().CreateContainer(stdcontext.Background(), msg.Config)
+			return MsgCreateContainerCreated{ContainerID: containerID, AutoStart: msg.AutoStart, Err: err}
+		}
+
+		return model, tea.Batch(progressCmd, createCmd)
+
+	case MsgCreateContainerCreated:
+		if msg.Err != nil {
+			return model, func() tea.Msg { return MsgCreateContainerComplete{Err: msg.Err} }
+		}
+
+		if msg.AutoStart {
+			var progressCmd tea.Cmd
+			if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+				stages := createContainerStages(true)
+				index := len(stages) - 1
+				progressDialog.SetStatus(stages[index])
+				progressCmd = progressDialog.SetPercent(progress.StagePercent(index, len(stages)))
+				model.Foreground = progressDialog
+			}
+
+			startCmd := func() tea.Msg {
+				err := state.GetClient().StartContainer(stdcontext.Background(), msg.ContainerID)
+				return MsgCreateContainerStarted{ContainerID: msg.ContainerID, Err: err}
+			}
+			return model, tea.Batch(progressCmd, startCmd)
+		}
+
+		return model, func() tea.Msg {
+			return MsgCreateContainerComplete{ContainerID: msg.ContainerID}
+		}
+
+	case MsgCreateContainerStarted:
+		if msg.Err != nil {
+			return model, func() tea.Msg { return MsgCreateContainerComplete{Err: msg.Err} }
+		}
+		return model, func() tea.Msg { return MsgCreateContainerComplete{ContainerID: msg.ContainerID} }
 	case MsgRefreshImages:
 		// Refresh the images list via ResourceView
 		return model, model.Refresh()
 
 	case MsgCreateContainerComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
 		// Close the progress dialog
 		model.CloseOverlay()
 
@@ -548,6 +649,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		)
 
 	case MsgBuildImageComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
+		model.buildPercent = 0
 		if model.IsOverlayVisible() {
 			model.CloseOverlay()
 		}
@@ -569,6 +674,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		)
 
 	case MsgPruneComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
@@ -695,17 +803,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				// Close the form overlay and show progress dialog
 				model.CloseOverlay()
 
-				// Show progress dialog (like image pull)
-				progressDialog := components.NewProgressDialog("Creating container...\n\nThis may take a few moments...")
+				progressDialog := components.NewProgressDialogWithBar("Creating container")
+				phases := newStagedOperationProgress(createContainerStages(autoStart))
+				progressDialog.SetStatus(phases.status())
+				startPercent := phases.percent()
+				_ = progressDialog.SetPercent(startPercent)
 				model.SetOverlay(progressDialog)
 
-				// Create container
 				return model, func() tea.Msg {
-					containerID, err := state.GetClient().CreateContainer(stdcontext.Background(), config)
-					if err != nil {
-						return MsgCreateContainerComplete{Err: err}
-					}
-					return MsgCreateContainerComplete{ContainerID: containerID, Err: nil}
+					return MsgCreateContainerStart{Config: config, AutoStart: autoStart}
 				}
 			case "TagImageAction":
 				// Extract form values and image ID from metadata
@@ -776,8 +882,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				model.CloseOverlay()
-				progressDialog := components.NewProgressDialog("Building image...\n\nThis may take a few moments...")
+				progressDialog := components.NewProgressDialogWithBar(fmt.Sprintf("Building image: %s", tag))
+				progressDialog.SetStatus("Preparing build context...")
 				model.SetOverlay(progressDialog)
+				model.buildPercent = 0
 				return model, model.performBuildImage(dockerfile, tag, contextPath, buildArgsMap)
 			}
 
@@ -869,6 +977,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, nil
 
 			case key.Matches(msg, model.keybindings.pruneImages):
+				if !model.hasPrunableImages() {
+					return model, notifications.ShowSuccess("No unused images to prune")
+				}
 				if cmd := model.handlePruneImages(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
@@ -1135,12 +1246,21 @@ func (model Model) FullHelp() [][]key.Binding {
 	return model.ResourceView.FullHelp()
 }
 
+func (model Model) hasPrunableImages() bool {
+	for _, item := range model.GetItems() {
+		if !item.InUse {
+			return true
+		}
+	}
+
+	return false
+}
+
 // handlePruneImages prunes unused images
 func (model *Model) handlePruneImages() tea.Cmd {
-	// Show progress dialog
-	progressDialog := components.NewProgressDialog(
-		"Pruning unused images...\n\nThis may take a few moments...",
-	)
+	progressDialog := components.NewProgressDialogWithBar("Pruning unused images")
+	progressDialog.EnableAutoAdvance(0.95, 0.04)
+	progressDialog.SetStatus("Discovering unused images to prune...")
 	model.SetOverlay(progressDialog)
 
 	// Start async prune operation
@@ -1295,13 +1415,45 @@ func (model *Model) performBuildImage(dockerfile, tag, contextPath string, build
 		if err != nil {
 			return MsgBuildImageComplete{Err: fmt.Errorf("failed to build image: %w", err)}
 		}
-		defer buildOutput.Close()
+		progressChan, doneChan := progress.StreamLines(buildOutput)
 
-		if _, err := io.Copy(io.Discard, buildOutput); err != nil {
-			return MsgBuildImageComplete{Err: fmt.Errorf("failed to read build output: %w", err)}
+		return MsgBuildImageProgress{
+			Tag:          tag,
+			Message:      "Building image...",
+			ProgressChan: progressChan,
+			DoneChan:     doneChan,
 		}
+	}
+}
 
-		return MsgBuildImageComplete{Tag: tag}
+func listenToBuildProgress(tag string, currentPercent float64, progressChan <-chan string, doneChan <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case line, ok := <-progressChan:
+			if !ok {
+				err := <-doneChan
+				if err != nil {
+					return MsgBuildImageComplete{Err: err}
+				}
+				return MsgBuildImageComplete{Tag: tag}
+			}
+
+			percent, hasPercent := estimateBuildPercent(line, currentPercent)
+			return MsgBuildImageProgress{
+				Tag:          tag,
+				Message:      parseBuildStatusMessage(line),
+				Percent:      percent,
+				HasPercent:   hasPercent,
+				ProgressChan: progressChan,
+				DoneChan:     doneChan,
+			}
+
+		case err := <-doneChan:
+			if err != nil {
+				return MsgBuildImageComplete{Err: err}
+			}
+			return MsgBuildImageComplete{Tag: tag}
+		}
 	}
 }
 

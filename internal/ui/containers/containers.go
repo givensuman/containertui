@@ -276,7 +276,7 @@ func (model *Model) refreshWithState() tea.Cmd {
 		// Fetch fresh container data from Docker
 		containers, err := state.GetClient().GetContainers(stdcontext.Background())
 		if err != nil {
-			return nil
+			return MsgContainersRefreshed{Err: err}
 		}
 
 		// Get current items to preserve state
@@ -316,13 +316,7 @@ func (model *Model) refreshWithState() tea.Cmd {
 			items = append(items, item)
 		}
 
-		// Convert to list items
-		listItems := make([]list.Item, len(items))
-		for i, item := range items {
-			listItems[i] = item
-		}
-
-		return model.SplitView.List.SetItems(listItems)
+		return MsgContainersRefreshed{Items: items}
 	}
 }
 
@@ -363,6 +357,23 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
+	case MsgContainersRefreshed:
+		if msg.Err == nil {
+			listItems := make([]list.Item, len(msg.Items))
+			for i, item := range msg.Items {
+				listItems[i] = item
+			}
+			cmds = append(cmds, model.SplitView.List.SetItems(listItems))
+		}
+
+	case base.MsgContainerCreated:
+		cmds = append(cmds, model.refreshWithState())
+
+	case base.MsgResourceChanged:
+		if msg.Resource == base.ResourceContainer {
+			cmds = append(cmds, model.refreshWithState())
+		}
+
 	case MsgContainerInspection:
 		if msg.ID == model.detailsPanel.GetCurrentID() && msg.Err == nil {
 			model.inspection = msg.Container
@@ -376,6 +387,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
@@ -505,6 +519,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					cmds = append(cmds, cmd)
 				}
 			case key.Matches(msg, model.keybindings.pruneContainers):
+				if !model.hasPrunableContainers() {
+					cmds = append(cmds, notifications.ShowSuccess("No stopped containers to prune"))
+					break
+				}
 				cmds = append(cmds, model.handlePruneContainers())
 			case key.Matches(msg, model.keybindings.renameContainer):
 				model.handleRenameContainer()
@@ -1148,12 +1166,30 @@ func (model *Model) handleContainerOperationResult(msg MsgContainerOperationResu
 	return notifications.ShowSuccess(successMsg)
 }
 
+func isPruneEligibleContainerState(state string) bool {
+	switch state {
+	case "exited", "created", "dead":
+		return true
+	default:
+		return false
+	}
+}
+
+func (model Model) hasPrunableContainers() bool {
+	for _, item := range model.GetItems() {
+		if isPruneEligibleContainerState(item.State) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // handlePruneContainers prunes all stopped containers
 func (model *Model) handlePruneContainers() tea.Cmd {
-	// Show progress dialog
-	progressDialog := components.NewProgressDialog(
-		"Pruning stopped containers...\n\nThis may take a few moments...",
-	)
+	progressDialog := components.NewProgressDialogWithBar("Pruning stopped containers")
+	progressDialog.EnableAutoAdvance(0.95, 0.04)
+	progressDialog.SetStatus("Discovering stopped containers to prune...")
 	model.SetOverlay(progressDialog)
 
 	// Start async prune operation

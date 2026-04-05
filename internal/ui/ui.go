@@ -13,6 +13,7 @@ import (
 
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/browse"
 	"github.com/givensuman/containertui/internal/ui/containers"
 	"github.com/givensuman/containertui/internal/ui/images"
@@ -82,6 +83,39 @@ func (model Model) Init() tea.Cmd {
 
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse := crossTabRefreshTargets(msg)
+
+	if refreshContainers {
+		var containersCmd tea.Cmd
+		model.containersModel, containersCmd = model.containersModel.Update(msg)
+		cmds = append(cmds, containersCmd)
+	}
+	if refreshImages {
+		var imagesCmd tea.Cmd
+		model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
+		cmds = append(cmds, imagesCmd)
+	}
+	if refreshVolumes {
+		var volumesCmd tea.Cmd
+		model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
+		cmds = append(cmds, volumesCmd)
+	}
+	if refreshNetworks {
+		var networksCmd tea.Cmd
+		model.networksModel, networksCmd = model.networksModel.Update(msg)
+		cmds = append(cmds, networksCmd)
+	}
+	if refreshServices {
+		var servicesCmd tea.Cmd
+		model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
+		cmds = append(cmds, servicesCmd)
+	}
+	if refreshBrowse {
+		var browseCmd tea.Cmd
+		model.browseModel, browseCmd = model.browseModel.Update(msg)
+		cmds = append(cmds, browseCmd)
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -208,40 +242,52 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch model.tabsModel.ActiveTab {
 	case tabs.Containers:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var containersCmd tea.Cmd
-			model.containersModel, containersCmd = model.containersModel.Update(msg)
-			cmds = append(cmds, containersCmd)
+		if !refreshContainers {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var containersCmd tea.Cmd
+				model.containersModel, containersCmd = model.containersModel.Update(msg)
+				cmds = append(cmds, containersCmd)
+			}
 		}
 	case tabs.Images:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var imagesCmd tea.Cmd
-			model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
-			cmds = append(cmds, imagesCmd)
+		if !refreshImages {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var imagesCmd tea.Cmd
+				model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
+				cmds = append(cmds, imagesCmd)
+			}
 		}
 	case tabs.Volumes:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var volumesCmd tea.Cmd
-			model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
-			cmds = append(cmds, volumesCmd)
+		if !refreshVolumes {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var volumesCmd tea.Cmd
+				model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
+				cmds = append(cmds, volumesCmd)
+			}
 		}
 	case tabs.Networks:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var networksCmd tea.Cmd
-			model.networksModel, networksCmd = model.networksModel.Update(msg)
-			cmds = append(cmds, networksCmd)
+		if !refreshNetworks {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var networksCmd tea.Cmd
+				model.networksModel, networksCmd = model.networksModel.Update(msg)
+				cmds = append(cmds, networksCmd)
+			}
 		}
 	case tabs.Services:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var servicesCmd tea.Cmd
-			model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
-			cmds = append(cmds, servicesCmd)
+		if !refreshServices {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var servicesCmd tea.Cmd
+				model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
+				cmds = append(cmds, servicesCmd)
+			}
 		}
 	case tabs.Browse:
-		if _, ok := msg.(tea.WindowSizeMsg); !ok {
-			var browseCmd tea.Cmd
-			model.browseModel, browseCmd = model.browseModel.Update(msg)
-			cmds = append(cmds, browseCmd)
+		if !refreshBrowse {
+			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+				var browseCmd tea.Cmd
+				model.browseModel, browseCmd = model.browseModel.Update(msg)
+				cmds = append(cmds, browseCmd)
+			}
 		}
 	}
 
@@ -255,6 +301,36 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return model, tea.Batch(cmds...)
+}
+
+func crossTabRefreshTargets(msg tea.Msg) (refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse bool) {
+	switch typed := msg.(type) {
+	case base.MsgContainerCreated:
+		_ = typed
+		return true, false, false, false, false, false
+	case base.MsgImagePulled:
+		_ = typed
+		return false, true, false, false, false, false
+	case base.MsgResourceChanged:
+		switch typed.Resource {
+		case base.ResourceContainer:
+			return true, false, false, false, false, false
+		case base.ResourceImage:
+			return false, true, false, false, false, false
+		case base.ResourceVolume:
+			return false, false, true, false, false, false
+		case base.ResourceNetwork:
+			return false, false, false, true, false, false
+		}
+	case containers.MsgContainersRefreshed:
+		_ = typed
+		return true, false, false, false, false, false
+	case containers.MsgRefreshContainers:
+		_ = typed
+		return true, false, false, false, false, false
+	}
+
+	return false, false, false, false, false, false
 }
 
 type helpProvider interface {

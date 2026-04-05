@@ -29,6 +29,7 @@ type ProgressDialog struct {
 	showSpinner   bool
 	maxPercent    float64 // Maximum percent to show for indeterminate progress
 	tickIncrement float64 // Amount to increment per tick
+	autoAdvance   bool
 }
 
 var _ base.ComponentModel = (*ProgressDialog)(nil)
@@ -52,6 +53,7 @@ func NewProgressDialogWithBar(title string) ProgressDialog {
 		showSpinner:   false,
 		maxPercent:    0.95, // Cap at 95% for indeterminate progress
 		tickIncrement: 0.05, // Increment by 5% per tick
+		autoAdvance:   false,
 	}
 
 	dialog.updateStyle()
@@ -97,18 +99,28 @@ func (dialog *ProgressDialog) SetStatus(status string) {
 	dialog.status = status
 }
 
+// EnableAutoAdvance enables periodic indeterminate progress updates.
+func (dialog *ProgressDialog) EnableAutoAdvance(maxPercent, tickIncrement float64) {
+	dialog.autoAdvance = true
+	if maxPercent > 0 {
+		dialog.maxPercent = maxPercent
+	}
+	if tickIncrement > 0 {
+		dialog.tickIncrement = tickIncrement
+	}
+}
+
 // SetPercent updates the progress bar percentage (0.0 to 1.0).
 func (dialog *ProgressDialog) SetPercent(percent float64) tea.Cmd {
 	return dialog.progress.SetPercent(percent)
 }
 
 func (dialog ProgressDialog) Init() tea.Cmd {
-	// Initialize the progress bar to show indeterminate progress
-	return tea.Batch(
-		dialog.progress.Init(),
-		dialog.progress.SetPercent(0.05),
-		tickProgressCmd(), // Start the ticker
-	)
+	cmds := []tea.Cmd{dialog.progress.Init()}
+	if dialog.autoAdvance {
+		cmds = append(cmds, dialog.progress.SetPercent(0.05), tickProgressCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 // tickProgressCmd returns a command that sends a tick after a delay
@@ -131,6 +143,9 @@ func (dialog ProgressDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case progressTickMsg:
+		if !dialog.autoAdvance {
+			return dialog, nil
+		}
 		// Increment progress if below max
 		if dialog.progress.Percent() < dialog.maxPercent {
 			cmd := dialog.progress.IncrPercent(dialog.tickIncrement)

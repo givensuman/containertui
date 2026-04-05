@@ -71,6 +71,12 @@ type ClientWrapper struct {
 	quayRegistryClient *registry.QuayClient
 }
 
+func imagePruneFilters() filters.Args {
+	args := filters.NewArgs()
+	args.Add("dangling", "false")
+	return args
+}
+
 // NewClient creates a new ClientWrapper with an initialized Docker client.
 func NewClient() (*ClientWrapper, error) {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -552,7 +558,7 @@ func (clientWrapper *ClientWrapper) RemoveNetwork(ctx context.Context, networkID
 
 // PruneImages removes all unused images.
 func (clientWrapper *ClientWrapper) PruneImages(ctx context.Context) (uint64, error) {
-	report, err := clientWrapper.client.ImagesPrune(ctx, filters.Args{})
+	report, err := clientWrapper.client.ImagesPrune(ctx, imagePruneFilters())
 	if err != nil {
 		return 0, fmt.Errorf("failed to prune images: %w", err)
 	}

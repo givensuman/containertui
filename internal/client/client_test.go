@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+func TestImagePruneFiltersIncludeAllUnused(t *testing.T) {
+	args := imagePruneFilters()
+
+	if !args.Match("dangling", "false") {
+		t.Fatal("expected image prune filters to include dangling=false")
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	client, err := NewClient()
 	if err != nil {

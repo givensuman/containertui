@@ -228,6 +228,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
 	case MsgPruneComplete:
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			_ = progressDialog.SetPercent(1.0)
+		}
 		model.CloseOverlay()
 		if msg.Err != nil {
 			return model, notifications.ShowError(msg.Err)
@@ -361,6 +364,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, model.handleRemove()
 
 			case key.Matches(msg, model.keybindings.pruneNetworks):
+				if !model.hasPrunableNetworks() {
+					return model, notifications.ShowSuccess("No unused networks to prune")
+				}
 				if cmd := model.handlePruneNetworks(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
@@ -617,12 +623,26 @@ func (model Model) FullHelp() [][]key.Binding {
 	return model.ResourceView.FullHelp()
 }
 
+func (model Model) hasPrunableNetworks() bool {
+	for _, item := range model.GetItems() {
+		if item.IsActive {
+			continue
+		}
+		if isSystemNetwork(item.Network.Name) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // handlePruneNetworks prunes unused networks
 func (model *Model) handlePruneNetworks() tea.Cmd {
-	// Show progress dialog
-	progressDialog := components.NewProgressDialog(
-		"Pruning unused networks...\n\nThis may take a few moments...",
-	)
+	progressDialog := components.NewProgressDialogWithBar("Pruning unused networks")
+	progressDialog.EnableAutoAdvance(0.95, 0.04)
+	progressDialog.SetStatus("Discovering unused networks to prune...")
 	model.SetOverlay(progressDialog)
 
 	// Start async prune operation

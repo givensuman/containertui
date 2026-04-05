@@ -1,6 +1,23 @@
 package volumes
 
-import "testing"
+import (
+	"testing"
+
+	"charm.land/bubbles/v2/list"
+	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/ui/components"
+)
+
+func newPruneTestModel(items []VolumeItem) Model {
+	listItems := make([]list.Item, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, item)
+	}
+
+	listModel := list.New(listItems, list.NewDefaultDelegate(), 0, 0)
+	splitView := components.NewSplitView(listModel, components.NewViewportPane())
+	return Model{ResourceView: components.ResourceView[string, VolumeItem]{SplitView: splitView}}
+}
 
 func TestHandleCreateVolumeCompleteSuccess(t *testing.T) {
 	model := Model{}
@@ -27,6 +44,28 @@ func TestWithCreateVolumeDialogShowsOverlay(t *testing.T) {
 
 	if !model.IsOverlayVisible() {
 		t.Fatal("expected create volume dialog to be visible")
+	}
+}
+
+func TestHasPrunableVolumes(t *testing.T) {
+	model := newPruneTestModel([]VolumeItem{
+		{Volume: client.Volume{Name: "vol-mounted"}, IsMounted: true},
+		{Volume: client.Volume{Name: "vol-unused"}, IsMounted: false},
+	})
+
+	if !model.hasPrunableVolumes() {
+		t.Fatal("expected prunable volumes when at least one volume is not mounted")
+	}
+}
+
+func TestHasPrunableVolumesNone(t *testing.T) {
+	model := newPruneTestModel([]VolumeItem{
+		{Volume: client.Volume{Name: "vol-mounted-1"}, IsMounted: true},
+		{Volume: client.Volume{Name: "vol-mounted-2"}, IsMounted: true},
+	})
+
+	if model.hasPrunableVolumes() {
+		t.Fatal("expected no prunable volumes when all volumes are mounted")
 	}
 }
 

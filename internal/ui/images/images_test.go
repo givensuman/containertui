@@ -6,10 +6,23 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/components"
 )
+
+func newPruneTestModel(items []ImageItem) Model {
+	listItems := make([]list.Item, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, item)
+	}
+
+	listModel := list.New(listItems, list.NewDefaultDelegate(), 0, 0)
+	splitView := components.NewSplitView(listModel, components.NewViewportPane())
+	return Model{ResourceView: components.ResourceView[string, ImageItem]{SplitView: splitView}}
+}
 
 func TestParsePullLayerProgressValid(t *testing.T) {
 	raw := `{"id":"layer-1","progressDetail":{"current":50,"total":100}}`
@@ -61,6 +74,49 @@ func TestEstimatePullProgressIsMonotonicAndCapped(t *testing.T) {
 	}
 	if percent != 0.98 {
 		t.Fatalf("expected monotonic percent 0.98, got %f", percent)
+	}
+}
+
+func TestCreateContainerStages(t *testing.T) {
+	withoutStart := createContainerStages(false)
+	if len(withoutStart) != 3 {
+		t.Fatalf("expected 3 stages without auto-start, got %d", len(withoutStart))
+	}
+
+	withStart := createContainerStages(true)
+	if len(withStart) != 4 {
+		t.Fatalf("expected 4 stages with auto-start, got %d", len(withStart))
+	}
+
+	if withStart[len(withStart)-1] != "Starting container..." {
+		t.Fatalf("expected last stage to be starting message, got %q", withStart[len(withStart)-1])
+	}
+}
+
+func TestEstimateBuildPercentFromSteps(t *testing.T) {
+	percent, ok := estimateBuildPercent(`{"stream":"Step 3/6 : RUN make build"}`, 0.0)
+	if !ok {
+		t.Fatal("expected to parse build step percent")
+	}
+
+	if percent <= 0 || percent >= 0.95 {
+		t.Fatalf("expected step-based percent between 0 and 0.95, got %f", percent)
+	}
+}
+
+func TestEstimateBuildPercentMonotonic(t *testing.T) {
+	first, ok := estimateBuildPercent(`{"stream":"Step 4/4 : CMD run"}`, 0.0)
+	if !ok {
+		t.Fatal("expected first build percent")
+	}
+
+	second, ok := estimateBuildPercent(`{"stream":"Step 1/4 : FROM golang"}`, first)
+	if !ok {
+		t.Fatal("expected second build percent")
+	}
+
+	if second != first {
+		t.Fatalf("expected monotonic percent, got first=%f second=%f", first, second)
 	}
 }
 
@@ -121,5 +177,27 @@ func TestImageTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
 	}
 	if strings.Contains(title, "\x1b[") {
 		t.Fatalf("expected fully plain title without ANSI, got %q", title)
+	}
+}
+
+func TestHasPrunableImages(t *testing.T) {
+	model := newPruneTestModel([]ImageItem{
+		{Image: client.Image{ID: "img-used"}, InUse: true},
+		{Image: client.Image{ID: "img-unused"}, InUse: false},
+	})
+
+	if !model.hasPrunableImages() {
+		t.Fatal("expected prunable images when at least one image is not in use")
+	}
+}
+
+func TestHasPrunableImagesNone(t *testing.T) {
+	model := newPruneTestModel([]ImageItem{
+		{Image: client.Image{ID: "img-used-1"}, InUse: true},
+		{Image: client.Image{ID: "img-used-2"}, InUse: true},
+	})
+
+	if model.hasPrunableImages() {
+		t.Fatal("expected no prunable images when all images are in use")
 	}
 }

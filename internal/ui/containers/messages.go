@@ -13,6 +13,12 @@ type MsgContainerOperationResult struct {
 	Error     error
 }
 
+// MsgContainersRefreshed carries a full refreshed container item list.
+type MsgContainersRefreshed struct {
+	Items []ContainerItem
+	Err   error
+}
+
 type Operation int
 
 const (
