@@ -24,6 +24,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
 	"github.com/givensuman/containertui/internal/ui/progress"
+	"github.com/givensuman/containertui/internal/ui/safety"
 	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
@@ -1103,7 +1104,7 @@ func (model *Model) handleRemove() {
 	}
 	if len(containersUsingImage) > 0 {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Image %s is used by %d containers (%v).\n\nForce delete anyway?", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
+			safety.ForceDeleteInUseConfirmation("Image", selectedItem.Image.ID[:12], len(containersUsingImage), containersUsingImage),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteImage", Payload: selectedItem.Image.ID}},
@@ -1112,7 +1113,7 @@ func (model *Model) handleRemove() {
 		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Are you sure you want to delete image %s?", selectedItem.Image.ID[:12]),
+			safety.DeleteConfirmation("image", selectedItem.Image.ID[:12]),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteImage", Payload: selectedItem.Image.ID}},

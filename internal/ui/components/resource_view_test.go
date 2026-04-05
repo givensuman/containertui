@@ -76,6 +76,10 @@ func TestResourceViewViewShowsLoadErrorWhenEmpty(t *testing.T) {
 	if !contains(view, errLoad.Error()) {
 		t.Fatalf("view does not contain load error details: %q", view)
 	}
+
+	if !contains(view, "Try: verify Docker daemon is running and accessible") {
+		t.Fatalf("view does not contain actionable recovery guidance: %q", view)
+	}
 }
 
 func contains(s, needle string) bool {
@@ -96,6 +100,27 @@ func TestResourceViewShortHelpIncludesFocusSwitchInListView(t *testing.T) {
 	help := rv.ShortHelp()
 	if !hasHelpDesc(help, "switch focus") {
 		t.Fatal("expected short help to include switch focus in list view")
+	}
+}
+
+func TestResourceViewShortHelpStaysMinimalInListView(t *testing.T) {
+	rv := NewResourceView[string, testListItem](
+		"Test",
+		func() ([]testListItem, error) {
+			return []testListItem{{value: "item-1"}}, nil
+		},
+		func(item testListItem) string { return item.value },
+		func(item testListItem) string { return item.value },
+		nil,
+	)
+
+	rv.AdditionalHelp = []key.Binding{
+		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "do thing")),
+	}
+
+	help := rv.ShortHelp()
+	if hasHelpDesc(help, "do thing") {
+		t.Fatal("expected short help to remain minimal and exclude additional contextual hints")
 	}
 }
 

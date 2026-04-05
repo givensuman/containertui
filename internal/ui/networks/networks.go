@@ -17,6 +17,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/safety"
 )
 
 // MsgNetworkInspection contains the inspection data for a network.
@@ -479,7 +480,7 @@ func (model *Model) handleRemove() tea.Cmd {
 	}
 	if len(containersUsingNetwork) > 0 {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Network %s is used by %d containers (%v).\n\nForce delete anyway?", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
+			safety.ForceDeleteInUseConfirmation("Network", selectedItem.Network.Name, len(containersUsingNetwork), containersUsingNetwork),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteNetwork", Payload: selectedItem.Network.ID}},
@@ -488,7 +489,7 @@ func (model *Model) handleRemove() tea.Cmd {
 		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Are you sure you want to delete network %s?", selectedItem.Network.Name),
+			safety.DeleteConfirmation("network", selectedItem.Network.Name),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteNetwork", Payload: selectedItem.Network.ID}},

@@ -18,6 +18,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/safety"
 	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
@@ -475,8 +476,7 @@ func (model Model) handleRemove() {
 	}
 	if len(containersUsingVolume) > 0 {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Volume %s is used by %d containers (%v).\n\nForce delete anyway?",
-				selectedItem.Volume.Name, len(containersUsingVolume), containersUsingVolume),
+			safety.ForceDeleteInUseConfirmation("Volume", selectedItem.Volume.Name, len(containersUsingVolume), containersUsingVolume),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteVolume", Payload: selectedItem.Volume.Name}},
@@ -485,7 +485,7 @@ func (model Model) handleRemove() {
 		model.SetOverlay(confirmationDialog)
 	} else {
 		confirmationDialog := components.NewDialog(
-			fmt.Sprintf("Are you sure you want to delete volume %s?", selectedItem.Volume.Name),
+			safety.DeleteConfirmation("volume", selectedItem.Volume.Name),
 			[]components.DialogButton{
 				{Label: "Cancel"},
 				{Label: "Delete", Action: base.SmartDialogAction{

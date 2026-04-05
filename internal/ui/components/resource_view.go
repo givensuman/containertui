@@ -347,7 +347,11 @@ func (rv *ResourceView[ID, Item]) UpdateWindowDimensions(msg tea.WindowSizeMsg) 
 
 func (rv *ResourceView[ID, Item]) View() string {
 	if rv.loadErr != nil && len(rv.SplitView.List.Items()) == 0 {
-		return fmt.Sprintf("Failed to load %s\n\n%s", rv.Title, rv.loadErr.Error())
+		return fmt.Sprintf(
+			"Failed to load %s\n\n%s\n\nTry: verify Docker daemon is running and accessible, then refresh.",
+			rv.Title,
+			rv.loadErr.Error(),
+		)
 	}
 
 	if rv.SessionState == ViewOverlay && rv.Foreground != nil {

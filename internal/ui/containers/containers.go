@@ -20,6 +20,7 @@ import (
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
 	"github.com/givensuman/containertui/internal/ui/notifications"
+	"github.com/givensuman/containertui/internal/ui/safety"
 	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
@@ -770,7 +771,7 @@ func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 					message += fmt.Sprintf("• %s\n", name)
 				}
 			}
-			message += "\nThis will forcefully stop and remove containers."
+			message += "\n\nThis action is destructive and cannot be undone. It may disrupt running workloads."
 
 			confirmDialog := components.NewDialog(
 				message,
@@ -783,7 +784,7 @@ func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 			return nil
 		}
 
-		message := fmt.Sprintf("Are you sure you want to delete %d container(s)?", len(containerNames))
+		message := fmt.Sprintf("Delete %d container(s)?\n\nThis action is destructive and cannot be undone.", len(containerNames))
 		if len(containerNames) <= 5 {
 			message += "\n\n"
 			for _, name := range containerNames {
@@ -805,7 +806,7 @@ func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 			if force {
 				// Force delete single container with confirmation
 				confirmDialog := components.NewDialog(
-					fmt.Sprintf("⚠️  FORCE DELETE container %s?\n\nThis will forcefully stop and remove the container.", item.Name),
+					fmt.Sprintf("⚠️  FORCE DELETE container %s?\n\nThis action is destructive and cannot be undone. It may disrupt running workloads.", item.Name),
 					[]components.DialogButton{
 						{Label: "Cancel"},
 						{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteContainer", Payload: []string{item.ID}}},
@@ -816,7 +817,7 @@ func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 			}
 
 			confirmDialog := components.NewDialog(
-				fmt.Sprintf("Are you sure you want to delete container %s?", item.Name),
+				safety.DeleteConfirmation("container", item.Name),
 				[]components.DialogButton{
 					{Label: "Cancel"},
 					{Label: "Delete", Action: base.SmartDialogAction{Type: "DeleteContainer", Payload: []string{item.ID}}},
