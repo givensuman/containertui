@@ -56,8 +56,8 @@ func newDetailsKeybindings() detailsKeybindings {
 			key.WithHelp("↓/j", "down"),
 		),
 		Switch: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "switch focus"),
+			key.WithKeys("tab", "shift+tab"),
+			key.WithHelp("tab/shift+tab", "switch focus"),
 		),
 		ToggleJSON: key.NewBinding(
 			key.WithKeys("J"),

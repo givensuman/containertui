@@ -290,8 +290,8 @@ func NewDetailsKeybindings() DetailsKeybindings {
 			key.WithHelp("↓/j", "down"),
 		),
 		Switch: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "switch focus"),
+			key.WithKeys("tab", "shift+tab"),
+			key.WithHelp("tab/shift+tab", "switch focus"),
 		),
 	}
 }
@@ -376,7 +376,9 @@ func (rv *ResourceView[ID, Item]) View() string {
 
 func (rv *ResourceView[ID, Item]) ShortHelp() []key.Binding {
 	if rv.SplitView.Focus == FocusList {
-		return rv.SplitView.List.ShortHelp()
+		help := rv.SplitView.List.ShortHelp()
+		help = append(help, rv.DetailsKeyBinds.Switch)
+		return help
 	}
 	return []key.Binding{
 		rv.DetailsKeyBinds.Up,
@@ -387,6 +389,11 @@ func (rv *ResourceView[ID, Item]) ShortHelp() []key.Binding {
 func (rv *ResourceView[ID, Item]) FullHelp() [][]key.Binding {
 	if rv.SplitView.Focus == FocusList {
 		help := rv.SplitView.List.FullHelp()
+		if len(help) == 0 {
+			help = [][]key.Binding{{rv.DetailsKeyBinds.Switch}}
+		} else {
+			help[0] = append(help[0], rv.DetailsKeyBinds.Switch)
+		}
 		if len(rv.AdditionalHelp) > 0 {
 			help = append(help, rv.AdditionalHelp)
 		}

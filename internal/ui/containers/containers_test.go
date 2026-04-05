@@ -200,3 +200,10 @@ func TestHasPrunableContainersNone(t *testing.T) {
 		t.Fatal("expected no prunable containers when no container is in prune-eligible stopped state")
 	}
 }
+
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}

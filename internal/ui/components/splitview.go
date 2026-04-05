@@ -313,23 +313,39 @@ func (s SplitView) Update(msg tea.Msg) (SplitView, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-		if keyMsg.String() == "tab" && s.List.FilterState() != list.Filtering {
+		if (keyMsg.String() == "tab" || keyMsg.String() == "shift+tab") && s.List.FilterState() != list.Filtering {
+			forward := keyMsg.String() == "tab"
 			// Cycle through focus states
 			if s.Extra != nil {
-				// Three-pane mode: List -> Detail -> Extra -> List
-				switch s.Focus {
-				case FocusList:
-					s.Focus = FocusDetail
-					cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
-				case FocusDetail:
-					s.Focus = FocusExtra
-					cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
-				case FocusExtra:
-					s.Focus = FocusList
-					cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: false} })
+				if forward {
+					// Three-pane mode forward: List -> Detail -> Extra -> List
+					switch s.Focus {
+					case FocusList:
+						s.Focus = FocusDetail
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
+					case FocusDetail:
+						s.Focus = FocusExtra
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
+					case FocusExtra:
+						s.Focus = FocusList
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: false} })
+					}
+				} else {
+					// Three-pane mode backward: List <- Detail <- Extra <- List
+					switch s.Focus {
+					case FocusList:
+						s.Focus = FocusExtra
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
+					case FocusExtra:
+						s.Focus = FocusDetail
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })
+					case FocusDetail:
+						s.Focus = FocusList
+						cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: false} })
+					}
 				}
 			} else {
-				// Two-pane mode: List -> Detail -> List
+				// Two-pane mode (same result for tab and shift+tab): List <-> Detail
 				if s.Focus == FocusList {
 					s.Focus = FocusDetail
 					cmds = append(cmds, func() tea.Msg { return base.MsgFocusChanged{IsDetailsFocused: true} })

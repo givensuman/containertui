@@ -216,3 +216,10 @@ func TestServiceTitleDoesNotWrapNameWithANSI(t *testing.T) {
 		t.Fatalf("expected fully plain title without ANSI, got %q", title)
 	}
 }
+
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}

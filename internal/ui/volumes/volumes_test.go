@@ -69,6 +69,13 @@ func TestHasPrunableVolumesNone(t *testing.T) {
 	}
 }
 
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
+
 var errTestCreateVolume = testError("create volume failed")
 
 type testError string

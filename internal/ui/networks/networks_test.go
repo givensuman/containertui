@@ -91,3 +91,10 @@ func TestHasPrunableNetworksNone(t *testing.T) {
 		t.Fatal("expected no prunable networks when only system/in-use networks exist")
 	}
 }
+
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}

@@ -94,3 +94,10 @@ func TestAdditionalHelpBindingsSwitchTabFirst(t *testing.T) {
 		t.Fatalf("expected first additional help to be switch tab, got %q", help[0].Help().Desc)
 	}
 }
+
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}

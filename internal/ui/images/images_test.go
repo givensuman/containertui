@@ -201,3 +201,10 @@ func TestHasPrunableImagesNone(t *testing.T) {
 		t.Fatal("expected no prunable images when all images are in use")
 	}
 }
+
+func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
+	b := newDetailsKeybindings()
+	if b.Switch.Help().Key != "tab/shift+tab" {
+		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
