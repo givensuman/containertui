@@ -26,6 +26,12 @@ type MsgServicesLoaded struct {
 	Items []ServiceItem
 }
 
+type MsgServiceActionResult struct {
+	Action      string
+	ServiceName string
+	Err         error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -113,19 +119,17 @@ func (model *Model) serviceActionCmd(actionName string, action func(stdcontext.C
 
 	return func() tea.Msg {
 		if err := action(stdcontext.Background(), containerIDs); err != nil {
-			return notifications.ShowError(fmt.Errorf("failed to %s service %q: %w", actionName, serviceName, err))
+			return MsgServiceActionResult{
+				Action:      actionName,
+				ServiceName: serviceName,
+				Err:         fmt.Errorf("failed to %s service %q: %w", actionName, serviceName, err),
+			}
 		}
 
-		actionLabel := map[string]string{
-			"start":   "Started",
-			"stop":    "Stopped",
-			"restart": "Restarted",
-		}[actionName]
-		if actionLabel == "" {
-			actionLabel = "Updated"
+		return MsgServiceActionResult{
+			Action:      actionName,
+			ServiceName: serviceName,
 		}
-
-		return tea.Batch(notifications.ShowSuccess(fmt.Sprintf("%s service %q", actionLabel, serviceName)), model.refreshServicesCmd())
 	}
 }
 
@@ -221,6 +225,23 @@ func (model Model) refreshServicesCmd() tea.Cmd {
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && !model.IsOverlayVisible() && model.IsListFocused() && !model.IsFiltering() {
+		switch {
+		case key.Matches(keyMsg, model.keybindings.startService):
+			if cmd := model.serviceActionCmd("start", state.GetClient().StartContainers); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.stopService):
+			if cmd := model.serviceActionCmd("stop", state.GetClient().StopContainers); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.restartService):
+			if cmd := model.serviceActionCmd("restart", state.GetClient().RestartContainers); cmd != nil {
+				return model, cmd
+			}
+		}
+	}
+
 	var cmds []tea.Cmd
 
 	// Forward messages to ResourceView first
@@ -245,34 +266,39 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			listItems[i] = item
 		}
 		cmds = append(cmds, model.SplitView.List.SetItems(listItems))
+
+	case MsgServiceActionResult:
+		if msg.Err != nil {
+			cmds = append(cmds, notifications.ShowError(msg.Err))
+			break
+		}
+
+		actionLabel := map[string]string{
+			"start":   "Started",
+			"stop":    "Stopped",
+			"restart": "Restarted",
+		}[msg.Action]
+		if actionLabel == "" {
+			actionLabel = "Updated"
+		}
+
+		cmds = append(cmds,
+			notifications.ShowSuccess(fmt.Sprintf("%s service %q", actionLabel, msg.ServiceName)),
+			model.refreshServicesCmd(),
+		)
 	}
 
 	// Main View Logic (only when no overlay)
 	if !model.IsOverlayVisible() && model.IsListFocused() {
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
-			if model.ResourceView.IsFiltering() {
+			if model.IsFiltering() {
 				break
 			}
 
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
-			case key.Matches(msg, model.keybindings.startService):
-				if cmd := model.serviceActionCmd("start", state.GetClient().StartContainers); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return model, tea.Batch(cmds...)
-			case key.Matches(msg, model.keybindings.stopService):
-				if cmd := model.serviceActionCmd("stop", state.GetClient().StopContainers); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return model, tea.Batch(cmds...)
-			case key.Matches(msg, model.keybindings.restartService):
-				if cmd := model.serviceActionCmd("restart", state.GetClient().RestartContainers); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return model, tea.Batch(cmds...)
 			}
 		}
 	} else if !model.IsOverlayVisible() && !model.IsListFocused() {
@@ -405,7 +431,7 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 }
 
 func (model Model) View() string {
-	return model.ResourceView.View()
+	return lipgloss.NewStyle().MarginTop(1).Render(model.ResourceView.View())
 }
 
 func (model Model) IsFiltering() bool {

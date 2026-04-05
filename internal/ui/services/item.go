@@ -2,9 +2,12 @@ package services
 
 import (
 	"fmt"
+	"image/color"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
@@ -25,6 +28,29 @@ func (i ServiceItem) getServiceIcon() string {
 	}
 
 	return ""
+}
+
+func (i ServiceItem) statusColor() color.Color {
+	hasRunning := false
+	allStopped := true
+
+	for _, container := range i.Service.Containers {
+		if container.State == "running" {
+			hasRunning = true
+			allStopped = false
+		} else if container.State != "exited" {
+			allStopped = false
+		}
+	}
+
+	if hasRunning {
+		return colors.Success()
+	}
+	if allStopped {
+		return colors.Text()
+	}
+
+	return colors.Warning()
 }
 
 // getStatusIcon returns status icon based on whether service has running containers
@@ -53,16 +79,18 @@ func (i ServiceItem) getStatusIcon() string {
 		icon = iconSet.Paused // Mixed state
 	}
 
-	return icon
+	return icons.Styled(icon, i.statusColor())
 }
 
 func (i ServiceItem) Title() string {
 	statusIcon := i.getStatusIcon()
-	return fmt.Sprintf("   %s %s", statusIcon, i.Service.Name)
+	nameStyle := lipgloss.NewStyle().Foreground(i.statusColor())
+	styledName := nameStyle.Render(i.Service.Name)
+	return fmt.Sprintf("   %s %s", statusIcon, styledName)
 }
 
 func (i ServiceItem) Description() string {
-	return fmt.Sprintf("Replicas: %d | Containers: %d", i.Service.Replicas, len(i.Service.Containers))
+	return fmt.Sprintf("   Replicas: %d | Containers: %d", i.Service.Replicas, len(i.Service.Containers))
 }
 
 func (i ServiceItem) FilterValue() string {

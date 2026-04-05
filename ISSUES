@@ -5,13 +5,6 @@ Revise search dropdown style/implementation.
 Revise input style globally to have some kind of background.
 Support podman, integrate this into UI somehow
 
--- Containers Tab --
-Remove Stats tab or heavily revise it
-
--- Services Tab --
-No keybindings work
-Add coloration like in Containers tab?
-
 -- Other --
 Polish up demo experience.
 Get VHS tapes working.

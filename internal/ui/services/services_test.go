@@ -1,6 +1,7 @@
 package services
 
 import (
+	stdcontext "context"
 	"os"
 	"regexp"
 	"strings"
@@ -59,6 +60,66 @@ func TestNewConfiguresComposeExtraPane(t *testing.T) {
 
 	if rv.SplitView.Extra == nil {
 		t.Fatal("expected extra pane to be configured")
+	}
+}
+
+func TestServiceFilteringIsEnabledByDefault(t *testing.T) {
+	listModel := list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	if !rv.SplitView.List.FilteringEnabled() {
+		t.Fatal("expected services list filtering to be enabled")
+	}
+}
+
+func TestServiceActionCmdReturnsActionResultMessage(t *testing.T) {
+	listModel := list.New([]list.Item{
+		ServiceItem{Service: client.Service{Name: "api", Containers: []client.Container{{ID: "abc123", State: "running"}}}},
+	}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{ResourceView: rv}
+	cmd := model.serviceActionCmd("start", func(_ stdcontext.Context, _ []string) error { return nil })
+	if cmd == nil {
+		t.Fatal("expected non-nil action command")
+	}
+
+	msg := cmd()
+	result, ok := msg.(MsgServiceActionResult)
+	if !ok {
+		t.Fatalf("expected MsgServiceActionResult, got %T", msg)
+	}
+
+	if result.Action != "start" || result.ServiceName != "api" || result.Err != nil {
+		t.Fatalf("unexpected action result: %#v", result)
+	}
+}
+
+func TestServiceActionKeyDoesNotGetSwallowedByFiltering(t *testing.T) {
+	listModel := list.New([]list.Item{
+		ServiceItem{Service: client.Service{Name: "api", Containers: []client.Container{{ID: "abc123", State: "running"}}}},
+	}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{
+		ResourceView:       rv,
+		keybindings:        newKeybindings(),
+		detailsKeybindings: newDetailsKeybindings(),
+		detailsPanel:       components.NewDetailsPanel(),
+	}
+
+	updated, _ := model.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	if updated.IsFiltering() {
+		t.Fatal("expected service action key to be handled before list filtering")
 	}
 }
 
@@ -203,17 +264,22 @@ func TestComposeClipboardContentReturnsFileContent(t *testing.T) {
 	}
 }
 
-func TestServiceTitleDoesNotWrapNameWithANSI(t *testing.T) {
+func TestServiceTitleAppliesStatusColor(t *testing.T) {
 	state.SetConfig(config.DefaultConfig())
 	name := "api-service"
 	item := ServiceItem{Service: client.Service{Name: name, Containers: []client.Container{{State: "running"}}}}
 	title := item.Title()
 
-	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(name) + "\\x1b\\[[0-9;]*m").MatchString(title) {
-		t.Fatalf("expected service name to be plain text, got %q", title)
+	if !regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(name) + "\\x1b\\[[0-9;]*m").MatchString(title) {
+		t.Fatalf("expected service name to be color styled, got %q", title)
 	}
-	if strings.Contains(title, "\x1b[") {
-		t.Fatalf("expected fully plain title without ANSI, got %q", title)
+}
+
+func TestServiceDescriptionHasIndentation(t *testing.T) {
+	item := ServiceItem{Service: client.Service{Name: "api", Replicas: 2, Containers: []client.Container{{State: "running"}}}}
+	description := item.Description()
+	if !strings.HasPrefix(description, "   ") {
+		t.Fatalf("expected service description indentation, got %q", description)
 	}
 }
 
