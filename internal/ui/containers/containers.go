@@ -15,7 +15,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
-	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
@@ -40,15 +39,6 @@ type MsgRefreshContainers time.Time
 // MsgPruneComplete is sent when the prune operation completes
 type MsgPruneComplete struct {
 	SpaceReclaimed uint64
-	Err            error
-}
-
-// MsgContainerStats contains runtime stats for a container.
-type MsgContainerStats struct {
-	ID             string
-	ContainerState string
-	Stats          *client.ContainerStats
-	FetchedAt      time.Time
 	Err            error
 }
 
@@ -172,9 +162,6 @@ type Model struct {
 	detailsKeybindings detailsKeybindings
 	detailsPanel       components.DetailsPanel
 
-	statsHistoryByContainer map[string]*statsHistory
-	activeStatsContainerID  string
-
 	WindowWidth  int
 	WindowHeight int
 }
@@ -226,23 +213,17 @@ func New() Model {
 	// Set detail panel title
 	resourceView.SplitView.SetDetailTitle("Inspect")
 
-	// Add extra pane below detail pane for runtime stats
-	extraPane := components.NewViewportPane()
-	extraPane.SetContent("")
-	resourceView.SplitView.SetExtraPane(extraPane, 0.3)
-	resourceView.SplitView.SetExtraTitle("Stats")
+	configureContainersSplitView(resourceView)
 
 	// Set the custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
 
 	model := Model{
-		ResourceView:            *resourceView,
-		keybindings:             containerKeybindings,
-		detailsKeybindings:      newDetailsKeybindings(),
-		detailsPanel:            components.NewDetailsPanel(),
-		statsHistoryByContainer: make(map[string]*statsHistory),
-		activeStatsContainerID:  "",
+		ResourceView:       *resourceView,
+		keybindings:        containerKeybindings,
+		detailsKeybindings: newDetailsKeybindings(),
+		detailsPanel:       components.NewDetailsPanel(),
 	}
 
 	// Add custom keybindings to help
@@ -268,6 +249,10 @@ func New() Model {
 
 func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
 	model.ResourceView.UpdateWindowDimensions(msg)
+}
+
+func configureContainersSplitView(resourceView *components.ResourceView[string, ContainerItem]) {
+	// Containers intentionally uses list + inspect split without extra stats pane.
 }
 
 // refreshWithState refreshes the container list while preserving isWorking and isSelected states
@@ -347,10 +332,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cmds = append(cmds, tickCmd())
 		// Refresh the containers list via custom refresh that preserves state
 		cmds = append(cmds, model.refreshWithState())
-		// Refresh stats for currently selected container
-		if selected := model.GetSelectedItem(); selected != nil {
-			cmds = append(cmds, model.fetchContainerStats(selected.ID, selected.State))
-		}
 
 	case MsgContainerOperationResult:
 		if cmd := model.handleContainerOperationResult(msg); cmd != nil {
@@ -413,21 +394,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			},
 		)
 
-	case MsgContainerStats:
-		if msg.ID == model.activeStatsContainerID {
-			if msg.Stats != nil && msg.ContainerState == "running" {
-				history, ok := model.statsHistoryByContainer[msg.ID]
-				if !ok {
-					history = newStatsHistory(32)
-					model.statsHistoryByContainer[msg.ID] = history
-				}
-				history.push(*msg.Stats, msg.FetchedAt)
-			}
-		}
-
-		if msg.ID == model.detailsPanel.GetCurrentID() {
-			model = model.updateStatsPane(msg.ContainerState, msg.Stats, msg.Err)
-		}
 	}
 
 	if model.IsOverlayVisible() {
@@ -565,13 +531,6 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem != nil {
 		if selectedItem.ID != model.detailsPanel.GetCurrentID() {
-			model.activeStatsContainerID = selectedItem.ID
-			if selectedItem.State == "running" || selectedItem.State == "" {
-				model.SetExtraContent("Loading stats...")
-			} else {
-				model.SetExtraContent("Container is not running")
-			}
-
 			// SetCurrentID will save scroll position for previous ID
 			model.detailsPanel.SetCurrentID(selectedItem.ID, model.getViewport())
 
@@ -581,11 +540,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				containerInfo, err := state.GetClient().InspectContainer(stdcontext.Background(), id)
 				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
 			})
-			cmds = append(cmds, model.fetchContainerStats(selectedItem.ID, selectedItem.State))
 		}
-	} else {
-		model.activeStatsContainerID = ""
-		model.SetExtraContent("")
 	}
 
 	return model, tea.Batch(cmds...)
@@ -612,11 +567,7 @@ func (model Model) ShortHelp() []key.Binding {
 	}
 
 	if model.IsExtraFocused() {
-		return []key.Binding{
-			model.detailsKeybindings.Up,
-			model.detailsKeybindings.Down,
-			model.detailsKeybindings.Switch,
-		}
+		return model.ResourceView.ShortHelp()
 	}
 
 	return model.ResourceView.ShortHelp()
@@ -643,105 +594,6 @@ func (model *Model) refreshInspectionContent() {
 	model.SetContent(content)
 }
 
-func (model *Model) fetchContainerStats(containerID, containerState string) tea.Cmd {
-	if containerID == "" {
-		return nil
-	}
-
-	if shouldShortCircuitStatsFetch(containerState) {
-		return func() tea.Msg {
-			return MsgContainerStats{
-				ID:             containerID,
-				ContainerState: containerState,
-				Stats:          nil,
-				FetchedAt:      time.Now(),
-				Err:            nil,
-			}
-		}
-	}
-
-	return func() tea.Msg {
-		fetchedAt := time.Now()
-		stats, err := state.GetClient().GetContainerStats(stdcontext.Background(), containerID)
-		if err != nil {
-			return MsgContainerStats{ID: containerID, ContainerState: containerState, FetchedAt: fetchedAt, Err: err}
-		}
-
-		return MsgContainerStats{ID: containerID, ContainerState: containerState, Stats: &stats, FetchedAt: fetchedAt}
-	}
-}
-
-func shouldShortCircuitStatsFetch(containerState string) bool {
-	if containerState == "" {
-		return false
-	}
-
-	return containerState != "running"
-}
-
-func (model Model) updateStatsPane(containerState string, stats *client.ContainerStats, statsErr error) Model {
-	if model.SplitView.Extra == nil {
-		return model
-	}
-
-	if containerState == "" {
-		model.SetExtraContent("Loading stats...")
-		return model
-	}
-
-	if containerState != "running" {
-		model.SetExtraContent("Container is not running")
-		return model
-	}
-
-	if statsErr != nil {
-		model.SetExtraContent(fmt.Sprintf("Failed to load stats: %v", statsErr))
-		return model
-	}
-
-	if stats == nil {
-		model.SetExtraContent("Loading stats...")
-		return model
-	}
-
-	history, ok := model.statsHistoryByContainer[model.activeStatsContainerID]
-	if !ok || len(history.points) == 0 {
-		model.SetExtraContent("Loading stats...")
-		return model
-	}
-
-	point := history.points[len(history.points)-1]
-	cpuSeries := make([]float64, 0, len(history.points))
-	memSeries := make([]float64, 0, len(history.points))
-	for _, p := range history.points {
-		cpuSeries = append(cpuSeries, p.CPUPercent)
-		memSeries = append(memSeries, p.MemPercent)
-	}
-
-	graph := renderStatsGraph(statsRenderInput{
-		CPUPercent: point.CPUPercent,
-		MemPercent: point.MemPercent,
-		CPUSeries:  cpuSeries,
-		MemSeries:  memSeries,
-		BarWidth:   24,
-	})
-
-	content := fmt.Sprintf(
-		"%s\nMemory: %s / %s\nNetwork RX: %s (%s/s)\nNetwork TX: %s (%s/s)",
-		graph,
-		utils.HumanizeBytes(uint64(point.MemUsage)),
-		utils.HumanizeBytes(uint64(point.MemLimit)),
-		utils.HumanizeBytes(uint64(point.NetRx)),
-		utils.HumanizeBytes(uint64(point.NetRxRate)),
-		utils.HumanizeBytes(uint64(point.NetTx)),
-		utils.HumanizeBytes(uint64(point.NetTxRate)),
-	)
-
-	model.SetExtraContent(content)
-
-	return model
-}
-
 func (model Model) FullHelp() [][]key.Binding {
 	// If detail pane is focused, show detail keybindings
 	if model.IsDetailFocused() {
@@ -759,13 +611,7 @@ func (model Model) FullHelp() [][]key.Binding {
 	}
 
 	if model.IsExtraFocused() {
-		return [][]key.Binding{
-			{
-				model.detailsKeybindings.Up,
-				model.detailsKeybindings.Down,
-				model.detailsKeybindings.Switch,
-			},
-		}
+		return model.ResourceView.FullHelp()
 	}
 
 	return model.ResourceView.FullHelp()

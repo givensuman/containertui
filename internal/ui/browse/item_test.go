@@ -6,11 +6,11 @@ import (
 	"github.com/givensuman/containertui/internal/registry"
 )
 
-func TestBrowseItemDescriptionShortensByFewCharacters(t *testing.T) {
+func TestBrowseItemDescriptionKeepsShortDescriptionUnderMaxWidth(t *testing.T) {
 	item := BrowseItem{Image: registry.RegistryImage{ShortDescription: "hello world"}}
 
 	got := item.Description()
-	want := "   hello wo"
+	want := "   hello world"
 
 	if got != want {
 		t.Fatalf("Description() = %q, want %q", got, want)
@@ -28,11 +28,11 @@ func TestBrowseItemDescriptionKeepsVeryShortText(t *testing.T) {
 	}
 }
 
-func TestBrowseItemDescriptionOnlyTrimsFewCharacters(t *testing.T) {
-	item := BrowseItem{Image: registry.RegistryImage{ShortDescription: "12345678901234567890"}}
+func TestBrowseItemDescriptionTruncatesAndAddsEllipsisAtMaxWidth(t *testing.T) {
+	item := BrowseItem{Image: registry.RegistryImage{ShortDescription: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra"}}
 
 	got := item.Description()
-	want := "   12345678901234567"
+	want := "   abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678..."
 
 	if got != want {
 		t.Fatalf("Description() = %q, want %q", got, want)
