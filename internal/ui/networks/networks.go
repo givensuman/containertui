@@ -118,8 +118,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("n", "create network"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5", "6"),
-			key.WithHelp("1-6", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 	}
 }
@@ -263,6 +263,13 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "PruneNetworks" {
+				model.CloseOverlay()
+				if cmd := model.handlePruneNetworks(); cmd != nil {
+					return model, cmd
+				}
+				return model, nil
+			}
 			if confirmMsg.Action.Type == "DeleteNetwork" {
 				networkID, ok := confirmMsg.Action.Payload.(string)
 				if !ok {
@@ -368,9 +375,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				if !model.hasPrunableNetworks() {
 					return model, notifications.ShowSuccess("No unused networks to prune")
 				}
-				if cmd := model.handlePruneNetworks(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+				model.showPruneNetworksConfirmation()
 				return model, tea.Batch(cmds...)
 
 			case key.Matches(msg, model.keybindings.createNetwork):
@@ -655,6 +660,40 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 			Err:             err,
 		}
 	}
+}
+
+func (model *Model) showPruneNetworksConfirmation() {
+	candidates := model.pruneNetworkCandidates()
+	if len(candidates) == 0 {
+		return
+	}
+
+	samples := candidates
+	if len(samples) > 3 {
+		samples = samples[:3]
+	}
+
+	confirmDialog := components.NewDialog(
+		safety.PruneConfirmation("networks", len(candidates), samples),
+		[]components.DialogButton{
+			{Label: "Cancel"},
+			{Label: "Prune", Action: base.SmartDialogAction{Type: "PruneNetworks"}},
+		},
+	)
+	model.SetOverlay(confirmDialog)
+}
+
+func (model Model) pruneNetworkCandidates() []string {
+	items := model.GetItems()
+	candidates := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.IsActive || isSystemNetwork(item.Network.Name) {
+			continue
+		}
+		candidates = append(candidates, item.Network.Name)
+	}
+
+	return candidates
 }
 
 // withCreateNetworkDialog returns model with create-network dialog shown.

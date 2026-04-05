@@ -1,7 +1,10 @@
 // Package safety provides shared wording helpers for destructive operation dialogs.
 package safety
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func DeleteConfirmation(resource, identifier string) string {
 	return fmt.Sprintf(
@@ -19,4 +22,27 @@ func ForceDeleteInUseConfirmation(resource, identifier string, inUseCount int, i
 		inUseCount,
 		inUseBy,
 	)
+}
+
+func PruneConfirmation(resourcePlural string, count int, samples []string) string {
+	message := fmt.Sprintf("Prune %d %s?\n\nThis action is destructive and cannot be undone.", count, resourcePlural)
+
+	if len(samples) == 0 {
+		return message
+	}
+
+	var b strings.Builder
+	b.WriteString(message)
+	b.WriteString("\n\nExamples:\n")
+	for _, sample := range samples {
+		trimmed := strings.TrimSpace(sample)
+		if trimmed == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(trimmed)
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }

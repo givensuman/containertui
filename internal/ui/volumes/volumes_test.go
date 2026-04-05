@@ -1,6 +1,8 @@
 package volumes
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
@@ -73,6 +75,32 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 	b := newDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
+
+func TestPruneVolumesConfirmationUsesSafetyHelper(t *testing.T) {
+	model := newPruneTestModel([]VolumeItem{
+		{Volume: client.Volume{Name: "data"}, IsMounted: false},
+		{Volume: client.Volume{Name: "cache"}, IsMounted: false},
+		{Volume: client.Volume{Name: "live"}, IsMounted: true},
+	})
+
+	model.showPruneVolumesConfirmation()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected prune volumes confirmation overlay")
+	}
+
+	dialog, ok := model.Foreground.(components.Dialog)
+	if !ok {
+		t.Fatalf("expected dialog overlay, got %T", model.Foreground)
+	}
+
+	text := fmt.Sprint(dialog.View())
+	if !strings.Contains(text, "Prune 2 volumes") {
+		t.Fatalf("expected prune count in dialog, got %q", text)
+	}
+	if !strings.Contains(text, "data") {
+		t.Fatalf("expected sample volume name in dialog, got %q", text)
 	}
 }
 

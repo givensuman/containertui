@@ -2,6 +2,7 @@ package services
 
 import (
 	stdcontext "context"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -75,12 +76,14 @@ func TestServiceFilteringIsEnabledByDefault(t *testing.T) {
 	}
 }
 
-func TestServiceActionCmdReturnsActionResultMessage(t *testing.T) {
+func TestServiceActionCmdReturnsActionStartMessage(t *testing.T) {
 	listModel := list.New([]list.Item{
-		ServiceItem{Service: client.Service{Name: "api", Containers: []client.Container{{ID: "abc123", State: "running"}}}},
+		ServiceItem{Service: client.Service{Name: "api", Project: "demo", Containers: []client.Container{{ID: "abc123", State: "running"}}}},
 	}, list.NewDefaultDelegate(), 80, 20)
 	rv := components.ResourceView[string, ServiceItem]{
-		SplitView: components.NewSplitView(listModel, components.NewViewportPane()),
+		SplitView:  components.NewSplitView(listModel, components.NewViewportPane()),
+		Selections: components.NewSelectionManager[string](),
+		GetItemID:  func(item ServiceItem) string { return serviceSelectionID(item.Service) },
 	}
 	configureServiceSplitView(&rv)
 
@@ -91,13 +94,16 @@ func TestServiceActionCmdReturnsActionResultMessage(t *testing.T) {
 	}
 
 	msg := cmd()
-	result, ok := msg.(MsgServiceActionResult)
+	result, ok := msg.(MsgServiceActionStart)
 	if !ok {
-		t.Fatalf("expected MsgServiceActionResult, got %T", msg)
+		t.Fatalf("expected MsgServiceActionStart, got %T", msg)
 	}
 
-	if result.Action != "start" || result.ServiceName != "api" || result.Err != nil {
+	if result.Action != "start" || len(result.ServiceNames) != 1 || result.ServiceNames[0] != "api" {
 		t.Fatalf("unexpected action result: %#v", result)
+	}
+	if len(result.ServiceIDs) != 1 {
+		t.Fatalf("expected one service ID for loading tracking, got %#v", result.ServiceIDs)
 	}
 }
 
@@ -287,5 +293,134 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 	b := newDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
+
+func TestServiceKeybindingsIncludeComposeProjectActions(t *testing.T) {
+	b := newKeybindings()
+
+	if b.composeUp.Help().Desc != "compose up" {
+		t.Fatalf("compose up help = %q, want %q", b.composeUp.Help().Desc, "compose up")
+	}
+	if b.composeDown.Help().Desc != "compose down" {
+		t.Fatalf("compose down help = %q, want %q", b.composeDown.Help().Desc, "compose down")
+	}
+	if b.composePull.Help().Desc != "compose pull" {
+		t.Fatalf("compose pull help = %q, want %q", b.composePull.Help().Desc, "compose pull")
+	}
+	if b.composeRebuild.Help().Desc != "compose build" {
+		t.Fatalf("compose build help = %q, want %q", b.composeRebuild.Help().Desc, "compose build")
+	}
+	if b.scaleService.Help().Desc != "scale service" {
+		t.Fatalf("scale service help = %q, want %q", b.scaleService.Help().Desc, "scale service")
+	}
+}
+
+func TestComposeSummaryIncludesProjectAndHealth(t *testing.T) {
+	service := client.Service{
+		Project:  "demo",
+		Name:     "api",
+		Replicas: 2,
+		Containers: []client.Container{
+			{State: "running"},
+			{State: "exited"},
+		},
+	}
+
+	summary := composeSummary(service)
+	if !strings.Contains(summary, "Project: demo") {
+		t.Fatalf("expected project in summary, got %q", summary)
+	}
+	if !strings.Contains(summary, "Health: 1 running / 1 stopped") {
+		t.Fatalf("expected health summary, got %q", summary)
+	}
+}
+
+func TestSetWorkingStateMarksSpinnerInsteadOfCheckbox(t *testing.T) {
+	item := ServiceItem{Service: client.Service{Name: "api", Containers: []client.Container{{ID: "abc123", State: "running"}}}}
+	listModel := list.New([]list.Item{item}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView:  components.NewSplitView(listModel, components.NewViewportPane()),
+		Selections: components.NewSelectionManager[string](),
+		GetItemID:  func(item ServiceItem) string { return item.Service.Name },
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{ResourceView: rv, keybindings: newKeybindings(), detailsKeybindings: newDetailsKeybindings(), detailsPanel: components.NewDetailsPanel()}
+	model.ToggleSelection("api")
+
+	cmd := model.setWorkingState([]string{"api"}, true)
+	if cmd == nil {
+		t.Fatal("expected spinner tick command when setting working state")
+	}
+
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		t.Fatal("expected selected service item")
+	}
+	if !selected.isWorking {
+		t.Fatal("expected selected service to be marked as working")
+	}
+
+	title := selected.Title()
+	if strings.Contains(title, "[x]") {
+		t.Fatalf("expected spinner indicator to replace checkbox, got %q", title)
+	}
+}
+
+func TestComposeActionTargetsSelectedServicesAsBatch(t *testing.T) {
+	listModel := list.New([]list.Item{
+		ServiceItem{Service: client.Service{Name: "api", Project: "demo", WorkingDir: "/tmp/demo", Containers: []client.Container{{ID: "a1", State: "running"}}}},
+		ServiceItem{Service: client.Service{Name: "worker", Project: "demo", WorkingDir: "/tmp/demo", Containers: []client.Container{{ID: "w1", State: "running"}}}},
+	}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView:  components.NewSplitView(listModel, components.NewViewportPane()),
+		Selections: components.NewSelectionManager[string](),
+		GetItemID:  func(item ServiceItem) string { return item.Service.Name },
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{ResourceView: rv, keybindings: newKeybindings(), detailsKeybindings: newDetailsKeybindings(), detailsPanel: components.NewDetailsPanel()}
+	model.ToggleSelection("demo/api")
+	model.ToggleSelection("demo/worker")
+
+	cmd := model.composeProjectCommand("pull", "pull")
+	if cmd == nil {
+		t.Fatal("expected compose command for selected services")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(MsgComposeActionStart); !ok {
+		t.Fatalf("expected MsgComposeActionStart, got %T (%v)", msg, fmt.Sprintf("%v", msg))
+	}
+}
+
+func TestComposeActionTargetsOnlySelectedServiceWhenNamesCollideAcrossProjects(t *testing.T) {
+	listModel := list.New([]list.Item{
+		ServiceItem{Service: client.Service{Name: "api", Project: "demo", WorkingDir: "/tmp/demo", Containers: []client.Container{{ID: "a1", State: "running"}}}},
+		ServiceItem{Service: client.Service{Name: "api", Project: "other", WorkingDir: "/tmp/other", Containers: []client.Container{{ID: "a2", State: "running"}}}},
+	}, list.NewDefaultDelegate(), 80, 20)
+	rv := components.ResourceView[string, ServiceItem]{
+		SplitView:  components.NewSplitView(listModel, components.NewViewportPane()),
+		Selections: components.NewSelectionManager[string](),
+		GetItemID:  func(item ServiceItem) string { return serviceSelectionID(item.Service) },
+	}
+	configureServiceSplitView(&rv)
+
+	model := Model{ResourceView: rv, keybindings: newKeybindings(), detailsKeybindings: newDetailsKeybindings(), detailsPanel: components.NewDetailsPanel()}
+	model.ToggleSelection("demo/api")
+
+	cmd := model.composeProjectCommand("down", "down")
+	if cmd == nil {
+		t.Fatal("expected compose command")
+	}
+
+	msg := cmd()
+	startMsg, ok := msg.(MsgComposeActionStart)
+	if !ok {
+		t.Fatalf("expected MsgComposeActionStart, got %T", msg)
+	}
+	if len(startMsg.ServiceIDs) != 1 || startMsg.ServiceIDs[0] != "demo/api" {
+		t.Fatalf("expected only selected service ID, got %#v", startMsg.ServiceIDs)
 	}
 }

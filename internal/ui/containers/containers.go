@@ -148,8 +148,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("e", "rename container"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5", "6"),
-			key.WithHelp("1-6", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 	}
 }
@@ -399,6 +399,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "PruneContainers" {
+				model.CloseOverlay()
+				return model, model.handlePruneContainers()
+			}
 			if confirmMsg.Action.Type == "DeleteContainer" {
 				containerIDs, ok := confirmMsg.Action.Payload.([]string)
 				if !ok {
@@ -490,7 +494,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					cmds = append(cmds, notifications.ShowSuccess("No stopped containers to prune"))
 					break
 				}
-				cmds = append(cmds, model.handlePruneContainers())
+				model.showPruneContainersConfirmation()
 			case key.Matches(msg, model.keybindings.renameContainer):
 				model.handleRenameContainer()
 			case key.Matches(msg, model.keybindings.showLogs):
@@ -839,42 +843,9 @@ func (model *Model) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	// Use exec.Command with proper argument passing to avoid shell injection
-	// docker logs <container-id> 2>&1 | less
-	dockerCmd := exec.Command("docker", "logs", item.ID)
-	lessCmd := exec.Command("less")
-
-	// Pipe docker output to less
-	pipe, err := dockerCmd.StdoutPipe()
-	if err != nil {
-		return notifications.ShowError(err)
-	}
-	dockerCmd.Stderr = dockerCmd.Stdout // Redirect stderr to stdout
-	lessCmd.Stdin = pipe
-
-	// Start both commands
-	if err := dockerCmd.Start(); err != nil {
-		return notifications.ShowError(err)
-	}
-
-	command := lessCmd
-	return tea.ExecProcess(command, func(err error) tea.Msg {
-		// Kill the docker logs command when less exits
-		// This is important because docker logs -f runs forever
-		if dockerCmd.Process != nil {
-			_ = dockerCmd.Process.Kill()
-		}
-		// Wait for docker command to clean up
-		_ = dockerCmd.Wait()
-		if err != nil {
-			return notifications.AddNotificationMsg{
-				Message:  err.Error(),
-				Level:    notifications.Error,
-				Duration: 10 * time.Second,
-			}
-		}
-		return nil
-	})
+	logsOverlay := NewContainerLogs(*item, model.WindowWidth, model.WindowHeight)
+	model.SetOverlay(logsOverlay)
+	return logsOverlay.Init()
 }
 
 func (model *Model) handleExecShell() tea.Cmd {
@@ -1048,6 +1019,39 @@ func (model *Model) handlePruneContainers() tea.Cmd {
 			Err:            err,
 		}
 	}
+}
+
+func (model *Model) showPruneContainersConfirmation() {
+	candidates := model.pruneContainerCandidates()
+	if len(candidates) == 0 {
+		return
+	}
+
+	samples := candidates
+	if len(samples) > 3 {
+		samples = samples[:3]
+	}
+
+	confirmDialog := components.NewDialog(
+		safety.PruneConfirmation("containers", len(candidates), samples),
+		[]components.DialogButton{
+			{Label: "Cancel"},
+			{Label: "Prune", Action: base.SmartDialogAction{Type: "PruneContainers"}},
+		},
+	)
+	model.SetOverlay(confirmDialog)
+}
+
+func (model Model) pruneContainerCandidates() []string {
+	items := model.GetItems()
+	candidates := make([]string, 0, len(items))
+	for _, item := range items {
+		if isPruneEligibleContainerState(item.State) {
+			candidates = append(candidates, item.Name)
+		}
+	}
+
+	return candidates
 }
 
 // handleRenameContainer shows a dialog to rename the selected container

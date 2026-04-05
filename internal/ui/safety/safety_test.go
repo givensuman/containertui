@@ -28,3 +28,16 @@ func TestForceDeleteInUseConfirmationContainsContainerCount(t *testing.T) {
 		t.Fatalf("expected container count guidance in force delete message, got %q", msg)
 	}
 }
+
+func TestPruneConfirmationContainsCountAndSamples(t *testing.T) {
+	msg := PruneConfirmation("images", 4, []string{"nginx:latest", "redis:7", "alpine:3.20"})
+	if !strings.Contains(msg, "Prune 4 images") {
+		t.Fatalf("expected prune count in confirmation, got %q", msg)
+	}
+	if !strings.Contains(msg, "nginx:latest") || !strings.Contains(msg, "redis:7") {
+		t.Fatalf("expected sample names in confirmation, got %q", msg)
+	}
+	if !strings.Contains(msg, "destructive") {
+		t.Fatalf("expected destructive guidance in confirmation, got %q", msg)
+	}
+}

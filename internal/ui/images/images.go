@@ -207,8 +207,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("c", "create container"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5", "6"),
-			key.WithHelp("1-6", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 	}
 }
@@ -706,6 +706,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
 			switch confirmMsg.Action.Type {
+			case "PruneImages":
+				model.CloseOverlay()
+				if cmd := model.handlePruneImages(); cmd != nil {
+					return model, cmd
+				}
+				return model, nil
 			case "DeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
 				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID, false)
@@ -981,9 +987,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				if !model.hasPrunableImages() {
 					return model, notifications.ShowSuccess("No unused images to prune")
 				}
-				if cmd := model.handlePruneImages(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+				model.showPruneImagesConfirmation()
 				return model, tea.Batch(cmds...)
 
 			case key.Matches(msg, model.keybindings.tagImage):
@@ -1273,6 +1277,50 @@ func (model *Model) handlePruneImages() tea.Cmd {
 			Err:            err,
 		}
 	}
+}
+
+func (model *Model) showPruneImagesConfirmation() {
+	candidates := model.pruneImageCandidates()
+	if len(candidates) == 0 {
+		return
+	}
+
+	samples := candidates
+	if len(samples) > 3 {
+		samples = samples[:3]
+	}
+
+	confirmDialog := components.NewDialog(
+		safety.PruneConfirmation("images", len(candidates), samples),
+		[]components.DialogButton{
+			{Label: "Cancel"},
+			{Label: "Prune", Action: base.SmartDialogAction{Type: "PruneImages"}},
+		},
+	)
+	model.SetOverlay(confirmDialog)
+}
+
+func (model Model) pruneImageCandidates() []string {
+	items := model.GetItems()
+	candidates := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.InUse {
+			continue
+		}
+
+		if len(item.Image.RepoTags) > 0 && strings.TrimSpace(item.Image.RepoTags[0]) != "" {
+			candidates = append(candidates, item.Image.RepoTags[0])
+			continue
+		}
+
+		trimmedID := strings.TrimPrefix(item.Image.ID, "sha256:")
+		if len(trimmedID) > 12 {
+			trimmedID = trimmedID[:12]
+		}
+		candidates = append(candidates, trimmedID)
+	}
+
+	return candidates
 }
 
 // handleTagImage shows dialog to tag an image

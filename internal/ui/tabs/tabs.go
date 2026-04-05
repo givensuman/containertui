@@ -44,8 +44,6 @@ func TabFromString(s string) Tab {
 		return Volumes
 	case "networks":
 		return Networks
-	case "services":
-		return Services
 	case "browse":
 		return Browse
 	default:
@@ -60,7 +58,7 @@ func IsValidTab(s string) bool {
 
 // AllTabNames returns all valid tab names
 func AllTabNames() []string {
-	return []string{"containers", "images", "volumes", "networks", "services", "browse"}
+	return []string{"containers", "images", "volumes", "networks", "browse"}
 }
 
 type KeyMap struct {
@@ -95,8 +93,8 @@ func NewKeyMap() KeyMap {
 			key.WithHelp("5", "services"),
 		),
 		SwitchToBrowse: key.NewBinding(
-			key.WithKeys("6"),
-			key.WithHelp("6", "browse"),
+			key.WithKeys("5"),
+			key.WithHelp("5", "browse"),
 		),
 	}
 }
@@ -109,9 +107,13 @@ type Model struct {
 }
 
 func New(startupTab Tab) Model {
+	if startupTab == Services {
+		startupTab = Containers
+	}
+
 	return Model{
 		ActiveTab: startupTab,
-		Tabs:      []Tab{Containers, Images, Volumes, Networks, Services, Browse},
+		Tabs:      []Tab{Containers, Images, Volumes, Networks, Browse},
 		KeyMap:    NewKeyMap(),
 	}
 }
@@ -132,8 +134,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.ActiveTab = Volumes
 		case key.Matches(msg, m.KeyMap.SwitchToNetworks):
 			m.ActiveTab = Networks
-		case key.Matches(msg, m.KeyMap.SwitchToServices):
-			m.ActiveTab = Services
 		case key.Matches(msg, m.KeyMap.SwitchToBrowse):
 			m.ActiveTab = Browse
 		}

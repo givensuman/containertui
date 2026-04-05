@@ -4,13 +4,44 @@ package containers
 import (
 	"bufio"
 	stdcontext "context"
+	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"github.com/atotto/clipboard"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 )
+
+type logsKeybindings struct {
+	ToggleFollow key.Binding
+	Clear        key.Binding
+	Search       key.Binding
+	Copy         key.Binding
+}
+
+func newLogsKeybindings() logsKeybindings {
+	return logsKeybindings{
+		ToggleFollow: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "follow/pause"),
+		),
+		Clear: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "clear logs"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search logs"),
+		),
+		Copy: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy logs"),
+		),
+	}
+}
 
 // ContainerLogs displays and scrolls logs for a specific container.
 type ContainerLogs struct {
@@ -21,10 +52,37 @@ type ContainerLogs struct {
 	err           error          // Holds error from log fetching.
 	width         int
 	height        int
-	isAtBottom    bool                  // If true, auto-scroll when new lines appear.
+	isAtBottom    bool // If true, auto-scroll when new lines appear.
+	follow        bool
+	searchMode    bool
+	searchQuery   string
+	filteredLines []string
+	keybindings   logsKeybindings
 	cancelChannel chan struct{}         // To stop log streaming goroutine.
 	cancelFunc    stdcontext.CancelFunc // To cancel the context used for OpenLogs.
 	logCtx        stdcontext.Context    // Context for log streaming.
+}
+
+func NewContainerLogs(item ContainerItem, width, height int) *ContainerLogs {
+	ctx, cancel := stdcontext.WithCancel(stdcontext.Background())
+	model := &ContainerLogs{
+		containerItem: &item,
+		lines:         []string{},
+		filteredLines: nil,
+		isLoaded:      false,
+		isAtBottom:    true,
+		follow:        true,
+		searchMode:    false,
+		searchQuery:   "",
+		keybindings:   newLogsKeybindings(),
+		cancelChannel: make(chan struct{}),
+		cancelFunc:    cancel,
+		logCtx:        ctx,
+		width:         width,
+		height:        height,
+	}
+	model.setDimensions(width, height)
+	return model
 }
 
 func (model *ContainerLogs) Init() tea.Cmd {
@@ -79,7 +137,7 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 		model.err = msg.err
 		if msg.err == nil {
 			model.lines = msg.lines
-			model.viewport.SetContent(strings.Join(msg.lines, "\n"))
+			model.refreshViewport()
 			model.isAtBottom = true
 		} else {
 			model.viewport.SetContent("Error loading logs: " + msg.err.Error())
@@ -88,14 +146,39 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 
 	case newLogLineMsg:
 		model.lines = append(model.lines, msg.line)
-		model.viewport.SetContent(strings.Join(model.lines, "\n"))
+		model.refreshViewport()
 		// If at the bottom or the log buffer size <= height, scroll to end.
-		if model.isAtBottom || len(model.lines) <= model.viewport.Height() {
+		if model.follow && (model.isAtBottom || len(model.lines) <= model.viewport.Height()) {
 			model.viewport.GotoBottom()
 		}
 		return model, model.streamLogsCmd()
 
 	case tea.KeyPressMsg:
+		if model.searchMode {
+			switch msg.String() {
+			case "esc":
+				model.searchMode = false
+				model.searchQuery = ""
+				model.filteredLines = nil
+				model.refreshViewport()
+				return model, nil
+			case "enter":
+				model.searchMode = false
+				model.applySearchFilter()
+				return model, nil
+			case "backspace":
+				if len(model.searchQuery) > 0 {
+					model.searchQuery = model.searchQuery[:len(model.searchQuery)-1]
+				}
+				return model, nil
+			default:
+				if msg.Text != "" {
+					model.searchQuery += msg.Text
+				}
+				return model, nil
+			}
+		}
+
 		switch msg.String() {
 		case "q", "esc":
 			// Cancel streaming goroutine.
@@ -107,6 +190,26 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 				model.cancelFunc()
 			}
 			return model, func() tea.Msg { return base.CloseDialogMessage{} }
+		case "f":
+			model.follow = !model.follow
+			if model.follow {
+				model.viewport.GotoBottom()
+			}
+			return model, nil
+		case "c":
+			model.lines = []string{}
+			model.filteredLines = nil
+			model.refreshViewport()
+			return model, nil
+		case "/":
+			model.searchMode = true
+			model.searchQuery = ""
+			return model, nil
+		case "y":
+			if err := clipboard.WriteAll(strings.Join(model.activeLines(), "\n")); err != nil {
+				model.err = fmt.Errorf("failed to copy logs: %w", err)
+			}
+			return model, nil
 		case "up", "down", "pgup", "pgdown", "mouse wheel up", "mouse wheel down":
 			// Let viewport handle.
 			viewportModel, _ := model.viewport.Update(msg)
@@ -130,6 +233,36 @@ func (model *ContainerLogs) Update(msg tea.Msg) (*ContainerLogs, tea.Cmd) {
 	return model, cmd
 }
 
+func (model *ContainerLogs) activeLines() []string {
+	if len(model.filteredLines) > 0 || (model.searchQuery != "" && model.filteredLines != nil) {
+		return model.filteredLines
+	}
+	return model.lines
+}
+
+func (model *ContainerLogs) applySearchFilter() {
+	query := strings.ToLower(strings.TrimSpace(model.searchQuery))
+	if query == "" {
+		model.filteredLines = nil
+		model.refreshViewport()
+		return
+	}
+
+	filtered := make([]string, 0, len(model.lines))
+	for _, line := range model.lines {
+		if strings.Contains(strings.ToLower(line), query) {
+			filtered = append(filtered, line)
+		}
+	}
+	model.filteredLines = filtered
+	model.refreshViewport()
+}
+
+func (model *ContainerLogs) refreshViewport() {
+	lines := model.activeLines()
+	model.viewport.SetContent(strings.Join(lines, "\n"))
+}
+
 // setDimensions resizes the viewport and overlay on terminal window change.
 func (model *ContainerLogs) setDimensions(width, height int) {
 	model.width = width
@@ -139,7 +272,7 @@ func (model *ContainerLogs) setDimensions(width, height int) {
 		viewport.WithHeight(height-6), // Leave padding for title/controls.
 	)
 	if model.isLoaded && len(model.lines) > 0 {
-		model.viewport.SetContent(strings.Join(model.lines, "\n"))
+		model.refreshViewport()
 	}
 }
 

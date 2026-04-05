@@ -109,8 +109,8 @@ func newKeybindings() *keybindings {
 			key.WithHelp("n", "create volume"),
 		),
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5", "6"),
-			key.WithHelp("1-6", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 	}
 }
@@ -253,6 +253,13 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
 	if model.IsOverlayVisible() {
 		if confirmMsg, ok := msg.(base.SmartConfirmationMessage); ok {
+			if confirmMsg.Action.Type == "PruneVolumes" {
+				model.CloseOverlay()
+				if cmd := model.handlePruneVolumes(); cmd != nil {
+					return model, cmd
+				}
+				return model, nil
+			}
 			if confirmMsg.Action.Type == "DeleteVolume" {
 				volumeName, ok := confirmMsg.Action.Payload.(string)
 				if !ok {
@@ -353,9 +360,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				if !model.hasPrunableVolumes() {
 					return model, notifications.ShowSuccess("No unused volumes to prune")
 				}
-				if cmd := model.handlePruneVolumes(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+				model.showPruneVolumesConfirmation()
 				return model, tea.Batch(cmds...)
 
 			case key.Matches(msg, model.keybindings.createVolume):
@@ -656,6 +661,39 @@ func (model *Model) handlePruneVolumes() tea.Cmd {
 			Err:            err,
 		}
 	}
+}
+
+func (model *Model) showPruneVolumesConfirmation() {
+	candidates := model.pruneVolumeCandidates()
+	if len(candidates) == 0 {
+		return
+	}
+
+	samples := candidates
+	if len(samples) > 3 {
+		samples = samples[:3]
+	}
+
+	confirmDialog := components.NewDialog(
+		safety.PruneConfirmation("volumes", len(candidates), samples),
+		[]components.DialogButton{
+			{Label: "Cancel"},
+			{Label: "Prune", Action: base.SmartDialogAction{Type: "PruneVolumes"}},
+		},
+	)
+	model.SetOverlay(confirmDialog)
+}
+
+func (model Model) pruneVolumeCandidates() []string {
+	items := model.GetItems()
+	candidates := make([]string, 0, len(items))
+	for _, item := range items {
+		if !item.IsMounted {
+			candidates = append(candidates, item.Volume.Name)
+		}
+	}
+
+	return candidates
 }
 
 // withCreateVolumeDialog returns model with create-volume dialog shown.

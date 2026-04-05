@@ -16,7 +16,7 @@ func TestTabFromString(t *testing.T) {
 		{"images", tabs.Images, true},
 		{"volumes", tabs.Volumes, true},
 		{"networks", tabs.Networks, true},
-		{"services", tabs.Services, true},
+		{"services", tabs.Tab(-1), false},
 		{"browse", tabs.Browse, true},
 		{"Containers", tabs.Containers, true},
 		{"IMAGES", tabs.Images, true},
@@ -40,8 +40,8 @@ func TestTabFromString(t *testing.T) {
 
 func TestAllTabNames(t *testing.T) {
 	names := tabs.AllTabNames()
-	if len(names) != 6 {
-		t.Errorf("AllTabNames() returned %d tabs, expected 6", len(names))
+	if len(names) != 5 {
+		t.Errorf("AllTabNames() returned %d tabs, expected 5", len(names))
 	}
 
 	expectedNames := map[string]bool{
@@ -49,7 +49,6 @@ func TestAllTabNames(t *testing.T) {
 		"images":     true,
 		"volumes":    true,
 		"networks":   true,
-		"services":   true,
 		"browse":     true,
 	}
 

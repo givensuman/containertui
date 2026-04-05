@@ -5,6 +5,8 @@ import (
 	"image/color"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
@@ -13,7 +15,10 @@ import (
 )
 
 type ServiceItem struct {
-	Service client.Service
+	Service    client.Service
+	isSelected bool
+	isWorking  bool
+	spinner    spinner.Model
 }
 
 // getServiceIcon returns the service icon (no nerd fonts option check needed here since services always show icon)
@@ -86,7 +91,13 @@ func (i ServiceItem) Title() string {
 	statusIcon := i.getStatusIcon()
 	nameStyle := lipgloss.NewStyle().Foreground(i.statusColor())
 	styledName := nameStyle.Render(i.Service.Name)
-	return fmt.Sprintf("   %s %s", statusIcon, styledName)
+
+	leading := icons.SelectionCheckbox(i.isSelected)
+	if i.isWorking {
+		leading = i.spinner.View()
+	}
+
+	return fmt.Sprintf("%s %s %s", leading, statusIcon, styledName)
 }
 
 func (i ServiceItem) Description() string {
@@ -99,7 +110,37 @@ func (i ServiceItem) FilterValue() string {
 
 func newDefaultDelegate() list.DefaultDelegate {
 	delegate := list.NewDefaultDelegate()
+
+	delegate.UpdateFunc = func(msg tea.Msg, model *list.Model) tea.Cmd {
+		if _, ok := msg.(spinner.TickMsg); ok {
+			var cmds []tea.Cmd
+			items := model.Items()
+			for index, item := range items {
+				serviceItem, ok := item.(ServiceItem)
+				if !ok || !serviceItem.isWorking {
+					continue
+				}
+
+				var cmd tea.Cmd
+				serviceItem.spinner, cmd = serviceItem.spinner.Update(msg)
+				model.SetItem(index, serviceItem)
+				cmds = append(cmds, cmd)
+			}
+
+			return tea.Batch(cmds...)
+		}
+
+		return nil
+	}
+
 	return delegate
+}
+
+func newSpinner() spinner.Model {
+	spinnerModel := spinner.New()
+	spinnerModel.Spinner = spinner.Dot
+	spinnerModel.Style = lipgloss.NewStyle().Foreground(colors.Primary())
+	return spinnerModel
 }
 
 var (

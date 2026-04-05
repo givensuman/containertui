@@ -4,6 +4,7 @@ import (
 	stdcontext "context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel/builders"
@@ -27,9 +29,45 @@ type MsgServicesLoaded struct {
 }
 
 type MsgServiceActionResult struct {
-	Action      string
-	ServiceName string
-	Err         error
+	Action       string
+	ServiceNames []string
+	ServiceIDs   []string
+	Err          error
+}
+
+type MsgServiceActionStart struct {
+	Action       string
+	ServiceNames []string
+	ServiceIDs   []string
+	ContainerIDs []string
+}
+
+type MsgComposeActionStart struct {
+	Action       string
+	Project      string
+	ServiceNames []string
+	ServiceIDs   []string
+	Args         []string
+	WorkingDir   string
+	ComposeFile  string
+}
+
+type MsgComposeActionResult struct {
+	Action       string
+	Project      string
+	ServiceNames []string
+	ServiceIDs   []string
+	Err          error
+}
+
+func serviceSelectionID(service client.Service) string {
+	project := strings.TrimSpace(service.Project)
+	name := strings.TrimSpace(service.Name)
+	if project == "" {
+		return name
+	}
+
+	return project + "/" + name
 }
 
 type detailsKeybindings struct {
@@ -66,17 +104,24 @@ func newDetailsKeybindings() detailsKeybindings {
 }
 
 type keybindings struct {
-	switchTab      key.Binding
-	startService   key.Binding
-	stopService    key.Binding
-	restartService key.Binding
+	switchTab       key.Binding
+	startService    key.Binding
+	stopService     key.Binding
+	restartService  key.Binding
+	composeUp       key.Binding
+	composeDown     key.Binding
+	composePull     key.Binding
+	composeRebuild  key.Binding
+	scaleService    key.Binding
+	toggleSelection key.Binding
+	toggleAll       key.Binding
 }
 
 func newKeybindings() *keybindings {
 	return &keybindings{
 		switchTab: key.NewBinding(
-			key.WithKeys("1", "2", "3", "4", "5", "6"),
-			key.WithHelp("1-6", "switch tab"),
+			key.WithKeys("1", "2", "3", "4", "5"),
+			key.WithHelp("1-5", "switch tab"),
 		),
 		startService: key.NewBinding(
 			key.WithKeys("s"),
@@ -89,6 +134,34 @@ func newKeybindings() *keybindings {
 		restartService: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "restart service"),
+		),
+		composeUp: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "compose up"),
+		),
+		composeDown: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "compose down"),
+		),
+		composePull: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "compose pull"),
+		),
+		composeRebuild: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "compose build"),
+		),
+		scaleService: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("g", "scale service"),
+		),
+		toggleSelection: key.NewBinding(
+			key.WithKeys("space"),
+			key.WithHelp("space", "toggle selection"),
+		),
+		toggleAll: key.NewBinding(
+			key.WithKeys("ctrl+a"),
+			key.WithHelp("ctrl+a", "toggle selection of all"),
 		),
 	}
 }
@@ -115,20 +188,12 @@ func (model *Model) serviceActionCmd(actionName string, action func(stdcontext.C
 		return notifications.ShowError(fmt.Errorf("service %q has no containers", selectedItem.Service.Name))
 	}
 
-	serviceName := selectedItem.Service.Name
-
 	return func() tea.Msg {
-		if err := action(stdcontext.Background(), containerIDs); err != nil {
-			return MsgServiceActionResult{
-				Action:      actionName,
-				ServiceName: serviceName,
-				Err:         fmt.Errorf("failed to %s service %q: %w", actionName, serviceName, err),
-			}
-		}
-
-		return MsgServiceActionResult{
-			Action:      actionName,
-			ServiceName: serviceName,
+		return MsgServiceActionStart{
+			Action:       actionName,
+			ServiceNames: []string{selectedItem.Service.Name},
+			ServiceIDs:   []string{serviceSelectionID(selectedItem.Service)},
+			ContainerIDs: containerIDs,
 		}
 	}
 }
@@ -138,7 +203,7 @@ type Model struct {
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
 	detailsPanel       components.DetailsPanel
-	currentServiceName string
+	currentServiceID   string
 }
 
 func New() Model {
@@ -151,7 +216,7 @@ func New() Model {
 		}
 		items := make([]ServiceItem, 0, len(services))
 		for _, service := range services {
-			items = append(items, ServiceItem{Service: service})
+			items = append(items, ServiceItem{Service: service, spinner: newSpinner()})
 		}
 		return items, nil
 	}
@@ -159,7 +224,7 @@ func New() Model {
 	resourceView := components.NewResourceView[string, ServiceItem](
 		"Services",
 		fetchServices,
-		func(item ServiceItem) string { return item.Service.Name },
+		func(item ServiceItem) string { return serviceSelectionID(item.Service) },
 		func(item ServiceItem) string { return item.Title() },
 		func(w, h int) {
 			// Window resize handled by base component
@@ -178,6 +243,7 @@ func New() Model {
 		detailsKeybindings: newDetailsKeybindings(),
 		detailsPanel:       components.NewDetailsPanel(),
 	}
+	model.IsItemWorking = func(item ServiceItem) bool { return item.isWorking }
 
 	// Add custom keybindings to help
 	model.AdditionalHelp = []key.Binding{
@@ -185,6 +251,13 @@ func New() Model {
 		serviceKeybindings.startService,
 		serviceKeybindings.stopService,
 		serviceKeybindings.restartService,
+		serviceKeybindings.composeUp,
+		serviceKeybindings.composeDown,
+		serviceKeybindings.composePull,
+		serviceKeybindings.composeRebuild,
+		serviceKeybindings.scaleService,
+		serviceKeybindings.toggleSelection,
+		serviceKeybindings.toggleAll,
 	}
 
 	return model
@@ -217,7 +290,7 @@ func (model Model) refreshServicesCmd() tea.Cmd {
 
 		items := make([]ServiceItem, 0, len(services))
 		for _, service := range services {
-			items = append(items, ServiceItem{Service: service})
+			items = append(items, ServiceItem{Service: service, spinner: newSpinner()})
 		}
 
 		return MsgServicesLoaded{Items: items}
@@ -239,6 +312,25 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if cmd := model.serviceActionCmd("restart", state.GetClient().RestartContainers); cmd != nil {
 				return model, cmd
 			}
+		case key.Matches(keyMsg, model.keybindings.composeUp):
+			if cmd := model.composeProjectCommand("up", "up", "-d"); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.composeDown):
+			if cmd := model.composeProjectCommand("down", "down"); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.composePull):
+			if cmd := model.composeProjectCommand("pull", "pull"); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.composeRebuild):
+			if cmd := model.composeProjectCommand("build", "build"); cmd != nil {
+				return model, cmd
+			}
+		case key.Matches(keyMsg, model.keybindings.scaleService):
+			model.showScaleDialog()
+			return model, nil
 		}
 	}
 
@@ -261,13 +353,17 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cmds = append(cmds, model.refreshServicesCmd())
 
 	case MsgServicesLoaded:
-		listItems := make([]list.Item, len(msg.Items))
-		for i, item := range msg.Items {
+		model.applyServicesLoaded(msg.Items)
+		listItems := make([]list.Item, len(model.GetItems()))
+		for i, item := range model.GetItems() {
 			listItems[i] = item
 		}
 		cmds = append(cmds, model.SplitView.List.SetItems(listItems))
 
 	case MsgServiceActionResult:
+		if cmd := model.setWorkingState(msg.ServiceIDs, false); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		if msg.Err != nil {
 			cmds = append(cmds, notifications.ShowError(msg.Err))
 			break
@@ -282,10 +378,68 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			actionLabel = "Updated"
 		}
 
+		display := strings.Join(msg.ServiceNames, ", ")
+		if len(msg.ServiceNames) > 1 {
+			display = fmt.Sprintf("%d services", len(msg.ServiceNames))
+		}
+		cmds = append(cmds, notifications.ShowSuccess(fmt.Sprintf("%s %s", actionLabel, display)), model.refreshServicesCmd())
+
+	case MsgServiceActionStart:
+		if cmd := model.setWorkingState(msg.ServiceIDs, true); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		cmds = append(cmds, model.performServiceAction(msg))
+
+	case MsgComposeActionStart:
+		if cmd := model.setWorkingState(msg.ServiceIDs, true); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		cmds = append(cmds, model.performComposeAction(msg))
+
+	case MsgComposeActionResult:
+		if cmd := model.setWorkingState(msg.ServiceIDs, false); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if msg.Err != nil {
+			cmds = append(cmds, notifications.ShowError(msg.Err))
+			break
+		}
 		cmds = append(cmds,
-			notifications.ShowSuccess(fmt.Sprintf("%s service %q", actionLabel, msg.ServiceName)),
+			notifications.ShowSuccess(fmt.Sprintf("Compose %s completed for project %q", msg.Action, msg.Project)),
 			model.refreshServicesCmd(),
 		)
+
+	case base.SmartConfirmationMessage:
+		if msg.Action.Type == "ScaleServiceAction" {
+			payload, ok := msg.Action.Payload.(map[string]any)
+			if !ok {
+				cmds = append(cmds, notifications.ShowError(fmt.Errorf("invalid scale payload")))
+				break
+			}
+			values, ok := payload["values"].(map[string]string)
+			if !ok {
+				cmds = append(cmds, notifications.ShowError(fmt.Errorf("invalid scale form values")))
+				break
+			}
+			selected := model.GetSelectedItem()
+			if selected == nil {
+				cmds = append(cmds, notifications.ShowError(fmt.Errorf("no service selected")))
+				break
+			}
+			replicas := strings.TrimSpace(values["Replicas"])
+			if replicas == "" {
+				cmds = append(cmds, notifications.ShowError(fmt.Errorf("replicas is required")))
+				break
+			}
+			model.CloseOverlay()
+			cmds = append(cmds, model.composeProjectCommand(
+				"scale",
+				"up",
+				"--scale",
+				fmt.Sprintf("%s=%s", selected.Service.Name, replicas),
+				"-d",
+			))
+		}
 	}
 
 	// Main View Logic (only when no overlay)
@@ -299,6 +453,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, model.keybindings.switchTab):
 				return model, tea.Batch(cmds...) // Handled by parent
+			case key.Matches(msg, model.keybindings.toggleSelection):
+				model.handleToggleSelection()
+			case key.Matches(msg, model.keybindings.toggleAll):
+				model.handleToggleAll()
 			}
 		}
 	} else if !model.IsOverlayVisible() && !model.IsListFocused() {
@@ -335,9 +493,9 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		return nil
 	}
 
-	serviceName := selectedItem.Service.Name
-	if serviceName != model.currentServiceName {
-		model.currentServiceName = serviceName
+	serviceID := serviceSelectionID(selectedItem.Service)
+	if serviceID != model.currentServiceID {
+		model.currentServiceID = serviceID
 		model.refreshServiceDetails(selectedItem.Service)
 	}
 
@@ -349,6 +507,32 @@ func (model *Model) refreshServiceDetails(service client.Service) {
 	model.SetExtraContent(model.buildComposeContent(service, model.getComposeContentWidth()))
 }
 
+func composeSummary(service client.Service) string {
+	running := 0
+	stopped := 0
+	for _, c := range service.Containers {
+		if c.State == "running" {
+			running++
+		} else {
+			stopped++
+		}
+	}
+
+	project := service.Project
+	if strings.TrimSpace(project) == "" {
+		project = "unknown"
+	}
+
+	return fmt.Sprintf(
+		"Project: %s\nService: %s\nReplicas: %d\nHealth: %d running / %d stopped",
+		project,
+		service.Name,
+		service.Replicas,
+		running,
+		stopped,
+	)
+}
+
 func (model *Model) getComposeContentWidth() int {
 	if vp, ok := model.SplitView.Extra.(*components.ViewportPane); ok {
 		return vp.Viewport.Width()
@@ -358,7 +542,8 @@ func (model *Model) getComposeContentWidth() int {
 
 func (model *Model) buildInspectContent(service client.Service, width int) string {
 	format := model.detailsPanel.GetFormatForDisplay()
-	return builders.BuildServicePanel(service, width, false, format)
+	panel := builders.BuildServicePanel(service, width, false, format)
+	return composeSummary(service) + "\n\n" + panel
 }
 
 func (model *Model) buildComposeContent(service client.Service, width int) string {
@@ -428,6 +613,209 @@ func (model *Model) handleToggleFormat() tea.Cmd {
 	}
 
 	return cmd
+}
+
+func (model *Model) composeProjectCommand(actionLabel string, args ...string) tea.Cmd {
+	targets := model.selectedServices()
+	if len(targets) == 0 {
+		return nil
+	}
+
+	project := strings.TrimSpace(targets[0].Project)
+	workingDir := strings.TrimSpace(targets[0].WorkingDir)
+	composeFile := strings.TrimSpace(targets[0].ComposeFile)
+	serviceNames := make([]string, 0, len(targets))
+	serviceIDs := make([]string, 0, len(targets))
+	for _, service := range targets {
+		if strings.TrimSpace(service.Project) == "" {
+			return notifications.ShowError(fmt.Errorf("service %q is not part of a compose project", service.Name))
+		}
+		if service.Project != project {
+			return notifications.ShowError(fmt.Errorf("selected services must belong to the same compose project"))
+		}
+		serviceNames = append(serviceNames, service.Name)
+		serviceIDs = append(serviceIDs, serviceSelectionID(service))
+	}
+
+	return func() tea.Msg {
+		return MsgComposeActionStart{
+			Action:       actionLabel,
+			Project:      project,
+			ServiceNames: serviceNames,
+			ServiceIDs:   serviceIDs,
+			Args:         args,
+			WorkingDir:   workingDir,
+			ComposeFile:  composeFile,
+		}
+	}
+}
+
+func (model *Model) showScaleDialog() {
+	targets := model.selectedServices()
+	if len(targets) != 1 {
+		return
+	}
+	selected := targets[0]
+
+	fields := []components.FormField{
+		{
+			Label:       "Replicas",
+			Placeholder: "e.g. 3",
+			Value:       fmt.Sprintf("%d", selected.Replicas),
+			Required:    true,
+		},
+	}
+
+	dialog := components.NewFormDialog(
+		"Scale Service",
+		fields,
+		base.SmartDialogAction{Type: "ScaleServiceAction"},
+		nil,
+	)
+	model.SetOverlay(dialog)
+}
+
+func (model *Model) selectedServices() []client.Service {
+	selectedIDs := model.GetSelectedIDs()
+	if len(selectedIDs) > 0 {
+		items := model.GetItems()
+		services := make([]client.Service, 0, len(selectedIDs))
+		for _, item := range items {
+			if !slices.Contains(selectedIDs, serviceSelectionID(item.Service)) {
+				continue
+			}
+			services = append(services, item.Service)
+		}
+		return services
+	}
+
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		return nil
+	}
+
+	return []client.Service{selected.Service}
+}
+
+func (model *Model) setWorkingState(serviceIDs []string, working bool) tea.Cmd {
+	var cmds []tea.Cmd
+	items := model.GetItems()
+	for i, item := range items {
+		if !slices.Contains(serviceIDs, serviceSelectionID(item.Service)) {
+			continue
+		}
+		item.isWorking = working
+		if working {
+			item.spinner = newSpinner()
+			spin := item.spinner
+			cmds = append(cmds, func() tea.Msg { return spin.Tick() })
+		}
+		model.SetItem(i, item)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (model *Model) applyServicesLoaded(fresh []ServiceItem) {
+	current := model.GetItems()
+	byName := make(map[string]ServiceItem, len(current))
+	for _, item := range current {
+		byName[serviceSelectionID(item.Service)] = item
+	}
+
+	updated := make([]ServiceItem, 0, len(fresh))
+	for _, item := range fresh {
+		prev, ok := byName[serviceSelectionID(item.Service)]
+		if ok {
+			item.isWorking = prev.isWorking
+			item.isSelected = prev.isSelected
+			item.spinner = prev.spinner
+		} else {
+			item.spinner = newSpinner()
+		}
+		updated = append(updated, item)
+	}
+
+	listItems := make([]list.Item, len(updated))
+	for i, item := range updated {
+		listItems[i] = item
+	}
+	_ = model.SplitView.List.SetItems(listItems)
+}
+
+func (model *Model) performComposeAction(msg MsgComposeActionStart) tea.Cmd {
+	return func() tea.Msg {
+		err := state.GetClient().RunComposeCommand(stdcontext.Background(), msg.WorkingDir, msg.ComposeFile, msg.Args...)
+		if err != nil {
+			return MsgComposeActionResult{
+				Action:       msg.Action,
+				Project:      msg.Project,
+				ServiceNames: msg.ServiceNames,
+				ServiceIDs:   msg.ServiceIDs,
+				Err:          fmt.Errorf("compose %s failed for project %q: %w", msg.Action, msg.Project, err),
+			}
+		}
+
+		return MsgComposeActionResult{
+			Action:       msg.Action,
+			Project:      msg.Project,
+			ServiceNames: msg.ServiceNames,
+			ServiceIDs:   msg.ServiceIDs,
+		}
+	}
+}
+
+func (model *Model) performServiceAction(msg MsgServiceActionStart) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		switch msg.Action {
+		case "start":
+			err = state.GetClient().StartContainers(stdcontext.Background(), msg.ContainerIDs)
+		case "stop":
+			err = state.GetClient().StopContainers(stdcontext.Background(), msg.ContainerIDs)
+		case "restart":
+			err = state.GetClient().RestartContainers(stdcontext.Background(), msg.ContainerIDs)
+		default:
+			err = fmt.Errorf("unsupported service action %q", msg.Action)
+		}
+
+		if err != nil {
+			return MsgServiceActionResult{
+				Action:       msg.Action,
+				ServiceNames: msg.ServiceNames,
+				ServiceIDs:   msg.ServiceIDs,
+				Err:          fmt.Errorf("failed to %s services: %w", msg.Action, err),
+			}
+		}
+
+		return MsgServiceActionResult{
+			Action:       msg.Action,
+			ServiceNames: msg.ServiceNames,
+			ServiceIDs:   msg.ServiceIDs,
+		}
+	}
+}
+
+func (model *Model) handleToggleSelection() {
+	selected := model.GetSelectedItem()
+	if selected == nil || selected.isWorking {
+		return
+	}
+
+	model.HandleToggleSelection()
+	index := model.GetSelectedIndex()
+	if item := model.GetSelectedItem(); item != nil {
+		item.isSelected = model.Selections.IsSelected(serviceSelectionID(item.Service))
+		model.SetItem(index, *item)
+	}
+}
+
+func (model *Model) handleToggleAll() {
+	model.HandleToggleAll()
+	items := model.GetItems()
+	for i, item := range items {
+		item.isSelected = model.Selections.IsSelected(serviceSelectionID(item.Service))
+		model.SetItem(i, item)
+	}
 }
 
 func (model Model) View() string {

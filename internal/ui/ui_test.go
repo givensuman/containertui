@@ -54,7 +54,6 @@ func TestCrossTabRefreshTargets(t *testing.T) {
 		wantImages     bool
 		wantVolumes    bool
 		wantNetworks   bool
-		wantServices   bool
 		wantBrowse     bool
 	}{
 		{
@@ -101,15 +100,14 @@ func TestCrossTabRefreshTargets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse := crossTabRefreshTargets(tc.msg)
+			refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshBrowse := crossTabRefreshTargets(tc.msg)
 
 			if refreshContainers != tc.wantContainers ||
 				refreshImages != tc.wantImages ||
 				refreshVolumes != tc.wantVolumes ||
 				refreshNetworks != tc.wantNetworks ||
-				refreshServices != tc.wantServices ||
 				refreshBrowse != tc.wantBrowse {
-				t.Fatalf("unexpected refresh targets: got c=%t i=%t v=%t n=%t s=%t b=%t", refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse)
+				t.Fatalf("unexpected refresh targets: got c=%t i=%t v=%t n=%t b=%t", refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshBrowse)
 			}
 		})
 	}

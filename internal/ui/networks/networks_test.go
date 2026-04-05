@@ -1,6 +1,7 @@
 package networks
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -96,5 +97,31 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 	b := newDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
+
+func TestPruneNetworksConfirmationUsesSafetyHelper(t *testing.T) {
+	model := newPruneTestModel([]NetworkItem{
+		{Network: client.Network{Name: "custom-a", ID: "n1"}, IsActive: false},
+		{Network: client.Network{Name: "custom-b", ID: "n2"}, IsActive: false},
+		{Network: client.Network{Name: "bridge", ID: "n3"}, IsActive: false},
+	})
+
+	model.showPruneNetworksConfirmation()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected prune networks confirmation overlay")
+	}
+
+	dialog, ok := model.Foreground.(components.Dialog)
+	if !ok {
+		t.Fatalf("expected dialog overlay, got %T", model.Foreground)
+	}
+
+	text := fmt.Sprint(dialog.View())
+	if !strings.Contains(text, "Prune 2 networks") {
+		t.Fatalf("expected prune count in dialog, got %q", text)
+	}
+	if !strings.Contains(text, "custom-a") {
+		t.Fatalf("expected sample network name in dialog, got %q", text)
 	}
 }

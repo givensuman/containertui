@@ -1,6 +1,7 @@
 package images
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -206,5 +207,45 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 	b := newDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
+	}
+}
+
+func TestPruneImagesConfirmationUsesSafetyHelper(t *testing.T) {
+	model := newPruneTestModel([]ImageItem{
+		{Image: client.Image{ID: "img-used", RepoTags: []string{"busybox:latest"}}, InUse: true},
+		{Image: client.Image{ID: "img-unused-1", RepoTags: []string{"nginx:latest"}}, InUse: false},
+		{Image: client.Image{ID: "img-unused-2", RepoTags: []string{"redis:7"}}, InUse: false},
+	})
+
+	model.showPruneImagesConfirmation()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected prune images confirmation overlay")
+	}
+
+	dialog, ok := model.Foreground.(components.Dialog)
+	if !ok {
+		t.Fatalf("expected dialog overlay, got %T", model.Foreground)
+	}
+
+	text := fmt.Sprint(dialog.View())
+	if !strings.Contains(text, "Prune 2 images") {
+		t.Fatalf("expected prune count in dialog, got %q", text)
+	}
+	if !strings.Contains(text, "nginx:latest") {
+		t.Fatalf("expected sample image name in dialog, got %q", text)
+	}
+}
+
+func TestPruneImageCandidatesFallsBackToImageID(t *testing.T) {
+	model := newPruneTestModel([]ImageItem{
+		{Image: client.Image{ID: "sha256:abcdef1234567890", RepoTags: nil}, InUse: false},
+	})
+
+	candidates := model.pruneImageCandidates()
+	if len(candidates) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(candidates))
+	}
+	if candidates[0] != "abcdef123456" {
+		t.Fatalf("fallback candidate = %q, want %q", candidates[0], "abcdef123456")
 	}
 }

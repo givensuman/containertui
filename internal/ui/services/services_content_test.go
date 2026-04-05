@@ -54,3 +54,26 @@ func TestBuildInspectContentReturnsPanelData(t *testing.T) {
 		t.Fatal("expected inspect content to be non-empty")
 	}
 }
+
+func TestBuildInspectContentIncludesComposeSummary(t *testing.T) {
+	detailsPanel := components.NewDetailsPanel()
+	detailsPanel.SetCurrentFormat("yaml")
+	model := Model{detailsPanel: detailsPanel}
+	service := client.Service{
+		Project:  "demo",
+		Name:     "api",
+		Replicas: 2,
+		Containers: []client.Container{
+			{State: "running"},
+			{State: "exited"},
+		},
+	}
+
+	content := model.buildInspectContent(service, 80)
+	if !strings.Contains(content, "Project: demo") {
+		t.Fatalf("expected compose summary in inspect content, got %q", content)
+	}
+	if !strings.Contains(content, "Health: 1 running / 1 stopped") {
+		t.Fatalf("expected health summary in inspect content, got %q", content)
+	}
+}

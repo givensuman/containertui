@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -406,10 +407,25 @@ func (clientWrapper *ClientWrapper) RestartContainers(ctx context.Context, conta
 
 // Service represents a Docker Compose service.
 type Service struct {
+	Project     string
 	Name        string
 	Replicas    int
 	Containers  []Container
+	WorkingDir  string
 	ComposeFile string
+}
+
+func resolveComposeFilePath(workingDir, composeFile string) string {
+	trimmed := strings.TrimSpace(composeFile)
+	if trimmed == "" {
+		return ""
+	}
+
+	if filepath.IsAbs(trimmed) || strings.TrimSpace(workingDir) == "" {
+		return trimmed
+	}
+
+	return filepath.Join(workingDir, trimmed)
 }
 
 // GetServices retrieves services based on docker-compose labels from containers.
@@ -440,7 +456,7 @@ func (clientWrapper *ClientWrapper) GetServices(ctx context.Context) ([]Service,
 				if configFiles != "" {
 					files := strings.Split(configFiles, ",")
 					if len(files) > 0 {
-						composeFile = files[0]
+						composeFile = resolveComposeFilePath(workingDir, files[0])
 					}
 				}
 				if composeFile == "" && workingDir != "" {
@@ -460,9 +476,11 @@ func (clientWrapper *ClientWrapper) GetServices(ctx context.Context) ([]Service,
 				}
 
 				servicesMap[key] = &Service{
+					Project:     projectName,
 					Name:        serviceName,
 					Replicas:    0,
 					Containers:  []Container{},
+					WorkingDir:  workingDir,
 					ComposeFile: composeFile,
 				}
 			}
@@ -476,6 +494,31 @@ func (clientWrapper *ClientWrapper) GetServices(ctx context.Context) ([]Service,
 		services = append(services, *s)
 	}
 	return services, nil
+}
+
+// RunComposeCommand runs a docker compose command for a project context.
+func (clientWrapper *ClientWrapper) RunComposeCommand(ctx context.Context, workingDir, composeFile string, args ...string) error {
+	commandArgs := []string{"compose"}
+	if strings.TrimSpace(composeFile) != "" {
+		commandArgs = append(commandArgs, "-f", composeFile)
+	}
+	commandArgs = append(commandArgs, args...)
+
+	cmd := exec.CommandContext(ctx, "docker", commandArgs...)
+	if strings.TrimSpace(workingDir) != "" {
+		cmd.Dir = workingDir
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			return fmt.Errorf("failed to run docker %s: %w", strings.Join(commandArgs, " "), err)
+		}
+		return fmt.Errorf("failed to run docker %s: %w: %s", strings.Join(commandArgs, " "), err, trimmed)
+	}
+
+	return nil
 }
 
 // Logs represents the response from Moby's ContainerLogs.

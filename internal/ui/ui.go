@@ -19,7 +19,6 @@ import (
 	"github.com/givensuman/containertui/internal/ui/images"
 	"github.com/givensuman/containertui/internal/ui/networks"
 	"github.com/givensuman/containertui/internal/ui/notifications"
-	"github.com/givensuman/containertui/internal/ui/services"
 	"github.com/givensuman/containertui/internal/ui/tabs"
 	"github.com/givensuman/containertui/internal/ui/volumes"
 )
@@ -34,7 +33,6 @@ type Model struct {
 	imagesModel        images.Model
 	volumesModel       volumes.Model
 	networksModel      networks.Model
-	servicesModel      services.Model
 	browseModel        browse.Model
 	notificationsModel notifications.Model
 	help               help.Model
@@ -48,7 +46,6 @@ func NewModel(startupTab tabs.Tab) Model {
 	imagesModel := images.New()
 	volumesModel := volumes.New()
 	networksModel := networks.New()
-	servicesModel := services.New()
 	browseModel := browse.New()
 	notificationsModel := notifications.New()
 
@@ -63,7 +60,6 @@ func NewModel(startupTab tabs.Tab) Model {
 		imagesModel:        imagesModel,
 		volumesModel:       volumesModel,
 		networksModel:      networksModel,
-		servicesModel:      servicesModel,
 		browseModel:        browseModel,
 		notificationsModel: notificationsModel,
 		help:               helpModel,
@@ -76,7 +72,6 @@ func (model Model) Init() tea.Cmd {
 		model.imagesModel.Init(),
 		model.volumesModel.Init(),
 		model.networksModel.Init(),
-		model.servicesModel.Init(),
 		model.browseModel.Init(),
 	)
 }
@@ -84,7 +79,7 @@ func (model Model) Init() tea.Cmd {
 func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse := crossTabRefreshTargets(msg)
+	refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshBrowse := crossTabRefreshTargets(msg)
 
 	if refreshContainers {
 		var containersCmd tea.Cmd
@@ -105,11 +100,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var networksCmd tea.Cmd
 		model.networksModel, networksCmd = model.networksModel.Update(msg)
 		cmds = append(cmds, networksCmd)
-	}
-	if refreshServices {
-		var servicesCmd tea.Cmd
-		model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
-		cmds = append(cmds, servicesCmd)
 	}
 	if refreshBrowse {
 		var browseCmd tea.Cmd
@@ -150,10 +140,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.networksModel, networksCmd = model.networksModel.Update(contentMsg)
 		cmds = append(cmds, networksCmd)
 
-		var servicesCmd tea.Cmd
-		model.servicesModel, servicesCmd = model.servicesModel.Update(contentMsg)
-		cmds = append(cmds, servicesCmd)
-
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
@@ -176,9 +162,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tabs.Networks:
 			isFiltering = model.networksModel.IsFiltering()
 			hasOverlay = model.networksModel.IsOverlayVisible()
-		case tabs.Services:
-			isFiltering = model.servicesModel.IsFiltering()
-			hasOverlay = model.servicesModel.IsOverlayVisible()
 		case tabs.Browse:
 			isFiltering = model.browseModel.IsFiltering()
 			hasOverlay = model.browseModel.IsOverlayVisible()
@@ -273,14 +256,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, networksCmd)
 			}
 		}
-	case tabs.Services:
-		if !refreshServices {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
-				var servicesCmd tea.Cmd
-				model.servicesModel, servicesCmd = model.servicesModel.Update(msg)
-				cmds = append(cmds, servicesCmd)
-			}
-		}
 	case tabs.Browse:
 		if !refreshBrowse {
 			if _, ok := msg.(tea.WindowSizeMsg); !ok {
@@ -295,7 +270,6 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model.imagesModel.IsOverlayVisible() ||
 		model.volumesModel.IsOverlayVisible() ||
 		model.networksModel.IsOverlayVisible() ||
-		model.servicesModel.IsOverlayVisible() ||
 		model.browseModel.IsOverlayVisible() {
 		model.help.ShowAll = false
 	}
@@ -303,34 +277,34 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func crossTabRefreshTargets(msg tea.Msg) (refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshServices, refreshBrowse bool) {
+func crossTabRefreshTargets(msg tea.Msg) (refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshBrowse bool) {
 	switch typed := msg.(type) {
 	case base.MsgContainerCreated:
 		_ = typed
-		return true, false, false, false, false, false
+		return true, false, false, false, false
 	case base.MsgImagePulled:
 		_ = typed
-		return false, true, false, false, false, false
+		return false, true, false, false, false
 	case base.MsgResourceChanged:
 		switch typed.Resource {
 		case base.ResourceContainer:
-			return true, false, false, false, false, false
+			return true, false, false, false, false
 		case base.ResourceImage:
-			return false, true, false, false, false, false
+			return false, true, false, false, false
 		case base.ResourceVolume:
-			return false, false, true, false, false, false
+			return false, false, true, false, false
 		case base.ResourceNetwork:
-			return false, false, false, true, false, false
+			return false, false, false, true, false
 		}
 	case containers.MsgContainersRefreshed:
 		_ = typed
-		return true, false, false, false, false, false
+		return true, false, false, false, false
 	case containers.MsgRefreshContainers:
 		_ = typed
-		return true, false, false, false, false, false
+		return true, false, false, false, false
 	}
 
-	return false, false, false, false, false, false
+	return false, false, false, false, false
 }
 
 type helpProvider interface {
@@ -389,8 +363,6 @@ func (model Model) View() tea.View {
 		contentViewContent = model.volumesModel.View()
 	case tabs.Networks:
 		contentViewContent = model.networksModel.View()
-	case tabs.Services:
-		contentViewContent = model.servicesModel.View()
 	case tabs.Browse:
 		contentViewContent = model.browseModel.View()
 	}
@@ -409,8 +381,6 @@ func (model Model) View() tea.View {
 		currentHelp = model.volumesModel
 	case tabs.Networks:
 		currentHelp = model.networksModel
-	case tabs.Services:
-		currentHelp = model.servicesModel
 	case tabs.Browse:
 		currentHelp = model.browseModel
 	}

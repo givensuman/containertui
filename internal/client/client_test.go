@@ -226,3 +226,40 @@ func TestCreateTarArchiveIncludesBuildContextFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveComposeFilePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		workingDir string
+		input      string
+		want       string
+	}{
+		{
+			name:       "relative file joins with working dir",
+			workingDir: "/tmp/project",
+			input:      "compose.yml",
+			want:       "/tmp/project/compose.yml",
+		},
+		{
+			name:       "absolute file remains absolute",
+			workingDir: "/tmp/project",
+			input:      "/etc/compose.yml",
+			want:       "/etc/compose.yml",
+		},
+		{
+			name:       "empty compose file",
+			workingDir: "/tmp/project",
+			input:      "",
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveComposeFilePath(tt.workingDir, tt.input)
+			if got != tt.want {
+				t.Fatalf("resolveComposeFilePath(%q, %q) = %q, want %q", tt.workingDir, tt.input, got, tt.want)
+			}
+		})
+	}
+}
