@@ -17,10 +17,6 @@ Add coloration like in Containers tab?
 -- Browse tab --
 Shorten item description by a few characters to prevent "<description>..." from touching the README panel
 
--- All tabs --
-Before opening "Pruning <...>\nThis may take a while..." overlay, check if there's anything to prune to prevent a flashing of the overlay.
-Add Shift+Tab functionality and document Tab and Shift+Tab in the help menu.
-
 -- Other --
 Polish up demo experience.
 Get VHS tapes working.

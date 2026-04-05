@@ -4,6 +4,8 @@ charm.land/bubbletea/v2 v2.0.0-rc.2 h1:TdTbUOFzbufDJmSz/3gomL6q+fR6HwfY+P13hXQzD
 charm.land/bubbletea/v2 v2.0.0-rc.2/go.mod h1:IXFmnCnMLTWw/KQ9rEatSYqbAPAYi8kA3Yqwa1SFnLk=
 charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106192539-4b304240aab7 h1:059k1h5vvZ4ASinki9nmBguxu9Rq0UDDSa6q8LOUphk=
 charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106192539-4b304240aab7/go.mod h1:1qZyvvVCenJO2M1ac2mX0yyiIZJoZmDM4DG4s0udJkU=
+charm.land/x v0.1.0 h1:IUuQ+AlmsBLgemvmIQN6ehWlqvN5ym/XgSlXXxtR5bg=
+charm.land/x v0.1.0/go.mod h1:qKL7unmYlsSGXeEM4KR2/OmggnKujmvGnBIbfG0W5is=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/Microsoft/go-winio v0.4.21 h1:+6mVbXh4wPzUrl1COX9A+ZCvEpYsOBZ6/+kwDnvLyro=
@@ -36,6 +38,8 @@ github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 h1:ZR7e0r
 github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834/go.mod h1:aKC/t2arECF6rNOnaKaVU6y4t4ZeHQzqfxedE/VkVhA=
 github.com/charmbracelet/ultraviolet v0.0.0-20251116181749-377898bcce38 h1:7Rs87fbKJoIIxsQS8YKJYGYa0tlsDwwb0twQjV1KB+g=
 github.com/charmbracelet/ultraviolet v0.0.0-20251116181749-377898bcce38/go.mod h1:6lfcr3MNP+kZR25sF1nQwJFuQnNYBlFy3PGX5rvslXc=
+github.com/charmbracelet/x v0.1.0 h1:/MAmoZV+UIm4P9LxQBoQ2oK49wu/ewabHLFG4Gspc4c=
+github.com/charmbracelet/x v0.1.0/go.mod h1:tfPuVPqtgK3n1KbwMw4oEq3Fruetob3nM14pFgMVFzs=
 github.com/charmbracelet/x/ansi v0.11.4 h1:6G65PLu6HjmE858CnTUQY1LXT3ZUWwfvqEROLF8vqHI=
 github.com/charmbracelet/x/ansi v0.11.4/go.mod h1:/5AZ+UfWExW3int5H5ugnsG/PWjNcSQcwYsHBlPFQN4=
 github.com/charmbracelet/x/cellbuf v0.0.14 h1:iUEMryGyFTelKW3THW4+FfPgi4fkmKnnaLOXuc+/Kj4=

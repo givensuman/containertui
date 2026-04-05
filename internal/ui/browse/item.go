@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
+	"github.com/charmbracelet/x/ansi"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/givensuman/containertui/internal/colors"
@@ -107,7 +108,8 @@ func (item BrowseItem) Title() string {
 
 func (item BrowseItem) Description() string {
 	if item.Image.ShortDescription != "" {
-		return "   " + item.Image.ShortDescription
+		description := item.Image.ShortDescription
+		return "   " + ansi.Truncate(description, 64, "...")
 	}
 	return "   No description available"
 }
