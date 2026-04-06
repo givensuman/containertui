@@ -6,28 +6,18 @@ func TestResolveStartupTab(t *testing.T) {
 	tests := []struct {
 		name       string
 		configTab  string
-		flagTab    string
 		subcommand string
 		want       string
 	}{
 		{
 			name:       "uses config startup tab when no overrides are provided",
 			configTab:  "images",
-			flagTab:    "",
 			subcommand: "",
 			want:       "images",
 		},
 		{
-			name:       "uses --startup-tab flag over config value",
+			name:       "uses subcommand tab over config value",
 			configTab:  "images",
-			flagTab:    "services",
-			subcommand: "",
-			want:       "services",
-		},
-		{
-			name:       "uses subcommand tab over --startup-tab flag",
-			configTab:  "images",
-			flagTab:    "services",
 			subcommand: "volumes",
 			want:       "volumes",
 		},
@@ -35,9 +25,9 @@ func TestResolveStartupTab(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveStartupTab(tt.configTab, tt.flagTab, tt.subcommand)
+			got := resolveStartupTab(tt.configTab, tt.subcommand)
 			if got != tt.want {
-				t.Fatalf("resolveStartupTab(%q, %q, %q) = %q, want %q", tt.configTab, tt.flagTab, tt.subcommand, got, tt.want)
+				t.Fatalf("resolveStartupTab(%q, %q) = %q, want %q", tt.configTab, tt.subcommand, got, tt.want)
 			}
 		})
 	}

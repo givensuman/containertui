@@ -6,9 +6,7 @@ Revise search dropdown style/implementation.
 Support podman, integrate this into UI somehow
 
 [EASY]
-Remove --startup-tab argument
 "Build image FROM" "Pull image FROM"
-Pulling images doesn't immediately populate them in image list
 
 -- Other --
 Get VHS tapes working.

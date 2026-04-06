@@ -12,12 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func resolveStartupTab(configTab, flagTab, subcommandTab string) string {
+func resolveStartupTab(configTab, subcommandTab string) string {
 	startupTab := strings.TrimSpace(configTab)
-
-	if strings.TrimSpace(flagTab) != "" {
-		startupTab = strings.TrimSpace(flagTab)
-	}
 
 	if strings.TrimSpace(subcommandTab) != "" {
 		startupTab = strings.TrimSpace(subcommandTab)
@@ -26,7 +22,7 @@ func resolveStartupTab(configTab, flagTab, subcommandTab string) string {
 	return startupTab
 }
 
-func runContainertui(cmd *cobra.Command, tabName string, startupTab string, noNerdFonts bool, configPath string, colorsFlag []string, jsonFormat bool) error {
+func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, configPath string, colorsFlag []string, jsonFormat bool) error {
 	var cfg *config.Config
 	var err error
 	if configPath != "" {
@@ -46,7 +42,7 @@ func runContainertui(cmd *cobra.Command, tabName string, startupTab string, noNe
 		cfg.InspectionFormat = "json"
 	}
 
-	cfg.StartupTab = resolveStartupTab(cfg.StartupTab, startupTab, tabName)
+	cfg.StartupTab = resolveStartupTab(cfg.StartupTab, tabName)
 
 	if len(colorsFlag) > 0 {
 		colorOverrides, err := colors.ParseColors(colorsFlag)
@@ -107,7 +103,6 @@ func main() {
 	var configPath string
 	var colorsFlag []string
 	var jsonFormat bool
-	var startupTab string
 
 	// Create subcommand runner factory
 	makeSubcommand := func(tabName string, use string, short string) *cobra.Command {
@@ -115,7 +110,7 @@ func main() {
 			Use:   use,
 			Short: short,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runContainertui(cmd, tabName, startupTab, noNerdFonts, configPath, colorsFlag, jsonFormat)
+				return runContainertui(cmd, tabName, noNerdFonts, configPath, colorsFlag, jsonFormat)
 			},
 		}
 	}
@@ -124,7 +119,7 @@ func main() {
 		Use:   "containertui",
 		Short: "a tui for managing container lifecycles",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runContainertui(cmd, "", startupTab, noNerdFonts, configPath, colorsFlag, jsonFormat)
+			return runContainertui(cmd, "", noNerdFonts, configPath, colorsFlag, jsonFormat)
 		},
 	}
 
@@ -141,7 +136,6 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 	rootCmd.PersistentFlags().StringSliceVar(&colorsFlag, "colors", nil, "color overrides (format: --colors 'primary=#b4befe' --colors 'warning=#f9e2af,success=#a6e3a1')")
 	rootCmd.PersistentFlags().BoolVar(&jsonFormat, "json", false, "use JSON format for inspection output")
-	rootCmd.PersistentFlags().StringVar(&startupTab, "startup-tab", "", "startup tab (containers, images, volumes, networks, services, browse)")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
