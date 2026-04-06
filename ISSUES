@@ -7,6 +7,7 @@ Support podman, integrate this into UI somehow
 
 [EASY]
 Remove --startup-tab argument
+"Build image FROM" "Pull image FROM"
 
 -- Other --
 Get VHS tapes working.

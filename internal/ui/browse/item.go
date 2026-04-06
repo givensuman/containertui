@@ -5,9 +5,9 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
-	"github.com/charmbracelet/x/ansi"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/state"
