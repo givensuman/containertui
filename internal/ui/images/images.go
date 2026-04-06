@@ -29,6 +29,33 @@ import (
 	"github.com/givensuman/containertui/internal/ui/utils"
 )
 
+func extractTagImageActionPayload(payload map[string]any) (string, string, error) {
+	imageID, ok := payload["imageID"].(string)
+	if !ok || imageID == "" {
+		metadata, metadataOK := payload["metadata"].(map[string]any)
+		if !metadataOK {
+			return "", "", fmt.Errorf("invalid image ID")
+		}
+
+		imageID, ok = metadata["imageID"].(string)
+		if !ok || imageID == "" {
+			return "", "", fmt.Errorf("invalid image ID")
+		}
+	}
+
+	formValues, ok := payload["values"].(map[string]string)
+	if !ok {
+		return "", "", fmt.Errorf("invalid form values")
+	}
+
+	newTag := formValues["New Tag"]
+	if newTag == "" {
+		return "", "", fmt.Errorf("tag is required")
+	}
+
+	return imageID, newTag, nil
+}
+
 // MsgImageInspection contains the inspection data for an image.
 type MsgImageInspection struct {
 	ID    string
@@ -848,26 +875,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
 				}
-				metadata, ok := payload["metadata"].(map[string]any)
-				if !ok {
+				imageID, newTag, err := extractTagImageActionPayload(payload)
+				if err != nil {
 					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid metadata"))
-				}
-				imageID, ok := metadata["imageID"].(string)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid image ID"))
-				}
-				formValues, ok := payload["values"].(map[string]string)
-				if !ok {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
-				}
-
-				newTag := formValues["New Tag"]
-				if newTag == "" {
-					model.CloseOverlay()
-					return model, notifications.ShowError(fmt.Errorf("tag is required"))
+					return model, notifications.ShowError(err)
 				}
 
 				model.CloseOverlay()

@@ -310,3 +310,53 @@ func TestBuildImageUsageAndHistoryContentWithNoDependenciesMarksSafeCleanup(t *t
 		t.Fatalf("expected safe cleanup recommendation for unused image, got %q", content)
 	}
 }
+
+func TestExtractTagImageActionPayloadSupportsFlatMetadata(t *testing.T) {
+	payload := map[string]any{
+		"imageID": "sha256:abc123",
+		"values":  map[string]string{"New Tag": "demo/app:v1"},
+	}
+
+	imageID, newTag, err := extractTagImageActionPayload(payload)
+	if err != nil {
+		t.Fatalf("expected payload parsing success, got error: %v", err)
+	}
+	if imageID != "sha256:abc123" {
+		t.Fatalf("unexpected imageID %q", imageID)
+	}
+	if newTag != "demo/app:v1" {
+		t.Fatalf("unexpected new tag %q", newTag)
+	}
+}
+
+func TestExtractTagImageActionPayloadSupportsLegacyNestedMetadata(t *testing.T) {
+	payload := map[string]any{
+		"metadata": map[string]any{"imageID": "sha256:def456"},
+		"values":   map[string]string{"New Tag": "demo/app:v2"},
+	}
+
+	imageID, newTag, err := extractTagImageActionPayload(payload)
+	if err != nil {
+		t.Fatalf("expected payload parsing success, got error: %v", err)
+	}
+	if imageID != "sha256:def456" {
+		t.Fatalf("unexpected imageID %q", imageID)
+	}
+	if newTag != "demo/app:v2" {
+		t.Fatalf("unexpected new tag %q", newTag)
+	}
+}
+
+func TestExtractTagImageActionPayloadRequiresImageID(t *testing.T) {
+	payload := map[string]any{
+		"values": map[string]string{"New Tag": "demo/app:v1"},
+	}
+
+	_, _, err := extractTagImageActionPayload(payload)
+	if err == nil {
+		t.Fatal("expected error when imageID is missing")
+	}
+	if !strings.Contains(err.Error(), "invalid image ID") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
