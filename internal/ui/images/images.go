@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/docker/docker/api/types"
+	imagetypes "github.com/docker/docker/api/types/image"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
@@ -341,6 +342,8 @@ type Model struct {
 	pullLayers         map[string]pullLayerProgress
 	pullPercent        float64
 	buildPercent       float64
+	activeOperation    string
+	operationCancel    stdcontext.CancelFunc
 }
 
 type pullLayerProgress struct {
@@ -443,6 +446,17 @@ func (model Model) Init() tea.Cmd {
 }
 
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" && model.activeOperation != "" {
+		if model.operationCancel != nil {
+			model.operationCancel()
+		}
+		op := model.activeOperation
+		model.activeOperation = ""
+		model.operationCancel = nil
+		model.CloseOverlay()
+		return model, notifications.ShowInfo(fmt.Sprintf("Cancelled %s operation", op))
+	}
+
 	// 1. Try standard ResourceView updates first (resizing, dialog closing, basic navigation)
 	updatedView, cmd := model.ResourceView.Update(msg)
 	model.ResourceView = updatedView
@@ -465,6 +479,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return model, nil
 
 	case MsgPullComplete:
+		model.activeOperation = ""
+		model.operationCancel = nil
 		if msg.Err != nil {
 			// Show error dialog
 			errorDialog := components.NewDialog(
@@ -650,6 +666,8 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		)
 
 	case MsgBuildImageComplete:
+		model.activeOperation = ""
+		model.operationCancel = nil
 		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
 			_ = progressDialog.SetPercent(1.0)
 		}
@@ -764,9 +782,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				progressChan := make(chan string, 100)
 				doneChan := make(chan error, 1)
+				ctx, cancel := stdcontext.WithCancel(stdcontext.Background())
+				model.activeOperation = "pull"
+				model.operationCancel = cancel
 
 				go func() {
-					err := state.GetClient().PullImage(stdcontext.Background(), imageName, progressChan)
+					err := state.GetClient().PullImage(ctx, imageName, progressChan)
 					doneChan <- err
 					close(doneChan)
 				}()
@@ -893,7 +914,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				progressDialog.SetStatus("Preparing build context...")
 				model.SetOverlay(progressDialog)
 				model.buildPercent = 0
-				return model, model.performBuildImage(dockerfile, tag, contextPath, buildArgsMap)
+				model.activeOperation = "build"
+				ctx, cancel := stdcontext.WithCancel(stdcontext.Background())
+				model.operationCancel = cancel
+				return model, model.performBuildImage(ctx, dockerfile, tag, contextPath, buildArgsMap)
 			}
 
 			model.CloseOverlay()
@@ -1188,21 +1212,71 @@ func (model *Model) updateUsedByPanel() {
 		return
 	}
 
+	history, err := state.GetClient().ImageHistory(stdcontext.Background(), model.inspection.ID)
+	if err != nil {
+		history = nil
+	}
+
+	model.SetExtraContent(buildImageUsageAndHistoryContent(model.inspection, usedBy, history))
+}
+
+func buildImageUsageAndHistoryContent(inspection types.ImageInspect, usedBy []string, history []imagetypes.HistoryResponseItem) string {
+	var b strings.Builder
+	b.WriteString("Usage\n")
 	if len(usedBy) == 0 {
-		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this image"))
-		return
-	}
-
-	// Build a formatted list of containers
-	var output strings.Builder
-	for i, containerName := range usedBy {
-		if i > 0 {
-			output.WriteString("\n")
+		b.WriteString("No containers using this image\n")
+	} else {
+		b.WriteString(fmt.Sprintf("Used by %d containers:\n", len(usedBy)))
+		for _, name := range usedBy {
+			b.WriteString("• ")
+			b.WriteString(name)
+			b.WriteString("\n")
 		}
-		output.WriteString(fmt.Sprintf("• %s", containerName))
 	}
 
-	model.SetExtraContent(output.String())
+	b.WriteString("\nMetadata\n")
+	b.WriteString(fmt.Sprintf("Layers: %d\n", len(inspection.RootFS.Layers)))
+	b.WriteString(fmt.Sprintf("Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.Size, 0)))))
+	b.WriteString(fmt.Sprintf("Virtual Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.VirtualSize, 0)))))
+	if strings.TrimSpace(inspection.Created) != "" {
+		b.WriteString("Created: ")
+		b.WriteString(inspection.Created)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\nHistory\n")
+	if len(history) == 0 {
+		b.WriteString("No history available\n")
+	} else {
+		limit := len(history)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			entry := strings.TrimSpace(history[i].CreatedBy)
+			if entry == "" {
+				entry = "<unknown instruction>"
+			}
+			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, entry))
+		}
+	}
+
+	b.WriteString("\nCleanup Recommendation\n")
+	if len(usedBy) == 0 {
+		b.WriteString("Safe cleanup candidate: no current container dependencies.")
+	} else {
+		b.WriteString("Keep image for now: active container dependencies detected.")
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+
+	return b
 }
 
 func (model Model) ShortHelp() []key.Binding {
@@ -1449,10 +1523,8 @@ func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
 }
 
 // performBuildImage builds an image from a Dockerfile
-func (model *Model) performBuildImage(dockerfile, tag, contextPath string, buildArgs map[string]string) tea.Cmd {
+func (model *Model) performBuildImage(ctx stdcontext.Context, dockerfile, tag, contextPath string, buildArgs map[string]string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := stdcontext.Background()
-
 		// Convert buildArgs to map[string]*string
 		buildArgsPtr := make(map[string]*string)
 		for k, v := range buildArgs {

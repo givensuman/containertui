@@ -8,6 +8,10 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/state"
@@ -247,5 +251,62 @@ func TestPruneImageCandidatesFallsBackToImageID(t *testing.T) {
 	}
 	if candidates[0] != "abcdef123456" {
 		t.Fatalf("fallback candidate = %q, want %q", candidates[0], "abcdef123456")
+	}
+}
+
+func TestEscCancelsActiveImageOperation(t *testing.T) {
+	model := Model{}
+	cancelled := false
+	model.activeOperation = "pull"
+	model.operationCancel = func() { cancelled = true }
+	model.SetOverlay(components.NewProgressDialogWithBar("Pulling image"))
+
+	updated, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if !cancelled {
+		t.Fatal("expected active image operation to be cancelled on esc")
+	}
+	if updated.activeOperation != "" {
+		t.Fatalf("expected active operation to be cleared, got %q", updated.activeOperation)
+	}
+	if updated.IsOverlayVisible() {
+		t.Fatal("expected overlay to be closed after cancellation")
+	}
+	if cmd == nil {
+		t.Fatal("expected cancellation to return a user feedback command")
+	}
+}
+
+func TestBuildImageUsageAndHistoryContentIncludesMetadataAndCleanupHint(t *testing.T) {
+	inspection := types.ImageInspect{
+		ID:              "sha256:abcdef1234567890",
+		Size:            1_024,
+		VirtualSize:     2_048,
+		Created:         "2025-01-01T00:00:00Z",
+		RootFS:          types.RootFS{Layers: []string{"sha256:l1", "sha256:l2"}},
+		ContainerConfig: &container.Config{},
+	}
+	history := []image.HistoryResponseItem{
+		{CreatedBy: "RUN apk add curl"},
+		{CreatedBy: "CMD [\"sh\"]"},
+	}
+
+	content := buildImageUsageAndHistoryContent(inspection, []string{"api", "worker"}, history)
+	if !strings.Contains(content, "Layers: 2") {
+		t.Fatalf("expected layer count in metadata content, got %q", content)
+	}
+	if !strings.Contains(content, "History") {
+		t.Fatalf("expected history section in metadata content, got %q", content)
+	}
+	if !strings.Contains(strings.ToLower(content), "cleanup recommendation") {
+		t.Fatalf("expected cleanup recommendation in content, got %q", content)
+	}
+}
+
+func TestBuildImageUsageAndHistoryContentWithNoDependenciesMarksSafeCleanup(t *testing.T) {
+	inspection := types.ImageInspect{ID: "sha256:abcdef", RootFS: types.RootFS{Layers: []string{}}, Size: 0, VirtualSize: 0}
+	content := buildImageUsageAndHistoryContent(inspection, nil, nil)
+
+	if !strings.Contains(strings.ToLower(content), "safe cleanup candidate") {
+		t.Fatalf("expected safe cleanup recommendation for unused image, got %q", content)
 	}
 }

@@ -19,10 +19,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
   -o containertui \
   ./cmd/main.go
 
-FROM alpine:latest
+FROM docker:dind
 
 RUN apk add --no-cache \
-  docker-cli \
+  bash \
   ca-certificates \
   fontconfig \
   curl
@@ -34,12 +34,8 @@ RUN mkdir -p /usr/local/share/fonts/nerd-fonts && \
   rm /tmp/JetBrainsMono.zip && \
   fc-cache -fv
 
-# Create non-root user
-RUN addgroup -g 1000 ctui && \
-  adduser -D -u 1000 -G ctui ctui
-
 # Set working directory
-WORKDIR /home/ctui
+WORKDIR /demo
 
 # Copy binary from builder
 COPY --from=builder /build/containertui /usr/local/bin/containertui
@@ -47,11 +43,16 @@ COPY --from=builder /build/containertui /usr/local/bin/containertui
 # Ensure binary is executable
 RUN chmod +x /usr/local/bin/containertui
 
-# Switch to non-root user
-USER ctui
+COPY demos/setup.sh /demo/setup.sh
+COPY demos/cleanup.sh /demo/cleanup.sh
+COPY demos/demo-entrypoint.sh /demo/demo-entrypoint.sh
 
-# Set entrypoint to containertui
-ENTRYPOINT ["containertui"]
+RUN chmod +x /demo/setup.sh /demo/cleanup.sh /demo/demo-entrypoint.sh
 
-# Default command is --help
-CMD ["--help"]
+# Set entrypoint to dual-mode runtime launcher
+ENTRYPOINT ["/demo/demo-entrypoint.sh"]
+
+# Default runtime mode autodetects host socket, then falls back to DinD.
+ENV CTUI_DEMO_MODE=auto
+ENV CTUI_DEMO_SEED=1
+ENV CTUI_DEMO_CLEANUP_ON_EXIT=1

@@ -44,6 +44,18 @@ type MsgCreateVolumeComplete struct {
 	Err        error
 }
 
+type MsgAttachVolumeComplete struct {
+	VolumeName  string
+	ContainerID string
+	Err         error
+}
+
+type MsgDetachVolumeComplete struct {
+	VolumeName  string
+	ContainerID string
+	Err         error
+}
+
 type detailsKeybindings struct {
 	Up         key.Binding
 	Down       key.Binding
@@ -83,6 +95,8 @@ type keybindings struct {
 	remove               key.Binding
 	pruneVolumes         key.Binding
 	createVolume         key.Binding
+	attachVolume         key.Binding
+	detachVolume         key.Binding
 	switchTab            key.Binding
 }
 
@@ -107,6 +121,14 @@ func newKeybindings() *keybindings {
 		createVolume: key.NewBinding(
 			key.WithKeys("n"),
 			key.WithHelp("n", "create volume"),
+		),
+		attachVolume: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "attach volume"),
+		),
+		detachVolume: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "detach volume"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5"),
@@ -189,6 +211,8 @@ func New() Model {
 		volumeKeybindings.remove,
 		volumeKeybindings.pruneVolumes,
 		volumeKeybindings.createVolume,
+		volumeKeybindings.attachVolume,
+		volumeKeybindings.detachVolume,
 	}
 
 	return model
@@ -248,6 +272,24 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgCreateVolumeComplete:
 		return model.handleCreateVolumeComplete(msg)
+
+	case MsgAttachVolumeComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Attached volume %s to container %s", msg.VolumeName, msg.ContainerID)),
+			model.Refresh(),
+		)
+
+	case MsgDetachVolumeComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Detached volume %s from container %s", msg.VolumeName, msg.ContainerID)),
+			model.Refresh(),
+		)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -331,6 +373,44 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				model.CloseOverlay()
 				return model, model.performCreateVolume(name, driver, labelsMap)
+			} else if confirmMsg.Action.Type == "AttachVolumeAction" {
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				values, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+				containerID := strings.TrimSpace(values["Container ID"])
+				volumeName, _ := payload["volumeName"].(string)
+				if containerID == "" || volumeName == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("container ID and volume name are required"))
+				}
+				model.CloseOverlay()
+				return model, model.performAttachVolume(volumeName, containerID)
+			} else if confirmMsg.Action.Type == "DetachVolumeAction" {
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				values, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+				containerID := strings.TrimSpace(values["Container ID"])
+				volumeName, _ := payload["volumeName"].(string)
+				if containerID == "" || volumeName == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("container ID and volume name are required"))
+				}
+				model.CloseOverlay()
+				return model, model.performDetachVolume(volumeName, containerID)
 			}
 			model.CloseOverlay()
 			return model, nil
@@ -365,6 +445,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			case key.Matches(msg, model.keybindings.createVolume):
 				model = model.withCreateVolumeDialog()
+				return model, nil
+			case key.Matches(msg, model.keybindings.attachVolume):
+				model = model.withAttachVolumeDialog()
+				return model, nil
+			case key.Matches(msg, model.keybindings.detachVolume):
+				model = model.withDetachVolumeDialog()
 				return model, nil
 			}
 		}
@@ -564,21 +650,28 @@ func (model *Model) updateUsedByPanel() {
 		return
 	}
 
+	model.SetExtraContent(buildVolumeUsageContent(model.inspection, usedBy))
+}
+
+func buildVolumeUsageContent(inspection volume.Volume, usedBy []string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Driver: %s\n", inspection.Driver))
+	b.WriteString(fmt.Sprintf("Mountpoint: %s\n\n", inspection.Mountpoint))
+
+	b.WriteString("Dependency Trace\n")
 	if len(usedBy) == 0 {
-		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this volume"))
-		return
+		b.WriteString("No containers currently depend on this volume.")
+		return b.String()
 	}
 
-	// Build a formatted list of containers
-	var output strings.Builder
-	for i, containerName := range usedBy {
-		if i > 0 {
-			output.WriteString("\n")
-		}
-		output.WriteString(fmt.Sprintf("• %s", containerName))
+	b.WriteString(fmt.Sprintf("%d containers depend on this volume:\n", len(usedBy)))
+	for _, name := range usedBy {
+		b.WriteString("• ")
+		b.WriteString(name)
+		b.WriteString("\n")
 	}
 
-	model.SetExtraContent(output.String())
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (model Model) View() string {
@@ -743,5 +836,65 @@ func (model Model) performCreateVolume(name, driver string, labels map[string]st
 		}
 
 		return MsgCreateVolumeComplete{VolumeName: volumeName}
+	}
+}
+
+func (model Model) withAttachVolumeDialog() Model {
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		return model
+	}
+
+	fields := []components.FormField{{
+		Label:       "Container ID",
+		Placeholder: "container-id-or-name",
+		Required:    true,
+	}}
+
+	payload := map[string]any{"volumeName": selected.Volume.Name}
+	dialog := components.NewFormDialog(
+		"Attach Volume",
+		fields,
+		base.SmartDialogAction{Type: "AttachVolumeAction", Payload: payload},
+		nil,
+	)
+	model.SetOverlay(dialog)
+	return model
+}
+
+func (model Model) withDetachVolumeDialog() Model {
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		return model
+	}
+
+	fields := []components.FormField{{
+		Label:       "Container ID",
+		Placeholder: "container-id-or-name",
+		Required:    true,
+	}}
+
+	payload := map[string]any{"volumeName": selected.Volume.Name}
+	dialog := components.NewFormDialog(
+		"Detach Volume",
+		fields,
+		base.SmartDialogAction{Type: "DetachVolumeAction", Payload: payload},
+		nil,
+	)
+	model.SetOverlay(dialog)
+	return model
+}
+
+func (model Model) performAttachVolume(volumeName, containerID string) tea.Cmd {
+	return func() tea.Msg {
+		err := fmt.Errorf("attach volume is not yet supported by Docker API directly; use bind mounts or recreate container")
+		return MsgAttachVolumeComplete{VolumeName: volumeName, ContainerID: containerID, Err: err}
+	}
+}
+
+func (model Model) performDetachVolume(volumeName, containerID string) tea.Cmd {
+	return func() tea.Msg {
+		err := fmt.Errorf("detach volume is not yet supported by Docker API directly; stop/recreate container without the mount")
+		return MsgDetachVolumeComplete{VolumeName: volumeName, ContainerID: containerID, Err: err}
 	}
 }

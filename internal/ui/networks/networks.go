@@ -42,6 +42,18 @@ type MsgCreateNetworkComplete struct {
 	Err       error
 }
 
+type MsgAttachContainerComplete struct {
+	NetworkID   string
+	ContainerID string
+	Err         error
+}
+
+type MsgDetachContainerComplete struct {
+	NetworkID   string
+	ContainerID string
+	Err         error
+}
+
 // isSystemNetwork returns true if the network is a predefined system network
 func isSystemNetwork(name string) bool {
 	systemNetworks := []string{"bridge", "host", "none", "podman"}
@@ -92,6 +104,8 @@ type keybindings struct {
 	remove               key.Binding
 	pruneNetworks        key.Binding
 	createNetwork        key.Binding
+	attachContainer      key.Binding
+	detachContainer      key.Binding
 	switchTab            key.Binding
 }
 
@@ -116,6 +130,14 @@ func newKeybindings() *keybindings {
 		createNetwork: key.NewBinding(
 			key.WithKeys("n"),
 			key.WithHelp("n", "create network"),
+		),
+		attachContainer: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "attach container"),
+		),
+		detachContainer: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "detach container"),
 		),
 		switchTab: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5"),
@@ -198,6 +220,8 @@ func New() Model {
 		networkKeybindings.remove,
 		networkKeybindings.pruneNetworks,
 		networkKeybindings.createNetwork,
+		networkKeybindings.attachContainer,
+		networkKeybindings.detachContainer,
 	}
 
 	return model
@@ -258,6 +282,24 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case MsgCreateNetworkComplete:
 		return model.handleCreateNetworkComplete(msg)
+
+	case MsgAttachContainerComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Attached container %s to network", shortID(msg.ContainerID))),
+			model.Refresh(),
+		)
+
+	case MsgDetachContainerComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Detached container %s from network", shortID(msg.ContainerID))),
+			model.Refresh(),
+		)
 	}
 
 	// 3. Handle Overlay/Dialog logic specifically for ConfirmationMessage
@@ -347,6 +389,44 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 				model.CloseOverlay()
 				return model, model.performCreateNetwork(name, driver, subnet, gateway, enableIPv6, labelsMap)
+			} else if confirmMsg.Action.Type == "AttachContainerAction" {
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				values, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+				containerID := strings.TrimSpace(values["Container ID"])
+				networkID, _ := payload["networkID"].(string)
+				if containerID == "" || networkID == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("container ID and network ID are required"))
+				}
+				model.CloseOverlay()
+				return model, model.performAttachContainer(networkID, containerID)
+			} else if confirmMsg.Action.Type == "DetachContainerAction" {
+				payload, ok := confirmMsg.Action.Payload.(map[string]any)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid payload type"))
+				}
+				values, ok := payload["values"].(map[string]string)
+				if !ok {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("invalid form values"))
+				}
+				containerID := strings.TrimSpace(values["Container ID"])
+				networkID, _ := payload["networkID"].(string)
+				if containerID == "" || networkID == "" {
+					model.CloseOverlay()
+					return model, notifications.ShowError(fmt.Errorf("container ID and network ID are required"))
+				}
+				model.CloseOverlay()
+				return model, model.performDetachContainer(networkID, containerID)
 			}
 			model.CloseOverlay()
 			return model, nil
@@ -380,6 +460,12 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			case key.Matches(msg, model.keybindings.createNetwork):
 				model = model.withCreateNetworkDialog()
+				return model, nil
+			case key.Matches(msg, model.keybindings.attachContainer):
+				model.handleAttachContainer()
+				return model, nil
+			case key.Matches(msg, model.keybindings.detachContainer):
+				model.handleDetachContainer()
 				return model, nil
 			}
 		}
@@ -566,21 +652,57 @@ func (model *Model) updateUsedByPanel() {
 		return
 	}
 
-	if len(usedBy) == 0 {
-		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No containers using this network"))
-		return
-	}
+	model.SetExtraContent(buildNetworkConnectivityContent(model.inspection, usedBy))
+}
 
-	// Build a formatted list of containers
-	var output strings.Builder
-	for i, containerName := range usedBy {
-		if i > 0 {
-			output.WriteString("\n")
+func buildNetworkConnectivityContent(inspection types.NetworkResource, usedBy []string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Driver: %s\n", inspection.Driver))
+	b.WriteString(fmt.Sprintf("Scope: %s\n", inspection.Scope))
+	b.WriteString(fmt.Sprintf("ID: %s\n\n", inspection.ID))
+
+	b.WriteString("Connectivity\n")
+	if len(inspection.Containers) > 0 {
+		b.WriteString("Endpoints:\n")
+		for _, endpoint := range inspection.Containers {
+			name := strings.TrimSpace(endpoint.Name)
+			if name == "" {
+				name = shortID(endpoint.EndpointID)
+			}
+			b.WriteString("• ")
+			b.WriteString(name)
+			if strings.TrimSpace(endpoint.IPv4Address) != "" {
+				b.WriteString(" (")
+				b.WriteString(endpoint.IPv4Address)
+				b.WriteString(")")
+			}
+			b.WriteString("\n")
 		}
-		output.WriteString(fmt.Sprintf("• %s", containerName))
+		b.WriteString("\n")
 	}
 
-	model.SetExtraContent(output.String())
+	if len(usedBy) == 0 {
+		b.WriteString("No containers currently connected to this network.")
+		return b.String()
+	}
+
+	b.WriteString(fmt.Sprintf("%d connected containers:\n", len(usedBy)))
+	for _, name := range usedBy {
+		b.WriteString("• ")
+		b.WriteString(name)
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func shortID(id string) string {
+	trimmed := strings.TrimSpace(id)
+	if len(trimmed) > 12 {
+		return trimmed[:12]
+	}
+
+	return trimmed
 }
 
 func (model Model) ShortHelp() []key.Binding {
@@ -758,5 +880,63 @@ func (model Model) performCreateNetwork(name, driver, subnet, gateway string, en
 		}
 
 		return MsgCreateNetworkComplete{NetworkID: networkID}
+	}
+}
+
+func (model *Model) handleAttachContainer() {
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		return
+	}
+
+	fields := []components.FormField{{
+		Label:       "Container ID",
+		Placeholder: "container-id-or-name",
+		Required:    true,
+	}}
+
+	payload := map[string]any{"networkID": selected.Network.ID}
+	dialog := components.NewFormDialog(
+		"Attach Container",
+		fields,
+		base.SmartDialogAction{Type: "AttachContainerAction", Payload: payload},
+		nil,
+	)
+	model.SetOverlay(dialog)
+}
+
+func (model *Model) handleDetachContainer() {
+	selected := model.GetSelectedItem()
+	if selected == nil {
+		return
+	}
+
+	fields := []components.FormField{{
+		Label:       "Container ID",
+		Placeholder: "container-id-or-name",
+		Required:    true,
+	}}
+
+	payload := map[string]any{"networkID": selected.Network.ID}
+	dialog := components.NewFormDialog(
+		"Detach Container",
+		fields,
+		base.SmartDialogAction{Type: "DetachContainerAction", Payload: payload},
+		nil,
+	)
+	model.SetOverlay(dialog)
+}
+
+func (model Model) performAttachContainer(networkID, containerID string) tea.Cmd {
+	return func() tea.Msg {
+		err := state.GetClient().ConnectContainerToNetwork(stdcontext.Background(), containerID, networkID)
+		return MsgAttachContainerComplete{NetworkID: networkID, ContainerID: containerID, Err: err}
+	}
+}
+
+func (model Model) performDetachContainer(networkID, containerID string) tea.Cmd {
+	return func() tea.Msg {
+		err := state.GetClient().DisconnectContainerFromNetwork(stdcontext.Background(), containerID, networkID, false)
+		return MsgDetachContainerComplete{NetworkID: networkID, ContainerID: containerID, Err: err}
 	}
 }

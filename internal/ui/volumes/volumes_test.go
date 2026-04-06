@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/list"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
@@ -101,6 +102,39 @@ func TestPruneVolumesConfirmationUsesSafetyHelper(t *testing.T) {
 	}
 	if !strings.Contains(text, "data") {
 		t.Fatalf("expected sample volume name in dialog, got %q", text)
+	}
+}
+
+func TestBuildVolumeUsageContentIncludesDependencyTrace(t *testing.T) {
+	inspection := volume.Volume{Name: "cache", Driver: "local", Mountpoint: "/var/lib/docker/volumes/cache/_data"}
+	content := buildVolumeUsageContent(inspection, []string{"api", "worker"})
+
+	if !strings.Contains(content, "Driver: local") {
+		t.Fatalf("expected driver metadata in usage content, got %q", content)
+	}
+	if !strings.Contains(content, "Mountpoint") {
+		t.Fatalf("expected mountpoint metadata in usage content, got %q", content)
+	}
+	if !strings.Contains(strings.ToLower(content), "depend") {
+		t.Fatalf("expected dependency section in usage content, got %q", content)
+	}
+}
+
+func TestWithAttachVolumeDialogShowsOverlay(t *testing.T) {
+	model := newPruneTestModel([]VolumeItem{{Volume: client.Volume{Name: "cache"}, IsMounted: false}})
+
+	model = model.withAttachVolumeDialog()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected attach volume dialog to be visible")
+	}
+}
+
+func TestWithDetachVolumeDialogShowsOverlay(t *testing.T) {
+	model := newPruneTestModel([]VolumeItem{{Volume: client.Volume{Name: "cache"}, IsMounted: true}})
+
+	model = model.withDetachVolumeDialog()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected detach volume dialog to be visible")
 	}
 }
 

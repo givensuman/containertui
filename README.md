@@ -67,11 +67,41 @@ sudo mv containertui /usr/local/bin/
 
 ### Docker
 
-Run containertui in a Docker container with your Docker socket mounted:
+Linux-only demo runtime (recommended first command):
 
 ```bash
 docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/givensuman/containertui:latest
 ```
+
+This command uses your host Docker daemon through the mounted socket and auto-seeds demo containers/images/volumes/networks.
+
+### Docker Modes (Host Socket and Simulated DinD)
+
+The container image supports two demo modes with no dependency other than Docker.
+
+**1) Host socket mode (default class demo command)**
+
+```bash
+docker run --rm -it \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/givensuman/containertui:latest
+```
+
+**2) Simulated environment via Docker-in-Docker (DinD)**
+
+```bash
+docker run --rm -it --privileged \
+  -e CTUI_DEMO_MODE=dind \
+  ghcr.io/givensuman/containertui:latest
+```
+
+Mode selection variables:
+
+- `CTUI_DEMO_MODE=auto|socket|dind` (default: `auto`)
+- `CTUI_DEMO_SEED=1|0` to enable/disable demo data seeding (default: `1`)
+- `CTUI_DEMO_CLEANUP_ON_EXIT=1|0` to clean seeded resources on exit (default: `1`)
+
+In `auto`, the container uses host socket mode when `/var/run/docker.sock` is mounted and falls back to DinD otherwise.
 
 ## Usage
 

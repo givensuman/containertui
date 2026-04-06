@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/list"
+	"github.com/docker/docker/api/types"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
@@ -123,5 +124,51 @@ func TestPruneNetworksConfirmationUsesSafetyHelper(t *testing.T) {
 	}
 	if !strings.Contains(text, "custom-a") {
 		t.Fatalf("expected sample network name in dialog, got %q", text)
+	}
+}
+
+func TestBuildNetworkConnectivityContentIncludesDependencyTrace(t *testing.T) {
+	content := buildNetworkConnectivityContent(
+		types.NetworkResource{Name: "app-net", Driver: "bridge", Scope: "local", ID: "n123"},
+		[]string{"api", "worker"},
+	)
+
+	if !strings.Contains(content, "Driver: bridge") {
+		t.Fatalf("expected driver metadata in connectivity content, got %q", content)
+	}
+	if !strings.Contains(strings.ToLower(content), "connected") {
+		t.Fatalf("expected dependency section in connectivity content, got %q", content)
+	}
+}
+
+func TestBuildNetworkConnectivityContentIncludesEndpointDetails(t *testing.T) {
+	inspection := types.NetworkResource{
+		Name:   "app-net",
+		Driver: "bridge",
+		Scope:  "local",
+		ID:     "n123",
+		Containers: map[string]types.EndpointResource{
+			"abc": {
+				Name:        "api",
+				IPv4Address: "172.20.0.2/16",
+			},
+		},
+	}
+
+	content := buildNetworkConnectivityContent(inspection, nil)
+	if !strings.Contains(content, "api") {
+		t.Fatalf("expected endpoint container name in connectivity content, got %q", content)
+	}
+	if !strings.Contains(content, "172.20.0.2/16") {
+		t.Fatalf("expected endpoint IP in connectivity content, got %q", content)
+	}
+}
+
+func TestHandleAttachContainerShowsDialogWhenNetworkSelected(t *testing.T) {
+	model := newPruneTestModel([]NetworkItem{{Network: client.Network{Name: "app-net", ID: "n1"}, IsActive: false}})
+
+	model.handleAttachContainer()
+	if !model.IsOverlayVisible() {
+		t.Fatal("expected attach container dialog overlay")
 	}
 }

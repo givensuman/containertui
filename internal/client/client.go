@@ -599,6 +599,24 @@ func (clientWrapper *ClientWrapper) RemoveNetwork(ctx context.Context, networkID
 	return nil
 }
 
+// ConnectContainerToNetwork attaches a container to a network.
+func (clientWrapper *ClientWrapper) ConnectContainerToNetwork(ctx context.Context, containerID, networkID string) error {
+	if err := clientWrapper.client.NetworkConnect(ctx, networkID, containerID, nil); err != nil {
+		return fmt.Errorf("failed to connect container %s to network %s: %w", containerID, networkID, err)
+	}
+
+	return nil
+}
+
+// DisconnectContainerFromNetwork detaches a container from a network.
+func (clientWrapper *ClientWrapper) DisconnectContainerFromNetwork(ctx context.Context, containerID, networkID string, force bool) error {
+	if err := clientWrapper.client.NetworkDisconnect(ctx, networkID, containerID, force); err != nil {
+		return fmt.Errorf("failed to disconnect container %s from network %s: %w", containerID, networkID, err)
+	}
+
+	return nil
+}
+
 // PruneImages removes all unused images.
 func (clientWrapper *ClientWrapper) PruneImages(ctx context.Context) (uint64, error) {
 	report, err := clientWrapper.client.ImagesPrune(ctx, imagePruneFilters())
