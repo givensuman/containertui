@@ -15,6 +15,7 @@ import (
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/state"
+	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
 
@@ -358,5 +359,43 @@ func TestExtractTagImageActionPayloadRequiresImageID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid image ID") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestImagePulledMessageRefreshesImagesList(t *testing.T) {
+	refreshed := false
+	model := newPruneTestModel(nil)
+	model.ResourceView.LoadItems = func() ([]ImageItem, error) {
+		refreshed = true
+		return nil, nil
+	}
+
+	updated, _ := model.Update(base.MsgImagePulled{ImageName: "nginx:latest"})
+
+	if !refreshed {
+		t.Fatal("expected images list refresh when MsgImagePulled is received")
+	}
+
+	if updated.ResourceView.LoadItems == nil {
+		t.Fatal("expected model to keep resource view configuration")
+	}
+}
+
+func TestImageResourceChangedMessageRefreshesImagesList(t *testing.T) {
+	refreshed := false
+	model := newPruneTestModel(nil)
+	model.ResourceView.LoadItems = func() ([]ImageItem, error) {
+		refreshed = true
+		return nil, nil
+	}
+
+	updated, _ := model.Update(base.MsgResourceChanged{Resource: base.ResourceImage, Operation: base.OperationUpdated})
+
+	if !refreshed {
+		t.Fatal("expected images list refresh when image MsgResourceChanged is received")
+	}
+
+	if updated.ResourceView.LoadItems == nil {
+		t.Fatal("expected model to keep resource view configuration")
 	}
 }

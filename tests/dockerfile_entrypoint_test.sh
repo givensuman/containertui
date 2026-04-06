@@ -43,6 +43,19 @@ else
 	exit 1
 fi
 
+echo -n "Directory bind on socket path gives rootless hint... "
+TMPDIR_FOR_SOCKET_TEST="$(mktemp -d)"
+OUTPUT="$(docker run --rm -v "${TMPDIR_FOR_SOCKET_TEST}:/var/run/docker.sock" "$IMAGE_NAME" 2>&1 || true)"
+rm -rf "${TMPDIR_FOR_SOCKET_TEST}"
+if [[ "$OUTPUT" == *"not a unix socket"* ]] && [[ "$OUTPUT" == *"rootless"* ]]; then
+	echo "PASS"
+else
+	echo "FAIL"
+	echo "Output was: $OUTPUT"
+	docker image rm "$IMAGE_NAME" >/dev/null 2>&1 || true
+	exit 1
+fi
+
 echo -n "Entrypoint is not demo runtime... "
 if [[ "$ENTRYPOINT_JSON" == *"/demo/demo-entrypoint.sh"* ]]; then
 	echo "FAIL"

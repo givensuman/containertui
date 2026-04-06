@@ -3,20 +3,35 @@
 set -eu
 
 SOCKET_PATH="${DOCKER_SOCKET_PATH:-/var/run/docker.sock}"
+DOCKER_ENDPOINT="${DOCKER_HOST:-unix://${SOCKET_PATH}}"
 
 print_help_hints() {
-	echo "hint: mount Docker socket: -v ${SOCKET_PATH}:${SOCKET_PATH}" >&2
-	echo "hint: if you get permission errors, add host socket group: --group-add \"\$(stat -c '%g' ${SOCKET_PATH})\"" >&2
+	echo "hint (rootful): -v /var/run/docker.sock:/var/run/docker.sock" >&2
+	echo "hint (rootless): -v \"\$XDG_RUNTIME_DIR/docker.sock:/var/run/docker.sock\" -e DOCKER_HOST=unix:///var/run/docker.sock" >&2
+	echo "hint: for permission errors also add --group-add \"\$(stat -c '%g' /var/run/docker.sock)\"" >&2
 }
 
-if [ ! -S "${SOCKET_PATH}" ]; then
-	echo "error: Docker socket not found at ${SOCKET_PATH}" >&2
-	print_help_hints
-	exit 1
-fi
+case "${DOCKER_ENDPOINT}" in
+unix://*)
+	SOCKET_PATH="${DOCKER_ENDPOINT#unix://}"
+	if [ -e "${SOCKET_PATH}" ] && [ ! -S "${SOCKET_PATH}" ]; then
+		echo "error: ${SOCKET_PATH} exists but is not a unix socket" >&2
+		print_help_hints
+		exit 1
+	fi
+	if [ ! -S "${SOCKET_PATH}" ]; then
+		echo "error: Docker socket not found at ${SOCKET_PATH}" >&2
+		print_help_hints
+		exit 1
+	fi
+	;;
+esac
 
-if ! docker version >/dev/null 2>&1; then
-	echo "error: cannot access Docker daemon via ${SOCKET_PATH}" >&2
+export DOCKER_HOST="${DOCKER_ENDPOINT}"
+
+if ! DOCKER_ERROR_OUTPUT="$(docker version 2>&1 >/dev/null)"; then
+	echo "error: cannot access Docker daemon using ${DOCKER_ENDPOINT}" >&2
+	echo "docker version error: ${DOCKER_ERROR_OUTPUT}" >&2
 	print_help_hints
 	exit 1
 fi

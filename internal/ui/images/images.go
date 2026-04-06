@@ -617,6 +617,14 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Refresh the images list via ResourceView
 		return model, model.Refresh()
 
+	case base.MsgImagePulled:
+		return model, model.Refresh()
+
+	case base.MsgResourceChanged:
+		if msg.Resource == base.ResourceImage {
+			return model, model.Refresh()
+		}
+
 	case MsgCreateContainerComplete:
 		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
 			_ = progressDialog.SetPercent(1.0)

@@ -86,7 +86,23 @@ docker run --rm -it \
   ghcr.io/givensuman/containertui:latest
 ```
 
-This image talks to your host Docker daemon through the mounted socket (it does not start Docker-in-Docker). If your Docker socket lives elsewhere (for example rootless Docker), mount that socket path and set `DOCKER_HOST` accordingly.
+This image talks to your host Docker daemon through the mounted socket (it does not start Docker-in-Docker).
+
+For rootless Docker, use your rootless socket path and map it to `/var/run/docker.sock` inside the container:
+
+```bash
+docker run --rm -it \
+  -v "$XDG_RUNTIME_DIR/docker.sock:/var/run/docker.sock" \
+  ghcr.io/givensuman/containertui:latest
+```
+
+If `XDG_RUNTIME_DIR` is unset in your shell, try:
+
+```bash
+docker run --rm -it \
+  -v "/run/user/$(id -u)/docker.sock:/var/run/docker.sock" \
+  ghcr.io/givensuman/containertui:latest
+```
 
 
 ## Usage
