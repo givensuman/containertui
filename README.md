@@ -19,6 +19,8 @@ docker run --rm -it --privileged \
 
 Demo mode seeds a curated environment with images, networks, volumes, containers in different states, and a small Compose-backed service. Seeded resources are cleaned up automatically when you exit.
 
+`--privileged` is required for the demo image because it runs Docker-in-Docker and needs kernel/network capabilities to create the default bridge network.
+
 ## Installation
 
 ### Go Install
@@ -80,8 +82,11 @@ sudo mv containertui /usr/local/bin/
 ```bash
 docker run --rm -it \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   ghcr.io/givensuman/containertui:latest
 ```
+
+This image talks to your host Docker daemon through the mounted socket (it does not start Docker-in-Docker). If your Docker socket lives elsewhere (for example rootless Docker), mount that socket path and set `DOCKER_HOST` accordingly.
 
 
 ## Usage

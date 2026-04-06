@@ -13,12 +13,32 @@ echo "PASS"
 
 ENTRYPOINT_JSON="$(docker image inspect "$IMAGE_NAME" --format '{{json .Config.Entrypoint}}')"
 
-echo -n "Entrypoint uses containertui binary... "
-if [[ "$ENTRYPOINT_JSON" == '["containertui"]' ]] || [[ "$ENTRYPOINT_JSON" == '["/usr/local/bin/containertui"]' ]]; then
+echo -n "Entrypoint uses production wrapper script... "
+if [[ "$ENTRYPOINT_JSON" == '["/usr/local/bin/docker-entrypoint.sh"]' ]]; then
 	echo "PASS"
 else
 	echo "FAIL"
 	echo "Entrypoint was: $ENTRYPOINT_JSON"
+	docker image rm "$IMAGE_NAME" >/dev/null 2>&1 || true
+	exit 1
+fi
+
+echo -n "Wrapper script exists in image... "
+if docker run --rm --entrypoint=test "$IMAGE_NAME" -f /usr/local/bin/docker-entrypoint.sh >/dev/null 2>&1; then
+	echo "PASS"
+else
+	echo "FAIL"
+	docker image rm "$IMAGE_NAME" >/dev/null 2>&1 || true
+	exit 1
+fi
+
+echo -n "Missing socket prints actionable hint... "
+OUTPUT="$(docker run --rm "$IMAGE_NAME" 2>&1 || true)"
+if [[ "$OUTPUT" == *"/var/run/docker.sock"* ]] && [[ "$OUTPUT" == *"--group-add"* ]]; then
+	echo "PASS"
+else
+	echo "FAIL"
+	echo "Output was: $OUTPUT"
 	docker image rm "$IMAGE_NAME" >/dev/null 2>&1 || true
 	exit 1
 fi

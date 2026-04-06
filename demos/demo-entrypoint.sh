@@ -31,6 +31,7 @@ EOF
 wait_for_docker() {
 	timeout 30 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done' || {
 		echo -e "${RED}Docker daemon did not become ready within 30 seconds${NC}"
+		echo -e "${YELLOW}Hint:${NC} Demo mode runs Docker-in-Docker and typically requires ${GREEN}--privileged${NC}."
 		if [ -f "${DOCKERD_LOG_FILE}" ]; then
 			echo -e "${YELLOW}dockerd logs:${NC}"
 			cat "${DOCKERD_LOG_FILE}"

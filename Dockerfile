@@ -40,8 +40,11 @@ WORKDIR /workspace
 # Copy binary from builder
 COPY --from=builder /build/containertui /usr/local/bin/containertui
 
+# Copy Docker runtime preflight entrypoint
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
 # Ensure binary is executable
-RUN chmod +x /usr/local/bin/containertui
+RUN chmod +x /usr/local/bin/containertui /usr/local/bin/docker-entrypoint.sh
 
 # Production image: run the TUI directly and use mounted host Docker socket.
-ENTRYPOINT ["/usr/local/bin/containertui"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
