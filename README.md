@@ -14,7 +14,7 @@ You can run the following command to see containertui in action:
 
 ```bash
 docker run --rm -it --privileged \
-  ghcr.io/givensuman/containertui:latest --demo
+  ghcr.io/givensuman/containertui-demo:latest
 ```
 
 Demo mode seeds a curated environment with images, networks, volumes, containers in different states, and a small Compose-backed service. Seeded resources are cleaned up automatically when you exit.

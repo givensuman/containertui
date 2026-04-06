@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
   -o containertui \
   ./cmd/main.go
 
-FROM docker:dind
+FROM docker:cli
 
 RUN apk add --no-cache \
   bash \
@@ -35,7 +35,7 @@ RUN mkdir -p /usr/local/share/fonts/nerd-fonts && \
   fc-cache -fv
 
 # Set working directory
-WORKDIR /demo
+WORKDIR /workspace
 
 # Copy binary from builder
 COPY --from=builder /build/containertui /usr/local/bin/containertui
@@ -43,16 +43,5 @@ COPY --from=builder /build/containertui /usr/local/bin/containertui
 # Ensure binary is executable
 RUN chmod +x /usr/local/bin/containertui
 
-COPY demos/setup.sh /demo/setup.sh
-COPY demos/cleanup.sh /demo/cleanup.sh
-COPY demos/demo-entrypoint.sh /demo/demo-entrypoint.sh
-
-RUN chmod +x /demo/setup.sh /demo/cleanup.sh /demo/demo-entrypoint.sh
-
-# Set entrypoint to dual-mode runtime launcher
-ENTRYPOINT ["/demo/demo-entrypoint.sh"]
-
-# Default runtime mode autodetects host socket, then falls back to DinD.
-ENV CTUI_DEMO_MODE=auto
-ENV CTUI_DEMO_SEED=1
-ENV CTUI_DEMO_CLEANUP_ON_EXIT=1
+# Production image: run the TUI directly and use mounted host Docker socket.
+ENTRYPOINT ["/usr/local/bin/containertui"]

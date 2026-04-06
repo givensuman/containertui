@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContainerTUI runtime entrypoint supporting host-socket and DinD demo modes.
+# ContainerTUI demo runtime entrypoint for ephemeral DinD demo environments.
 
 set -e
 
@@ -11,7 +11,6 @@ NC='\033[0m'
 DOCKERD_LOG_FILE="/tmp/dockerd.log"
 DOCKERD_STARTED=0
 CLEANED_UP=0
-DEMO_MODE=0
 
 print_banner() {
 	echo -e "${GREEN}================================${NC}"
@@ -42,18 +41,10 @@ wait_for_docker() {
 
 start_dind() {
 	echo -e "${YELLOW}Starting Docker-in-Docker daemon...${NC}"
-	dockerd >"${DOCKERD_LOG_FILE}" 2>&1 &
+	dockerd --iptables=false --ip6tables=false >"${DOCKERD_LOG_FILE}" 2>&1 &
 	DOCKERD_STARTED=1
 	wait_for_docker
 	echo -e "${GREEN}✓ Docker-in-Docker daemon is ready${NC}"
-}
-
-has_host_socket() {
-	[ -S /var/run/docker.sock ]
-}
-
-verify_host_socket_access() {
-	docker info >/dev/null 2>&1
 }
 
 cleanup() {
@@ -62,10 +53,8 @@ cleanup() {
 	fi
 	CLEANED_UP=1
 
-	if [ "${DEMO_MODE}" = "1" ]; then
-		echo -e "\n${YELLOW}Cleaning up demo resources...${NC}"
-		/demo/cleanup.sh || true
-	fi
+	echo -e "\n${YELLOW}Cleaning up demo resources...${NC}"
+	/demo/cleanup.sh || true
 	if [ "${DOCKERD_STARTED}" = "1" ]; then
 		pkill dockerd >/dev/null 2>&1 || true
 	fi
@@ -78,27 +67,11 @@ trap 'exit 143' SIGTERM
 print_banner
 configure_user_settings
 
-if [ "${1:-}" = "--demo" ]; then
-	DEMO_MODE=1
-	shift
-	echo -e "${GREEN}Mode:${NC} Ephemeral demo (Docker-in-Docker)"
-	start_dind
-	echo -e "${YELLOW}Seeding demo resources...${NC}"
-	/demo/cleanup.sh || true
-	/demo/setup.sh
-else
-	echo -e "${GREEN}Mode:${NC} Host Docker socket"
-	if ! has_host_socket; then
-		echo -e "${RED}Host Docker socket mode requires /var/run/docker.sock but it is unavailable.${NC}"
-		echo "Run with -v /var/run/docker.sock:/var/run/docker.sock"
-		echo "Or run demo mode with --privileged and --demo"
-		exit 1
-	fi
-	if ! verify_host_socket_access; then
-		echo -e "${RED}Host Docker socket is mounted but not accessible.${NC}"
-		echo "Ensure your user can access Docker on the host and try again."
-		exit 1
-fi
+echo -e "${GREEN}Mode:${NC} Ephemeral demo (Docker-in-Docker)"
+start_dind
+echo -e "${YELLOW}Seeding demo resources...${NC}"
+/demo/cleanup.sh || true
+/demo/setup.sh
 
 echo ""
 echo "You can now explore the demo environment:"

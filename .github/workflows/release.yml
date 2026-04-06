@@ -55,13 +55,26 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      - name: Build and push app Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push demo Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.demo
+          push: true
+          tags: |
+            ghcr.io/givensuman/containertui-demo:latest
+            ghcr.io/givensuman/containertui-demo:${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
