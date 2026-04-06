@@ -224,11 +224,11 @@ func newKeybindings() *keybindings {
 		),
 		buildImage: key.NewBinding(
 			key.WithKeys("b"),
-			key.WithHelp("b", "build image"),
+			key.WithHelp("b", "build image from"),
 		),
 		pullImage: key.NewBinding(
 			key.WithKeys("i"),
-			key.WithHelp("i", "pull image"),
+			key.WithHelp("i", "pull image from"),
 		),
 		createContainer: key.NewBinding(
 			key.WithKeys("c"),
