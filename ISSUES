@@ -1,11 +1,14 @@
 -- General --
+[HARD]
 Mouse support?
   - List hover should change selection, click support for tabs, buttons, and forms. Hover support for buttons as well.
 Revise search dropdown style/implementation.
 Support podman, integrate this into UI somehow
 
+[EASY]
+Remove --startup-tab argument
+
 -- Other --
-Polish up demo experience.
 Get VHS tapes working.
 Test configuration, --no-nerd-fonts, etc.
 
