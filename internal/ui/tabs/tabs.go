@@ -18,7 +18,6 @@ const (
 	Images
 	Volumes
 	Networks
-	Services
 	Browse
 )
 
@@ -28,7 +27,6 @@ func (t Tab) String() string {
 		"Images",
 		"Volumes",
 		"Networks",
-		"Services",
 		"Browse",
 	}[t]
 }
@@ -66,7 +64,6 @@ type KeyMap struct {
 	SwitchToImages     key.Binding
 	SwitchToVolumes    key.Binding
 	SwitchToNetworks   key.Binding
-	SwitchToServices   key.Binding
 	SwitchToBrowse     key.Binding
 }
 
@@ -88,10 +85,6 @@ func NewKeyMap() KeyMap {
 			key.WithKeys("4"),
 			key.WithHelp("4", "networks"),
 		),
-		SwitchToServices: key.NewBinding(
-			key.WithKeys("5"),
-			key.WithHelp("5", "services"),
-		),
 		SwitchToBrowse: key.NewBinding(
 			key.WithKeys("5"),
 			key.WithHelp("5", "browse"),
@@ -107,10 +100,6 @@ type Model struct {
 }
 
 func New(startupTab Tab) Model {
-	if startupTab == Services {
-		startupTab = Containers
-	}
-
 	return Model{
 		ActiveTab: startupTab,
 		Tabs:      []Tab{Containers, Images, Volumes, Networks, Browse},

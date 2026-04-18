@@ -19,18 +19,19 @@ func TestView_DoesNotRenderBoxBorders(t *testing.T) {
 	}
 }
 
-func TestNewExcludesServicesTabFromVisibleTabs(t *testing.T) {
+func TestBrowseTabIsFifthTab(t *testing.T) {
 	m := New(Containers)
 
-	for _, tab := range m.Tabs {
-		if tab == Services {
-			t.Fatal("expected services tab to be excluded from visible tabs")
-		}
+	if len(m.Tabs) != 5 {
+		t.Fatalf("expected 5 tabs, got %d", len(m.Tabs))
+	}
+	if m.Tabs[4] != Browse {
+		t.Fatalf("expected Browse at index 4, got %v", m.Tabs[4])
 	}
 }
 
-func TestServicesTabIsNotValidStartupTab(t *testing.T) {
+func TestServicesIsNotAValidTab(t *testing.T) {
 	if IsValidTab("services") {
-		t.Fatal("expected services to be invalid while temporarily disabled")
+		t.Fatal("expected services to be an invalid tab name")
 	}
 }

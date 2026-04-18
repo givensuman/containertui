@@ -128,7 +128,6 @@ func main() {
 	rootCmd.AddCommand(makeSubcommand("images", "images", "launch containertui to the images tab"))
 	rootCmd.AddCommand(makeSubcommand("volumes", "volumes", "launch containertui to the volumes tab"))
 	rootCmd.AddCommand(makeSubcommand("networks", "networks", "launch containertui to the networks tab"))
-	rootCmd.AddCommand(makeSubcommand("services", "services", "launch containertui to the services tab"))
 	rootCmd.AddCommand(makeSubcommand("browse", "browse", "launch containertui to the browse tab"))
 
 	// Add global flags to root command
