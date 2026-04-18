@@ -589,7 +589,7 @@ func (model *Model) startPull(target pullTarget) tea.Cmd {
 
 	go func() {
 		ctx := stdcontext.Background()
-		err := state.GetClient().PullImageFromRegistry(ctx, imageName, progressChan)
+		err := state.GetClient().PullImage(ctx, imageName, progressChan)
 		doneChan <- err
 		close(doneChan)
 	}()

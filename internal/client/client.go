@@ -835,30 +835,6 @@ func (clientWrapper *ClientWrapper) GetQuayRegistryClient() *registry.QuayClient
 	return clientWrapper.quayRegistryClient
 }
 
-// PullImageFromRegistry pulls an image from a registry (Docker Hub by default).
-func (clientWrapper *ClientWrapper) PullImageFromRegistry(ctx context.Context, imageName string, progressChan chan<- string) error {
-	reader, err := clientWrapper.client.ImagePull(ctx, imageName, types.ImagePullOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
-	}
-	defer reader.Close()
-	if progressChan != nil {
-		defer close(progressChan)
-	}
-
-	// Stream progress to the channel
-	if progressChan != nil {
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			progressChan <- scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("failed to read pull progress: %w", err)
-		}
-	}
-	return nil
-}
-
 // CreateVolume creates a new Docker volume with the specified configuration.
 func (clientWrapper *ClientWrapper) CreateVolume(ctx context.Context, name, driver string, labels map[string]string) (string, error) {
 	volumeCreateBody := volume.CreateOptions{
