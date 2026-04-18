@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/client"
@@ -102,7 +101,7 @@ func BuildImagePanel(image backend.ImageDetail, width int, format infopanel.Outp
 }
 
 // BuildNetworkPanel builds an informational panel for a network with raw YAML/JSON output.
-func BuildNetworkPanel(network types.NetworkResource, width int, format infopanel.OutputFormat) string {
+func BuildNetworkPanel(network backend.NetworkDetail, width int, format infopanel.OutputFormat) string {
 	// If format is empty, use default from config
 	if format == "" {
 		format = infopanel.GetOutputFormat()

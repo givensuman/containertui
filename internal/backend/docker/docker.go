@@ -628,6 +628,22 @@ func (d *DockerBackend) PruneNetworks(ctx context.Context) (int, error) {
 	return len(report.NetworksDeleted), nil
 }
 
+// ConnectContainerToNetwork attaches a container to a network.
+func (d *DockerBackend) ConnectContainerToNetwork(ctx context.Context, containerID, networkID string) error {
+	if err := d.client.NetworkConnect(ctx, networkID, containerID, nil); err != nil {
+		return fmt.Errorf("failed to connect container to network: %w", err)
+	}
+	return nil
+}
+
+// DisconnectContainerFromNetwork detaches a container from a network.
+func (d *DockerBackend) DisconnectContainerFromNetwork(ctx context.Context, containerID, networkID string, force bool) error {
+	if err := d.client.NetworkDisconnect(ctx, networkID, containerID, force); err != nil {
+		return fmt.Errorf("failed to disconnect container from network: %w", err)
+	}
+	return nil
+}
+
 // ListVolumes lists all volumes.
 func (d *DockerBackend) ListVolumes(ctx context.Context) ([]backend.Volume, error) {
 	vols, err := d.client.VolumeList(ctx, volume.ListOptions{})

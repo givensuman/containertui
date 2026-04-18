@@ -10,7 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/docker/docker/api/types"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -23,7 +23,7 @@ import (
 // MsgNetworkInspection contains the inspection data for a network.
 type MsgNetworkInspection struct {
 	ID      string
-	Network types.NetworkResource
+	Network backend.NetworkDetail
 	Err     error
 }
 
@@ -151,7 +151,7 @@ type Model struct {
 	components.ResourceView[string, NetworkItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	inspection         types.NetworkResource
+	inspection         backend.NetworkDetail
 	detailsPanel       components.DetailsPanel
 }
 
@@ -159,13 +159,13 @@ func New() Model {
 	networkKeybindings := newKeybindings()
 
 	fetchNetworks := func() ([]NetworkItem, error) {
-		networkList, err := state.GetClient().GetNetworks(stdcontext.Background())
+		networkList, err := state.GetBackend().ListNetworks(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
 
 		// Get network usage map (single API call for all networks)
-		activeNetworks, err := state.GetClient().GetAllNetworkUsage(stdcontext.Background())
+		activeNetworks, err := state.GetBackend().GetAllNetworkUsage(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -210,7 +210,7 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        networkKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		inspection:         types.NetworkResource{},
+		inspection:         backend.NetworkDetail{},
 		detailsPanel:       components.NewDetailsPanel(),
 	}
 
@@ -318,7 +318,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteNetwork"))
 				}
-				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				err := state.GetBackend().RemoveNetwork(stdcontext.Background(), networkID)
 				if err == nil {
 					// Close the overlay and refresh list
 					model.CloseOverlay()
@@ -337,7 +337,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteNetwork"))
 				}
-				err := state.GetClient().RemoveNetwork(stdcontext.Background(), networkID)
+				err := state.GetBackend().RemoveNetwork(stdcontext.Background(), networkID)
 				model.CloseOverlay()
 				if err != nil {
 					return model, notifications.ShowError(fmt.Errorf("failed to force delete network: %w", err))
@@ -557,7 +557,7 @@ func (model *Model) handleRemove() tea.Cmd {
 		)
 	}
 
-	containersUsingNetwork, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
+	containersUsingNetwork, err := state.GetBackend().GetContainersUsingNetwork(stdcontext.Background(), selectedItem.Network.ID)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -609,7 +609,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			networkInfo, err := state.GetClient().InspectNetwork(stdcontext.Background(), networkID)
+			networkInfo, err := state.GetBackend().InspectNetwork(stdcontext.Background(), networkID)
 			return MsgNetworkInspection{ID: networkID, Network: networkInfo, Err: err}
 		}
 	}
@@ -646,7 +646,7 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this network
-	usedBy, err := state.GetClient().GetContainersUsingNetwork(stdcontext.Background(), model.inspection.ID)
+	usedBy, err := state.GetBackend().GetContainersUsingNetwork(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
@@ -655,7 +655,7 @@ func (model *Model) updateUsedByPanel() {
 	model.SetExtraContent(buildNetworkConnectivityContent(model.inspection, usedBy))
 }
 
-func buildNetworkConnectivityContent(inspection types.NetworkResource, usedBy []string) string {
+func buildNetworkConnectivityContent(inspection backend.NetworkDetail, usedBy []string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Driver: %s\n", inspection.Driver))
 	b.WriteString(fmt.Sprintf("Scope: %s\n", inspection.Scope))
@@ -776,7 +776,7 @@ func (model *Model) handlePruneNetworks() tea.Cmd {
 	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		networksDeleted, err := state.GetClient().PruneNetworks(ctx)
+		networksDeleted, err := state.GetBackend().PruneNetworks(ctx)
 		return MsgPruneComplete{
 			NetworksDeleted: networksDeleted,
 			Err:             err,
@@ -874,7 +874,7 @@ func (model Model) performCreateNetwork(name, driver, subnet, gateway string, en
 			driver = "bridge"
 		}
 
-		networkID, err := state.GetClient().CreateNetwork(ctx, name, driver, subnet, gateway, enableIPv6, labels)
+		networkID, err := state.GetBackend().CreateNetwork(ctx, name, driver, subnet, gateway, enableIPv6, labels)
 		if err != nil {
 			return MsgCreateNetworkComplete{Err: fmt.Errorf("failed to create network: %w", err)}
 		}
@@ -929,14 +929,14 @@ func (model *Model) handleDetachContainer() {
 
 func (model Model) performAttachContainer(networkID, containerID string) tea.Cmd {
 	return func() tea.Msg {
-		err := state.GetClient().ConnectContainerToNetwork(stdcontext.Background(), containerID, networkID)
+		err := state.GetBackend().ConnectContainerToNetwork(stdcontext.Background(), containerID, networkID)
 		return MsgAttachContainerComplete{NetworkID: networkID, ContainerID: containerID, Err: err}
 	}
 }
 
 func (model Model) performDetachContainer(networkID, containerID string) tea.Cmd {
 	return func() tea.Msg {
-		err := state.GetClient().DisconnectContainerFromNetwork(stdcontext.Background(), containerID, networkID, false)
+		err := state.GetBackend().DisconnectContainerFromNetwork(stdcontext.Background(), containerID, networkID, false)
 		return MsgDetachContainerComplete{NetworkID: networkID, ContainerID: containerID, Err: err}
 	}
 }

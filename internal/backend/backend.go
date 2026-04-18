@@ -59,6 +59,8 @@ type Backend interface {
 	CreateNetwork(ctx context.Context, name, driver, subnet, gateway string, enableIPv6 bool, labels map[string]string) (string, error)
 	RemoveNetwork(ctx context.Context, id string) error
 	PruneNetworks(ctx context.Context) (int, error)
+	ConnectContainerToNetwork(ctx context.Context, containerID, networkID string) error
+	DisconnectContainerFromNetwork(ctx context.Context, containerID, networkID string, force bool) error
 
 	// Volume operations
 	ListVolumes(ctx context.Context) ([]Volume, error)

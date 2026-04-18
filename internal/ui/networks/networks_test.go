@@ -7,8 +7,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/list"
-	"github.com/docker/docker/api/types"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
 
@@ -61,7 +60,7 @@ func (e testError) Error() string {
 
 func TestNetworkTitleDoesNotWrapNameWithANSI(t *testing.T) {
 	name := "very-long-network-name"
-	item := NetworkItem{Network: client.Network{Name: name}, IsActive: true}
+	item := NetworkItem{Network: backend.Network{Name: name}, IsActive: true}
 	title := item.Title()
 
 	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(name) + "\\x1b\\[[0-9;]*m").MatchString(title) {
@@ -74,8 +73,8 @@ func TestNetworkTitleDoesNotWrapNameWithANSI(t *testing.T) {
 
 func TestHasPrunableNetworks(t *testing.T) {
 	model := newPruneTestModel([]NetworkItem{
-		{Network: client.Network{Name: "host", ID: "n-host"}, IsActive: false},
-		{Network: client.Network{Name: "custom-unused", ID: "n-custom"}, IsActive: false},
+		{Network: backend.Network{Name: "host", ID: "n-host"}, IsActive: false},
+		{Network: backend.Network{Name: "custom-unused", ID: "n-custom"}, IsActive: false},
 	})
 
 	if !model.hasPrunableNetworks() {
@@ -85,8 +84,8 @@ func TestHasPrunableNetworks(t *testing.T) {
 
 func TestHasPrunableNetworksNone(t *testing.T) {
 	model := newPruneTestModel([]NetworkItem{
-		{Network: client.Network{Name: "bridge", ID: "n-bridge"}, IsActive: false},
-		{Network: client.Network{Name: "custom-active", ID: "n-active"}, IsActive: true},
+		{Network: backend.Network{Name: "bridge", ID: "n-bridge"}, IsActive: false},
+		{Network: backend.Network{Name: "custom-active", ID: "n-active"}, IsActive: true},
 	})
 
 	if model.hasPrunableNetworks() {
@@ -103,9 +102,9 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 
 func TestPruneNetworksConfirmationUsesSafetyHelper(t *testing.T) {
 	model := newPruneTestModel([]NetworkItem{
-		{Network: client.Network{Name: "custom-a", ID: "n1"}, IsActive: false},
-		{Network: client.Network{Name: "custom-b", ID: "n2"}, IsActive: false},
-		{Network: client.Network{Name: "bridge", ID: "n3"}, IsActive: false},
+		{Network: backend.Network{Name: "custom-a", ID: "n1"}, IsActive: false},
+		{Network: backend.Network{Name: "custom-b", ID: "n2"}, IsActive: false},
+		{Network: backend.Network{Name: "bridge", ID: "n3"}, IsActive: false},
 	})
 
 	model.showPruneNetworksConfirmation()
@@ -129,7 +128,7 @@ func TestPruneNetworksConfirmationUsesSafetyHelper(t *testing.T) {
 
 func TestBuildNetworkConnectivityContentIncludesDependencyTrace(t *testing.T) {
 	content := buildNetworkConnectivityContent(
-		types.NetworkResource{Name: "app-net", Driver: "bridge", Scope: "local", ID: "n123"},
+		backend.NetworkDetail{Network: backend.Network{Name: "app-net", Driver: "bridge", Scope: "local", ID: "n123"}},
 		[]string{"api", "worker"},
 	)
 
@@ -142,12 +141,14 @@ func TestBuildNetworkConnectivityContentIncludesDependencyTrace(t *testing.T) {
 }
 
 func TestBuildNetworkConnectivityContentIncludesEndpointDetails(t *testing.T) {
-	inspection := types.NetworkResource{
-		Name:   "app-net",
-		Driver: "bridge",
-		Scope:  "local",
-		ID:     "n123",
-		Containers: map[string]types.EndpointResource{
+	inspection := backend.NetworkDetail{
+		Network: backend.Network{
+			Name:   "app-net",
+			Driver: "bridge",
+			Scope:  "local",
+			ID:     "n123",
+		},
+		Containers: map[string]backend.EndpointResource{
 			"abc": {
 				Name:        "api",
 				IPv4Address: "172.20.0.2/16",
@@ -165,7 +166,7 @@ func TestBuildNetworkConnectivityContentIncludesEndpointDetails(t *testing.T) {
 }
 
 func TestHandleAttachContainerShowsDialogWhenNetworkSelected(t *testing.T) {
-	model := newPruneTestModel([]NetworkItem{{Network: client.Network{Name: "app-net", ID: "n1"}, IsActive: false}})
+	model := newPruneTestModel([]NetworkItem{{Network: backend.Network{Name: "app-net", ID: "n1"}, IsActive: false}})
 
 	model.handleAttachContainer()
 	if !model.IsOverlayVisible() {
