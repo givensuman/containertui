@@ -29,8 +29,8 @@ type Backend interface {
 	PauseContainers(ctx context.Context, ids []string) error
 	UnpauseContainer(ctx context.Context, id string) error
 	UnpauseContainers(ctx context.Context, ids []string) error
-	RemoveContainer(ctx context.Context, id string) error
-	RemoveContainers(ctx context.Context, ids []string) error
+	RemoveContainer(ctx context.Context, id string, force bool) error
+	RemoveContainers(ctx context.Context, ids []string, force bool) error
 	RenameContainer(ctx context.Context, id, newName string) error
 	PruneContainers(ctx context.Context) (uint64, error)
 
@@ -41,12 +41,17 @@ type Backend interface {
 	// Image operations
 	ListImages(ctx context.Context) ([]Image, error)
 	InspectImage(ctx context.Context, id string) (ImageDetail, error)
-	PullImage(ctx context.Context, ref string, options PullOptions) (PullResult, error)
-	BuildImage(ctx context.Context, options BuildOptions) (BuildResult, error)
+	PullImage(ctx context.Context, ref string, progressChan chan<- string) error
+	BuildImage(ctx context.Context, dockerfilePath, tag, contextPath string, buildArgs map[string]*string) (io.ReadCloser, error)
 	TagImage(ctx context.Context, source, target string) error
 	RemoveImage(ctx context.Context, id string) error
 	RemoveImages(ctx context.Context, ids []string) error
 	PruneImages(ctx context.Context) (uint64, error)
+
+	// Image history and usage
+	ImageHistory(ctx context.Context, imageID string) ([]ImageHistoryItem, error)
+	GetAllNetworkUsage(ctx context.Context) (map[string]bool, error)
+	GetAllVolumeUsage(ctx context.Context) (map[string]bool, error)
 
 	// Network operations
 	ListNetworks(ctx context.Context) ([]Network, error)

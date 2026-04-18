@@ -2,9 +2,14 @@
 package docker
 
 import (
+	"archive/tar"
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -169,6 +174,7 @@ func (d *DockerBackend) CreateContainer(ctx context.Context, config backend.Cont
 	hostConfig := &container.HostConfig{
 		Binds:        config.Volumes,
 		PortBindings: portBindings,
+		AutoRemove:   config.AutoRemove,
 		RestartPolicy: container.RestartPolicy{
 			Name: "no",
 		},
@@ -289,18 +295,18 @@ func (d *DockerBackend) UnpauseContainers(ctx context.Context, ids []string) err
 }
 
 // RemoveContainer removes a container.
-func (d *DockerBackend) RemoveContainer(ctx context.Context, id string) error {
-	if err := d.client.ContainerRemove(ctx, id, container.RemoveOptions{Force: true}); err != nil {
+func (d *DockerBackend) RemoveContainer(ctx context.Context, id string, force bool) error {
+	if err := d.client.ContainerRemove(ctx, id, container.RemoveOptions{Force: force}); err != nil {
 		return fmt.Errorf("failed to remove container: %w", err)
 	}
 	return nil
 }
 
 // RemoveContainers removes multiple containers.
-func (d *DockerBackend) RemoveContainers(ctx context.Context, ids []string) error {
+func (d *DockerBackend) RemoveContainers(ctx context.Context, ids []string, force bool) error {
 	merr := &multiError{}
 	for _, id := range ids {
-		if err := d.RemoveContainer(ctx, id); err != nil {
+		if err := d.RemoveContainer(ctx, id, force); err != nil {
 			merr.Add(err)
 		}
 	}
@@ -442,56 +448,43 @@ func (d *DockerBackend) InspectImage(ctx context.Context, id string) (backend.Im
 	return detail, nil
 }
 
-// PullImage pulls an image from a registry.
-func (d *DockerBackend) PullImage(ctx context.Context, ref string, options backend.PullOptions) (backend.PullResult, error) {
-	pullOptions := types.ImagePullOptions{
-		RegistryAuth: options.RegistryAuth,
-		Platform:     options.Platform,
-		All:          options.All,
-	}
-
-	resp, err := d.client.ImagePull(ctx, ref, pullOptions)
+// PullImage pulls an image from a registry, sending progress lines to progressChan.
+func (d *DockerBackend) PullImage(ctx context.Context, ref string, progressChan chan<- string) error {
+	resp, err := d.client.ImagePull(ctx, ref, types.ImagePullOptions{})
 	if err != nil {
-		return backend.PullResult{}, fmt.Errorf("failed to pull image: %w", err)
+		return fmt.Errorf("failed to pull image: %w", err)
 	}
 	defer resp.Close()
 
-	// Read the response to completion
-	_, err = io.Copy(io.Discard, resp)
-	if err != nil {
-		return backend.PullResult{}, fmt.Errorf("failed to read pull response: %w", err)
+	scanner := bufio.NewScanner(resp)
+	for scanner.Scan() {
+		progressChan <- scanner.Text()
 	}
+	close(progressChan)
 
-	return backend.PullResult{
-		ImageID: ref,
-	}, nil
+	return scanner.Err()
 }
 
 // BuildImage builds an image from a Dockerfile.
-func (d *DockerBackend) BuildImage(ctx context.Context, options backend.BuildOptions) (backend.BuildResult, error) {
-	buildOptions := types.ImageBuildOptions{
-		Dockerfile:  options.Dockerfile,
-		Tags:        options.Tags,
-		BuildArgs:   options.BuildArgs,
-		Labels:      options.Labels,
-		Target:      options.Target,
-		NoCache:     options.NoCache,
-		Remove:      options.Remove,
-		ForceRemove: options.ForceRm,
-		PullParent:  options.Pull,
-		Isolation:   container.Isolation(options.Isolation),
-		CPUShares:   options.CpuShares,
-		Memory:      options.Memory,
-	}
-
-	resp, err := d.client.ImageBuild(ctx, options.Context, buildOptions)
+func (d *DockerBackend) BuildImage(ctx context.Context, dockerfilePath, tag, contextPath string, buildArgs map[string]*string) (io.ReadCloser, error) {
+	tarReader, err := createTarArchive(contextPath)
 	if err != nil {
-		return backend.BuildResult{}, fmt.Errorf("failed to build image: %w", err)
+		return nil, fmt.Errorf("failed to create build context: %w", err)
 	}
 
-	return backend.BuildResult{
-		Output: resp.Body,
-	}, nil
+	buildOptions := types.ImageBuildOptions{
+		Dockerfile: dockerfilePath,
+		Tags:       []string{tag},
+		BuildArgs:  buildArgs,
+		Remove:     true,
+	}
+
+	resp, err := d.client.ImageBuild(ctx, tarReader, buildOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build image: %w", err)
+	}
+
+	return resp.Body, nil
 }
 
 // TagImage tags an image.
@@ -787,6 +780,63 @@ func (d *DockerBackend) GetContainersUsingNetwork(ctx context.Context, networkID
 	return result, nil
 }
 
+// ImageHistory returns the history of an image.
+func (d *DockerBackend) ImageHistory(ctx context.Context, imageID string) ([]backend.ImageHistoryItem, error) {
+	history, err := d.client.ImageHistory(ctx, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image history: %w", err)
+	}
+
+	result := make([]backend.ImageHistoryItem, len(history))
+	for i, item := range history {
+		result[i] = backend.ImageHistoryItem{
+			ID:        item.ID,
+			Created:   time.Unix(item.Created, 0),
+			CreatedBy: item.CreatedBy,
+			Tags:      item.Tags,
+			Size:      item.Size,
+			Comment:   item.Comment,
+		}
+	}
+	return result, nil
+}
+
+// GetAllNetworkUsage returns a map of network IDs that are in use by any container.
+func (d *DockerBackend) GetAllNetworkUsage(ctx context.Context) (map[string]bool, error) {
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	result := make(map[string]bool)
+	for _, c := range containers {
+		for _, settings := range c.NetworkSettings.Networks {
+			if settings.NetworkID != "" {
+				result[settings.NetworkID] = true
+			}
+		}
+	}
+	return result, nil
+}
+
+// GetAllVolumeUsage returns a map of volume names that are in use by any container.
+func (d *DockerBackend) GetAllVolumeUsage(ctx context.Context) (map[string]bool, error) {
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	result := make(map[string]bool)
+	for _, c := range containers {
+		for _, mount := range c.Mounts {
+			if mount.Type == "volume" && mount.Name != "" {
+				result[mount.Name] = true
+			}
+		}
+	}
+	return result, nil
+}
+
 // Helper functions for type conversion
 
 func convertExposedPorts(ports nat.PortSet) map[string]struct{} {
@@ -956,4 +1006,78 @@ func (m *multiError) ToError() error {
 		return m.errors[0]
 	}
 	return fmt.Errorf("multiple errors: %v", m.errors)
+}
+
+// createTarArchive creates a tar archive of the build context directory.
+func createTarArchive(contextPath string) (io.ReadCloser, error) {
+	cleanContextPath := filepath.Clean(contextPath)
+
+	contextInfo, err := os.Stat(cleanContextPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat build context: %w", err)
+	}
+	if !contextInfo.IsDir() {
+		return nil, fmt.Errorf("build context must be a directory: %s", cleanContextPath)
+	}
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+
+		tarWriter := tar.NewWriter(pw)
+		defer tarWriter.Close()
+
+		walkErr := filepath.Walk(cleanContextPath, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+
+			relPath, err := filepath.Rel(cleanContextPath, path)
+			if err != nil {
+				return fmt.Errorf("failed to compute relative path for %s: %w", path, err)
+			}
+			if relPath == "." {
+				return nil
+			}
+
+			archivePath := filepath.ToSlash(relPath)
+
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+			}
+			header.Name = archivePath
+
+			if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+				header.Name += "/"
+			}
+
+			if err := tarWriter.WriteHeader(header); err != nil {
+				return fmt.Errorf("failed to write tar header for %s: %w", path, err)
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			file, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to open file %s: %w", path, err)
+			}
+			defer file.Close()
+
+			if _, err := io.Copy(tarWriter, file); err != nil {
+				return fmt.Errorf("failed to write file %s to tar: %w", path, err)
+			}
+
+			return nil
+		})
+
+		if walkErr != nil {
+			pw.CloseWithError(walkErr)
+		}
+	}()
+
+	return pr, nil
 }

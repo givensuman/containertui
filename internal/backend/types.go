@@ -235,47 +235,22 @@ type Logs struct {
 
 // ContainerConfig holds configuration for creating a container.
 type ContainerConfig struct {
-	Name      string
-	Image     string
-	Ports     map[string]string // "hostPort" -> "containerPort"
-	Volumes   []string          // "hostPath:containerPath" format
-	Env       []string          // "KEY=value" format
-	AutoStart bool
-	Network   string // Network name (default: "bridge")
+	Name       string
+	Image      string
+	Ports      map[string]string // "hostPort" -> "containerPort"
+	Volumes    []string          // "hostPath:containerPath" format
+	Env        []string          // "KEY=value" format
+	AutoStart  bool
+	AutoRemove bool
+	Network    string // Network name (default: "bridge")
 }
 
-// PullOptions contains options for pulling an image.
-type PullOptions struct {
-	RegistryAuth string
-	Platform     string
-	All          bool
-}
-
-// PullResult contains the result of a pull operation.
-type PullResult struct {
-	ImageID string
-	Digest  string
-}
-
-// BuildOptions contains options for building an image.
-type BuildOptions struct {
-	Context    io.Reader
-	Dockerfile string
-	Tags       []string
-	BuildArgs  map[string]*string
-	Labels     map[string]string
-	Target     string
-	NoCache    bool
-	Remove     bool
-	ForceRm    bool
-	Pull       bool
-	Isolation  string
-	CpuShares  int64
-	Memory     int64
-}
-
-// BuildResult contains the result of a build operation.
-type BuildResult struct {
-	ImageID string
-	Output  io.ReadCloser
+// ImageHistoryItem represents a single layer in an image's history.
+type ImageHistoryItem struct {
+	ID        string
+	Created   time.Time
+	CreatedBy string
+	Tags      []string
+	Size      int64
+	Comment   string
 }
