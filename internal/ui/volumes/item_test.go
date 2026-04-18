@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 )
 
 func TestTruncateVolumeName(t *testing.T) {
@@ -27,7 +27,7 @@ func TestTruncateVolumeName(t *testing.T) {
 
 func TestTitleUsesTruncatedVolumeName(t *testing.T) {
 	long := "volume-name-that-is-way-too-long-for-normal-list-display"
-	item := VolumeItem{Volume: client.Volume{Name: long}, IsMounted: false}
+	item := VolumeItem{Volume: backend.Volume{Name: long}, IsMounted: false}
 
 	title := item.Title()
 	if !strings.Contains(title, "volume-name-that-is-way-too-l...") {
@@ -52,7 +52,7 @@ func TestTruncateVolumeNameIsRuneSafe(t *testing.T) {
 
 func TestTitleDoesNotContainBrokenANSIFragments(t *testing.T) {
 	long := "volume-name-that-is-way-too-long-for-normal-list-display"
-	item := VolumeItem{Volume: client.Volume{Name: long}, IsMounted: true}
+	item := VolumeItem{Volume: backend.Volume{Name: long}, IsMounted: true}
 
 	title := item.Title()
 	if strings.Contains(title, "[93m") || strings.Contains(title, "[0m") {
@@ -61,7 +61,7 @@ func TestTitleDoesNotContainBrokenANSIFragments(t *testing.T) {
 }
 
 func TestTitleDoesNotApplyANSIToVolumeName(t *testing.T) {
-	item := VolumeItem{Volume: client.Volume{Name: "my-volume-name"}, IsMounted: false}
+	item := VolumeItem{Volume: backend.Volume{Name: "my-volume-name"}, IsMounted: false}
 	title := item.Title()
 
 	lastSpace := strings.LastIndex(title, " ")

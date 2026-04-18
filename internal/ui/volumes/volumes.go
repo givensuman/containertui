@@ -11,7 +11,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/docker/docker/api/types/volume"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -25,7 +25,7 @@ import (
 // MsgVolumeInspection contains the inspection data for a volume.
 type MsgVolumeInspection struct {
 	Name   string
-	Volume volume.Volume
+	Volume backend.VolumeDetail
 	Err    error
 }
 
@@ -142,7 +142,7 @@ type Model struct {
 	components.ResourceView[string, VolumeItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	inspection         volume.Volume
+	inspection         backend.VolumeDetail
 	detailsPanel       components.DetailsPanel
 }
 
@@ -150,13 +150,13 @@ func New() Model {
 	volumeKeybindings := newKeybindings()
 
 	fetchVolumes := func() ([]VolumeItem, error) {
-		volumeList, err := state.GetClient().GetVolumes(stdcontext.Background())
+		volumeList, err := state.GetBackend().ListVolumes(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
 
 		// Get volume usage map (single API call for all volumes)
-		mountedVolumes, err := state.GetClient().GetAllVolumeUsage(stdcontext.Background())
+		mountedVolumes, err := state.GetBackend().GetAllVolumeUsage(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +201,7 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        volumeKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		inspection:         volume.Volume{},
+		inspection:         backend.VolumeDetail{},
 		detailsPanel:       components.NewDetailsPanel(),
 	}
 
@@ -308,7 +308,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for DeleteVolume"))
 				}
-				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName, false)
+				err := state.GetBackend().RemoveVolume(stdcontext.Background(), volumeName)
 				if err == nil {
 					// Close the overlay and refresh list
 					model.CloseOverlay()
@@ -327,7 +327,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					model.CloseOverlay()
 					return model, notifications.ShowError(fmt.Errorf("invalid payload type for ForceDeleteVolume"))
 				}
-				err := state.GetClient().RemoveVolume(stdcontext.Background(), volumeName, true)
+				err := state.GetBackend().RemoveVolume(stdcontext.Background(), volumeName)
 				model.CloseOverlay()
 				if err != nil {
 					return model, notifications.ShowError(fmt.Errorf("failed to force delete volume: %w", err))
@@ -553,7 +553,7 @@ func (model Model) handleRemove() {
 		return
 	}
 
-	containersUsingVolume, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), selectedItem.Volume.Name)
+	containersUsingVolume, err := state.GetBackend().GetContainersUsingVolume(stdcontext.Background(), selectedItem.Volume.Name)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -607,7 +607,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			volumeInfo, err := state.GetClient().InspectVolume(stdcontext.Background(), volumeName)
+			volumeInfo, err := state.GetBackend().InspectVolume(stdcontext.Background(), volumeName)
 			return MsgVolumeInspection{Name: volumeName, Volume: volumeInfo, Err: err}
 		}
 	}
@@ -644,7 +644,7 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this volume
-	usedBy, err := state.GetClient().GetContainersUsingVolume(stdcontext.Background(), model.inspection.Name)
+	usedBy, err := state.GetBackend().GetContainersUsingVolume(stdcontext.Background(), model.inspection.Name)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
@@ -653,7 +653,7 @@ func (model *Model) updateUsedByPanel() {
 	model.SetExtraContent(buildVolumeUsageContent(model.inspection, usedBy))
 }
 
-func buildVolumeUsageContent(inspection volume.Volume, usedBy []string) string {
+func buildVolumeUsageContent(inspection backend.VolumeDetail, usedBy []string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Driver: %s\n", inspection.Driver))
 	b.WriteString(fmt.Sprintf("Mountpoint: %s\n\n", inspection.Mountpoint))
@@ -748,7 +748,7 @@ func (model *Model) handlePruneVolumes() tea.Cmd {
 	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		spaceReclaimed, err := state.GetClient().PruneVolumes(ctx)
+		spaceReclaimed, err := state.GetBackend().PruneVolumes(ctx)
 		return MsgPruneComplete{
 			SpaceReclaimed: spaceReclaimed,
 			Err:            err,
@@ -830,7 +830,7 @@ func (model Model) performCreateVolume(name, driver string, labels map[string]st
 			driver = "local"
 		}
 
-		volumeName, err := state.GetClient().CreateVolume(ctx, name, driver, labels)
+		volumeName, err := state.GetBackend().CreateVolume(ctx, name, driver, labels)
 		if err != nil {
 			return MsgCreateVolumeComplete{Err: fmt.Errorf("failed to create volume: %w", err)}
 		}

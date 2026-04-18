@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 const volumeTitleMaxLength = 32
 
 type VolumeItem struct {
-	Volume     client.Volume
+	Volume     backend.Volume
 	isSelected bool
 	IsMounted  bool // Whether the volume is currently mounted by any containers
 }

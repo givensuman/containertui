@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types/volume"
 	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/registry"
@@ -127,7 +126,7 @@ func BuildNetworkPanel(network backend.NetworkDetail, width int, format infopane
 }
 
 // BuildVolumePanel builds an informational panel for a volume with raw YAML/JSON output.
-func BuildVolumePanel(vol volume.Volume, width int, format infopanel.OutputFormat) string {
+func BuildVolumePanel(vol backend.VolumeDetail, width int, format infopanel.OutputFormat) string {
 	// If format is empty, use default from config
 	if format == "" {
 		format = infopanel.GetOutputFormat()

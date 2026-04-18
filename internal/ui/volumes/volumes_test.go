@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/list"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
 
@@ -52,8 +51,8 @@ func TestWithCreateVolumeDialogShowsOverlay(t *testing.T) {
 
 func TestHasPrunableVolumes(t *testing.T) {
 	model := newPruneTestModel([]VolumeItem{
-		{Volume: client.Volume{Name: "vol-mounted"}, IsMounted: true},
-		{Volume: client.Volume{Name: "vol-unused"}, IsMounted: false},
+		{Volume: backend.Volume{Name: "vol-mounted"}, IsMounted: true},
+		{Volume: backend.Volume{Name: "vol-unused"}, IsMounted: false},
 	})
 
 	if !model.hasPrunableVolumes() {
@@ -63,8 +62,8 @@ func TestHasPrunableVolumes(t *testing.T) {
 
 func TestHasPrunableVolumesNone(t *testing.T) {
 	model := newPruneTestModel([]VolumeItem{
-		{Volume: client.Volume{Name: "vol-mounted-1"}, IsMounted: true},
-		{Volume: client.Volume{Name: "vol-mounted-2"}, IsMounted: true},
+		{Volume: backend.Volume{Name: "vol-mounted-1"}, IsMounted: true},
+		{Volume: backend.Volume{Name: "vol-mounted-2"}, IsMounted: true},
 	})
 
 	if model.hasPrunableVolumes() {
@@ -81,9 +80,9 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 
 func TestPruneVolumesConfirmationUsesSafetyHelper(t *testing.T) {
 	model := newPruneTestModel([]VolumeItem{
-		{Volume: client.Volume{Name: "data"}, IsMounted: false},
-		{Volume: client.Volume{Name: "cache"}, IsMounted: false},
-		{Volume: client.Volume{Name: "live"}, IsMounted: true},
+		{Volume: backend.Volume{Name: "data"}, IsMounted: false},
+		{Volume: backend.Volume{Name: "cache"}, IsMounted: false},
+		{Volume: backend.Volume{Name: "live"}, IsMounted: true},
 	})
 
 	model.showPruneVolumesConfirmation()
@@ -106,7 +105,7 @@ func TestPruneVolumesConfirmationUsesSafetyHelper(t *testing.T) {
 }
 
 func TestBuildVolumeUsageContentIncludesDependencyTrace(t *testing.T) {
-	inspection := volume.Volume{Name: "cache", Driver: "local", Mountpoint: "/var/lib/docker/volumes/cache/_data"}
+	inspection := backend.VolumeDetail{Volume: backend.Volume{Name: "cache", Driver: "local", Mountpoint: "/var/lib/docker/volumes/cache/_data"}}
 	content := buildVolumeUsageContent(inspection, []string{"api", "worker"})
 
 	if !strings.Contains(content, "Driver: local") {
@@ -121,7 +120,7 @@ func TestBuildVolumeUsageContentIncludesDependencyTrace(t *testing.T) {
 }
 
 func TestWithAttachVolumeDialogShowsOverlay(t *testing.T) {
-	model := newPruneTestModel([]VolumeItem{{Volume: client.Volume{Name: "cache"}, IsMounted: false}})
+	model := newPruneTestModel([]VolumeItem{{Volume: backend.Volume{Name: "cache"}, IsMounted: false}})
 
 	model = model.withAttachVolumeDialog()
 	if !model.IsOverlayVisible() {
@@ -130,7 +129,7 @@ func TestWithAttachVolumeDialogShowsOverlay(t *testing.T) {
 }
 
 func TestWithDetachVolumeDialogShowsOverlay(t *testing.T) {
-	model := newPruneTestModel([]VolumeItem{{Volume: client.Volume{Name: "cache"}, IsMounted: true}})
+	model := newPruneTestModel([]VolumeItem{{Volume: backend.Volume{Name: "cache"}, IsMounted: true}})
 
 	model = model.withDetachVolumeDialog()
 	if !model.IsOverlayVisible() {
