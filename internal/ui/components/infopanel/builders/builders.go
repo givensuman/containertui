@@ -76,7 +76,7 @@ func normalizeReadmeWhitespace(text string) string {
 }
 
 // BuildImagePanel builds an informational panel for an image with raw YAML/JSON output.
-func BuildImagePanel(image types.ImageInspect, width int, format infopanel.OutputFormat) string {
+func BuildImagePanel(image backend.ImageDetail, width int, format infopanel.OutputFormat) string {
 	// If format is empty, use default from config
 	if format == "" {
 		format = infopanel.GetOutputFormat()

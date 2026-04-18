@@ -15,9 +15,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/docker/docker/api/types"
-	imagetypes "github.com/docker/docker/api/types/image"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -59,7 +57,7 @@ func extractTagImageActionPayload(payload map[string]any) (string, string, error
 // MsgImageInspection contains the inspection data for an image.
 type MsgImageInspection struct {
 	ID    string
-	Image types.ImageInspect
+	Image backend.ImageDetail
 	Err   error
 }
 
@@ -125,7 +123,7 @@ type MsgCreateContainerComplete struct {
 
 // MsgCreateContainerStart indicates create flow should begin execution.
 type MsgCreateContainerStart struct {
-	Config    client.CreateContainerConfig
+	Config    backend.ContainerConfig
 	AutoStart bool
 }
 
@@ -364,7 +362,7 @@ type Model struct {
 	components.ResourceView[string, ImageItem]
 	keybindings        *keybindings
 	detailsKeybindings detailsKeybindings
-	inspection         types.ImageInspect
+	inspection         backend.ImageDetail
 	detailsPanel       components.DetailsPanel
 	pullLayers         map[string]pullLayerProgress
 	pullPercent        float64
@@ -382,13 +380,13 @@ func New() Model {
 	imageKeybindings := newKeybindings()
 
 	fetchImages := func() ([]ImageItem, error) {
-		imageList, err := state.GetClient().GetImages(stdcontext.Background())
+		imageList, err := state.GetBackend().ListImages(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
 
 		// Get all containers to determine which images are in use
-		containers, err := state.GetClient().GetContainers(stdcontext.Background())
+		containers, err := state.GetBackend().ListContainers(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -448,7 +446,7 @@ func New() Model {
 		ResourceView:       *resourceView,
 		keybindings:        imageKeybindings,
 		detailsKeybindings: newDetailsKeybindings(),
-		inspection:         types.ImageInspect{},
+		inspection:         backend.ImageDetail{},
 		detailsPanel:       components.NewDetailsPanel(),
 		pullLayers:         make(map[string]pullLayerProgress),
 	}
@@ -576,7 +574,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		createCmd := func() tea.Msg {
-			containerID, err := state.GetClient().CreateContainer(stdcontext.Background(), msg.Config)
+			containerID, err := state.GetBackend().CreateContainer(stdcontext.Background(), msg.Config)
 			return MsgCreateContainerCreated{ContainerID: containerID, AutoStart: msg.AutoStart, Err: err}
 		}
 
@@ -598,7 +596,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			startCmd := func() tea.Msg {
-				err := state.GetClient().StartContainer(stdcontext.Background(), msg.ContainerID)
+				err := state.GetBackend().StartContainer(stdcontext.Background(), msg.ContainerID)
 				return MsgCreateContainerStarted{ContainerID: msg.ContainerID, Err: err}
 			}
 			return model, tea.Batch(progressCmd, startCmd)
@@ -671,7 +669,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case MsgRunAndExecReady:
 		command := exec.Command("docker", "exec", "-it", msg.ContainerID, "/bin/sh")
 		return model, tea.ExecProcess(command, func(err error) tea.Msg {
-			cleanupErr := state.GetClient().RemoveContainer(stdcontext.Background(), msg.ContainerID, true)
+			cleanupErr := state.GetBackend().RemoveContainer(stdcontext.Background(), msg.ContainerID, true)
 			if cleanupErr != nil {
 				cleanupErr = fmt.Errorf("shell exited but failed to clean up container %s: %w", msg.ContainerID[:12], cleanupErr)
 			}
@@ -767,7 +765,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return model, nil
 			case "DeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID, false)
+				err := state.GetBackend().RemoveImage(stdcontext.Background(), imageID)
 				if err == nil {
 					model.CloseOverlay()
 					return model, tea.Batch(
@@ -781,7 +779,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			case "ForceDeleteImage":
 				imageID := confirmMsg.Action.Payload.(string)
-				err := state.GetClient().RemoveImage(stdcontext.Background(), imageID, true)
+				err := state.GetBackend().RemoveImage(stdcontext.Background(), imageID)
 				model.CloseOverlay()
 				if err != nil {
 					return model, notifications.ShowError(fmt.Errorf("failed to force delete image: %w", err))
@@ -822,7 +820,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				model.operationCancel = cancel
 
 				go func() {
-					err := state.GetClient().PullImage(ctx, imageName, progressChan)
+					err := state.GetBackend().PullImage(ctx, imageName, progressChan)
 					doneChan <- err
 					close(doneChan)
 				}()
@@ -853,9 +851,9 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				autoStart := parseBool(formValues["Auto-start"])
 
 				// Create container config
-				config := client.CreateContainerConfig{
+				config := backend.ContainerConfig{
 					Name:      formValues["Name"],
-					ImageID:   imageID,
+					Image:     imageID,
 					Ports:     ports,
 					Volumes:   volumes,
 					Env:       env,
@@ -1137,7 +1135,7 @@ func (model *Model) handleRemove() {
 		return
 	}
 
-	containersUsingImage, err := state.GetClient().GetContainersUsingImage(stdcontext.Background(), selectedItem.Image.ID)
+	containersUsingImage, err := state.GetBackend().GetContainersUsingImage(stdcontext.Background(), selectedItem.Image.ID)
 	if err != nil {
 		// If we can't check usage, show error and don't proceed with deletion
 		errorDialog := components.NewDialog(
@@ -1188,7 +1186,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 
 		// Fetch inspection data asynchronously
 		return func() tea.Msg {
-			imageInfo, err := state.GetClient().InspectImage(stdcontext.Background(), imageID)
+			imageInfo, err := state.GetBackend().InspectImage(stdcontext.Background(), imageID)
 			return MsgImageInspection{ID: imageID, Image: imageInfo, Err: err}
 		}
 	}
@@ -1225,13 +1223,13 @@ func (model *Model) updateUsedByPanel() {
 	}
 
 	// Fetch containers using this image
-	usedBy, err := state.GetClient().GetContainersUsingImage(stdcontext.Background(), model.inspection.ID)
+	usedBy, err := state.GetBackend().GetContainersUsingImage(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
 		model.SetExtraContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render(fmt.Sprintf("Error: %v", err)))
 		return
 	}
 
-	history, err := state.GetClient().ImageHistory(stdcontext.Background(), model.inspection.ID)
+	history, err := state.GetBackend().ImageHistory(stdcontext.Background(), model.inspection.ID)
 	if err != nil {
 		history = nil
 	}
@@ -1239,7 +1237,7 @@ func (model *Model) updateUsedByPanel() {
 	model.SetExtraContent(buildImageUsageAndHistoryContent(model.inspection, usedBy, history))
 }
 
-func buildImageUsageAndHistoryContent(inspection types.ImageInspect, usedBy []string, history []imagetypes.HistoryResponseItem) string {
+func buildImageUsageAndHistoryContent(inspection backend.ImageDetail, usedBy []string, history []backend.ImageHistoryItem) string {
 	var b strings.Builder
 	b.WriteString("Usage\n")
 	if len(usedBy) == 0 {
@@ -1257,9 +1255,9 @@ func buildImageUsageAndHistoryContent(inspection types.ImageInspect, usedBy []st
 	b.WriteString(fmt.Sprintf("Layers: %d\n", len(inspection.RootFS.Layers)))
 	b.WriteString(fmt.Sprintf("Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.Size, 0)))))
 	b.WriteString(fmt.Sprintf("Virtual Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.VirtualSize, 0)))))
-	if strings.TrimSpace(inspection.Created) != "" {
+	if !inspection.Created.IsZero() {
 		b.WriteString("Created: ")
-		b.WriteString(inspection.Created)
+		b.WriteString(inspection.Created.Format(time.RFC3339))
 		b.WriteString("\n")
 	}
 
@@ -1364,7 +1362,7 @@ func (model *Model) handlePruneImages() tea.Cmd {
 	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		spaceReclaimed, err := state.GetClient().PruneImages(ctx)
+		spaceReclaimed, err := state.GetBackend().PruneImages(ctx)
 		return MsgPruneComplete{
 			SpaceReclaimed: spaceReclaimed,
 			Err:            err,
@@ -1457,13 +1455,13 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 
 		config := buildTempShellContainerConfig(selectedItem.Image.ID, time.Now())
 
-		containerID, err := state.GetClient().CreateContainer(ctx, config)
+		containerID, err := state.GetBackend().CreateContainer(ctx, config)
 		if err != nil {
 			return MsgRunAndExecComplete{Err: fmt.Errorf("failed to create container: %w", err)}
 		}
 
-		if err := state.GetClient().StartContainer(ctx, containerID); err != nil {
-			_ = state.GetClient().RemoveContainer(ctx, containerID, true)
+		if err := state.GetBackend().StartContainer(ctx, containerID); err != nil {
+			_ = state.GetBackend().RemoveContainer(ctx, containerID, true)
 			return MsgRunAndExecComplete{Err: fmt.Errorf("failed to start container: %w", err)}
 		}
 
@@ -1471,10 +1469,10 @@ func (model *Model) handleRunAndExec() tea.Cmd {
 	}
 }
 
-func buildTempShellContainerConfig(imageID string, now time.Time) client.CreateContainerConfig {
-	return client.CreateContainerConfig{
+func buildTempShellContainerConfig(imageID string, now time.Time) backend.ContainerConfig {
+	return backend.ContainerConfig{
 		Name:       generateTempContainerName(imageID, now),
-		ImageID:    imageID,
+		Image:      imageID,
 		Ports:      nil,
 		Volumes:    nil,
 		Env:        nil,
@@ -1533,7 +1531,7 @@ func (model *Model) handleBuildImage() {
 func (model *Model) performTagImage(imageID, newTag string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		err := state.GetClient().TagImage(ctx, imageID, newTag)
+		err := state.GetBackend().TagImage(ctx, imageID, newTag)
 		if err != nil {
 			return MsgTagImageComplete{Err: fmt.Errorf("failed to tag image: %w", err)}
 		}
@@ -1551,7 +1549,7 @@ func (model *Model) performBuildImage(ctx stdcontext.Context, dockerfile, tag, c
 			buildArgsPtr[k] = &val
 		}
 
-		buildOutput, err := state.GetClient().BuildImage(ctx, dockerfile, tag, contextPath, buildArgsPtr)
+		buildOutput, err := state.GetBackend().BuildImage(ctx, dockerfile, tag, contextPath, buildArgsPtr)
 		if err != nil {
 			return MsgBuildImageComplete{Err: fmt.Errorf("failed to build image: %w", err)}
 		}

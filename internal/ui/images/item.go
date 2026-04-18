@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	"charm.land/bubbles/v2/list"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ImageItem struct {
-	Image      client.Image
+	Image      backend.Image
 	isSelected bool
 	InUse      bool // Whether the image is being used by any containers
 }

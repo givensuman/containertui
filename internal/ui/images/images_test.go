@@ -9,10 +9,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -141,8 +138,8 @@ func TestBuildTempShellContainerConfigSetsLifecycleFields(t *testing.T) {
 		t.Fatalf("expected bridge network, got %q", config.Network)
 	}
 
-	if config.ImageID != "sha256:abcdef0123456789" {
-		t.Fatalf("unexpected image id %q", config.ImageID)
+	if config.Image != "sha256:abcdef0123456789" {
+		t.Fatalf("unexpected image id %q", config.Image)
 	}
 
 	if !strings.HasPrefix(config.Name, "tmp-shell-") {
@@ -175,7 +172,7 @@ func TestImageTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
 	state.SetConfig(config.DefaultConfig())
 
 	repo := "library/nginx:latest"
-	item := ImageItem{Image: client.Image{RepoTags: []string{repo}}, InUse: true}
+	item := ImageItem{Image: backend.Image{RepoTags: []string{repo}}, InUse: true}
 	title := item.Title()
 
 	if regexp.MustCompile("\\x1b\\[[0-9;]*m" + regexp.QuoteMeta(repo) + "\\x1b\\[[0-9;]*m").MatchString(title) {
@@ -188,8 +185,8 @@ func TestImageTitleDoesNotWrapRepoNameWithANSI(t *testing.T) {
 
 func TestHasPrunableImages(t *testing.T) {
 	model := newPruneTestModel([]ImageItem{
-		{Image: client.Image{ID: "img-used"}, InUse: true},
-		{Image: client.Image{ID: "img-unused"}, InUse: false},
+		{Image: backend.Image{ID: "img-used"}, InUse: true},
+		{Image: backend.Image{ID: "img-unused"}, InUse: false},
 	})
 
 	if !model.hasPrunableImages() {
@@ -199,8 +196,8 @@ func TestHasPrunableImages(t *testing.T) {
 
 func TestHasPrunableImagesNone(t *testing.T) {
 	model := newPruneTestModel([]ImageItem{
-		{Image: client.Image{ID: "img-used-1"}, InUse: true},
-		{Image: client.Image{ID: "img-used-2"}, InUse: true},
+		{Image: backend.Image{ID: "img-used-1"}, InUse: true},
+		{Image: backend.Image{ID: "img-used-2"}, InUse: true},
 	})
 
 	if model.hasPrunableImages() {
@@ -217,9 +214,9 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 
 func TestPruneImagesConfirmationUsesSafetyHelper(t *testing.T) {
 	model := newPruneTestModel([]ImageItem{
-		{Image: client.Image{ID: "img-used", RepoTags: []string{"busybox:latest"}}, InUse: true},
-		{Image: client.Image{ID: "img-unused-1", RepoTags: []string{"nginx:latest"}}, InUse: false},
-		{Image: client.Image{ID: "img-unused-2", RepoTags: []string{"redis:7"}}, InUse: false},
+		{Image: backend.Image{ID: "img-used", RepoTags: []string{"busybox:latest"}}, InUse: true},
+		{Image: backend.Image{ID: "img-unused-1", RepoTags: []string{"nginx:latest"}}, InUse: false},
+		{Image: backend.Image{ID: "img-unused-2", RepoTags: []string{"redis:7"}}, InUse: false},
 	})
 
 	model.showPruneImagesConfirmation()
@@ -243,7 +240,7 @@ func TestPruneImagesConfirmationUsesSafetyHelper(t *testing.T) {
 
 func TestPruneImageCandidatesFallsBackToImageID(t *testing.T) {
 	model := newPruneTestModel([]ImageItem{
-		{Image: client.Image{ID: "sha256:abcdef1234567890", RepoTags: nil}, InUse: false},
+		{Image: backend.Image{ID: "sha256:abcdef1234567890", RepoTags: nil}, InUse: false},
 	})
 
 	candidates := model.pruneImageCandidates()
@@ -278,15 +275,16 @@ func TestEscCancelsActiveImageOperation(t *testing.T) {
 }
 
 func TestBuildImageUsageAndHistoryContentIncludesMetadataAndCleanupHint(t *testing.T) {
-	inspection := types.ImageInspect{
-		ID:              "sha256:abcdef1234567890",
-		Size:            1_024,
-		VirtualSize:     2_048,
-		Created:         "2025-01-01T00:00:00Z",
-		RootFS:          types.RootFS{Layers: []string{"sha256:l1", "sha256:l2"}},
-		ContainerConfig: &container.Config{},
+	inspection := backend.ImageDetail{
+		Image: backend.Image{
+			ID:      "sha256:abcdef1234567890",
+			Size:    1_024,
+			Created: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		VirtualSize: 2_048,
+		RootFS:      backend.RootFS{Layers: []string{"sha256:l1", "sha256:l2"}},
 	}
-	history := []image.HistoryResponseItem{
+	history := []backend.ImageHistoryItem{
 		{CreatedBy: "RUN apk add curl"},
 		{CreatedBy: "CMD [\"sh\"]"},
 	}
@@ -304,7 +302,7 @@ func TestBuildImageUsageAndHistoryContentIncludesMetadataAndCleanupHint(t *testi
 }
 
 func TestBuildImageUsageAndHistoryContentWithNoDependenciesMarksSafeCleanup(t *testing.T) {
-	inspection := types.ImageInspect{ID: "sha256:abcdef", RootFS: types.RootFS{Layers: []string{}}, Size: 0, VirtualSize: 0}
+	inspection := backend.ImageDetail{Image: backend.Image{ID: "sha256:abcdef"}, RootFS: backend.RootFS{Layers: []string{}}}
 	content := buildImageUsageAndHistoryContent(inspection, nil, nil)
 
 	if !strings.Contains(strings.ToLower(content), "safe cleanup candidate") {
