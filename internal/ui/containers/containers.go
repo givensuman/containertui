@@ -14,7 +14,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/docker/docker/api/types"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
@@ -27,7 +27,7 @@ import (
 // MsgContainerInspection contains the inspection data for a container.
 type MsgContainerInspection struct {
 	ID        string
-	Container types.ContainerJSON
+	Container backend.ContainerDetail
 	Err       error
 }
 
@@ -159,7 +159,7 @@ type Model struct {
 	components.ResourceView[string, ContainerItem]
 	keybindings *keybindings
 
-	inspection         types.ContainerJSON
+	inspection         backend.ContainerDetail
 	detailsKeybindings detailsKeybindings
 	detailsPanel       components.DetailsPanel
 
@@ -172,7 +172,7 @@ func New() Model {
 
 	// Initialize ResourceView
 	fetchContainers := func() ([]ContainerItem, error) {
-		containers, err := state.GetClient().GetContainers(stdcontext.Background())
+		containers, err := state.GetBackend().ListContainers(stdcontext.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +250,7 @@ func configureContainersSplitView(resourceView *components.ResourceView[string, 
 func (model *Model) refreshWithState() tea.Cmd {
 	return func() tea.Msg {
 		// Fetch fresh container data from Docker
-		containers, err := state.GetClient().GetContainers(stdcontext.Background())
+		containers, err := state.GetBackend().ListContainers(stdcontext.Background())
 		if err != nil {
 			return MsgContainersRefreshed{Err: err}
 		}
@@ -532,7 +532,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Capture ID for closure
 			id := selectedItem.ID
 			cmds = append(cmds, func() tea.Msg {
-				containerInfo, err := state.GetClient().InspectContainer(stdcontext.Background(), id)
+				containerInfo, err := state.GetBackend().InspectContainer(stdcontext.Background(), id)
 				return MsgContainerInspection{ID: id, Container: containerInfo, Err: err}
 			})
 		}
@@ -1003,7 +1003,7 @@ func (model *Model) handlePruneContainers() tea.Cmd {
 	// Start async prune operation
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		spaceReclaimed, err := state.GetClient().PruneContainers(ctx)
+		spaceReclaimed, err := state.GetBackend().PruneContainers(ctx)
 		return MsgPruneComplete{
 			SpaceReclaimed: spaceReclaimed,
 			Err:            err,
@@ -1077,7 +1077,7 @@ func (model *Model) handleRenameContainer() {
 func (model *Model) performRenameContainer(containerID, newName string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
-		err := state.GetClient().RenameContainer(ctx, containerID, newName)
+		err := state.GetBackend().RenameContainer(ctx, containerID, newName)
 		if err != nil {
 			return notifications.ShowError(err)
 		}

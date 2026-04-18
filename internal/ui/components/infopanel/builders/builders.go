@@ -7,13 +7,14 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
 
 // BuildContainerPanel builds a raw inspection panel for a container.
-func BuildContainerPanel(container types.ContainerJSON, width int, expandEnv bool, format infopanel.OutputFormat) string {
+func BuildContainerPanel(container backend.ContainerDetail, width int, expandEnv bool, format infopanel.OutputFormat) string {
 	// If format is empty, use default from config
 	if format == "" {
 		format = infopanel.GetOutputFormat()

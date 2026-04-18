@@ -95,12 +95,12 @@ func (model *ContainerLogs) streamLogsCmd() tea.Cmd {
 	cancelChannel := model.cancelChannel
 	ctx := model.logCtx
 	return func() tea.Msg {
-		reader, err := state.GetClient().OpenLogs(ctx, containerID)
+		logs, err := state.GetBackend().OpenLogs(ctx, containerID)
 		if err != nil {
 			return logsLoadedMsg{lines: nil, err: err}
 		}
-		defer reader.Close()
-		scanner := bufio.NewScanner(reader)
+		defer logs.Close()
+		scanner := bufio.NewScanner(logs.Stream)
 		for {
 			select {
 			case <-cancelChannel:

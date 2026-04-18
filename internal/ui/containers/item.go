@@ -8,13 +8,13 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/ui/icons"
 )
 
 type ContainerItem struct {
-	client.Container
+	backend.Container
 	isSelected bool
 	isWorking  bool
 	spinner    spinner.Model

@@ -7,7 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
-	"github.com/givensuman/containertui/internal/client"
+	"github.com/givensuman/containertui/internal/backend"
 	"github.com/givensuman/containertui/internal/ui/base"
 	"github.com/givensuman/containertui/internal/ui/components"
 )
@@ -60,8 +60,8 @@ func TestUpdate_AppliesRefreshedContainerItems(t *testing.T) {
 
 	msg := MsgContainersRefreshed{
 		Items: []ContainerItem{
-			{Container: client.Container{ID: "id-1", Name: "c1", Image: "img", State: "running"}},
-			{Container: client.Container{ID: "id-2", Name: "c2", Image: "img", State: "exited"}},
+			{Container: backend.Container{ID: "id-1", Name: "c1", Image: "img", State: "running"}},
+			{Container: backend.Container{ID: "id-2", Name: "c2", Image: "img", State: "exited"}},
 		},
 	}
 
@@ -87,8 +87,8 @@ func TestHasPrunableContainers(t *testing.T) {
 	model.detailsPanel.SetCurrentID("c1", nil)
 	updated, cmd := model.Update(MsgContainersRefreshed{
 		Items: []ContainerItem{
-			{Container: client.Container{ID: "c1", State: "running"}},
-			{Container: client.Container{ID: "c2", State: "exited"}},
+			{Container: backend.Container{ID: "c1", State: "running"}},
+			{Container: backend.Container{ID: "c2", State: "exited"}},
 		},
 	})
 	if cmd != nil {
@@ -107,8 +107,8 @@ func TestHasPrunableContainersNone(t *testing.T) {
 	model.detailsPanel.SetCurrentID("c1", nil)
 	updated, cmd := model.Update(MsgContainersRefreshed{
 		Items: []ContainerItem{
-			{Container: client.Container{ID: "c1", State: "running"}},
-			{Container: client.Container{ID: "c2", State: "paused"}},
+			{Container: backend.Container{ID: "c1", State: "running"}},
+			{Container: backend.Container{ID: "c2", State: "paused"}},
 		},
 	})
 	if cmd != nil {
@@ -147,7 +147,7 @@ func TestContainerLogsKeybindingsIncludeFollowPauseAndSearch(t *testing.T) {
 }
 
 func TestContainerLogsToggleFollowAndClear(t *testing.T) {
-	item := ContainerItem{Container: client.Container{ID: "abc", Name: "api", State: "running"}}
+	item := ContainerItem{Container: backend.Container{ID: "abc", Name: "api", State: "running"}}
 	logs := NewContainerLogs(item, 80, 24)
 	logs.lines = []string{"line1", "line2"}
 	logs.isLoaded = true
@@ -164,7 +164,7 @@ func TestContainerLogsToggleFollowAndClear(t *testing.T) {
 }
 
 func TestContainerLogsSearchFiltersViewContent(t *testing.T) {
-	item := ContainerItem{Container: client.Container{ID: "abc", Name: "api", State: "running"}}
+	item := ContainerItem{Container: backend.Container{ID: "abc", Name: "api", State: "running"}}
 	logs := NewContainerLogs(item, 80, 24)
 	logs.lines = []string{"api started", "worker ready", "api request"}
 	logs.isLoaded = true
@@ -189,8 +189,8 @@ func TestPruneConfirmationUsesSafetyHelper(t *testing.T) {
 	model := newContainersTestModel()
 	updated, cmd := model.Update(MsgContainersRefreshed{
 		Items: []ContainerItem{
-			{Container: client.Container{ID: "c1", Name: "api", State: "exited"}},
-			{Container: client.Container{ID: "c2", Name: "worker", State: "created"}},
+			{Container: backend.Container{ID: "c1", Name: "api", State: "exited"}},
+			{Container: backend.Container{ID: "c2", Name: "worker", State: "created"}},
 		},
 	})
 	_ = cmd

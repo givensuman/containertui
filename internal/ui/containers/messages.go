@@ -34,7 +34,7 @@ const (
 func PerformContainerOperation(operation Operation, containerID string, force bool) tea.Cmd {
 	return func() tea.Msg {
 		var err error
-		client := state.GetClient()
+		client := state.GetBackend()
 		switch operation {
 		case Pause:
 			err = client.PauseContainer(stdcontext.Background(), containerID)
