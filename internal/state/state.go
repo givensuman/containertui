@@ -4,12 +4,23 @@ package state
 import (
 	"sync"
 
+	"github.com/givensuman/containertui/internal/backend"
+	dockerbackend "github.com/givensuman/containertui/internal/backend/docker"
 	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/config"
+	"github.com/givensuman/containertui/internal/registry"
 )
 
 var (
-	// Shared Moby client instance
+	// Shared backend instance
+	backendInstance backend.Backend
+	backendMu       sync.Mutex
+
+	// Shared registry client instances
+	registryClient     *registry.Client
+	quayRegistryClient *registry.QuayClient
+
+	// Shared Moby client instance (kept for backward compat until Task 13)
 	clientInstance *client.ClientWrapper
 	clientMu       sync.Mutex
 
@@ -28,10 +39,23 @@ var (
 	clientOnce sync.Once
 )
 
-// InitializeClient initializes the shared client instance.
+// InitializeClient initializes the shared backend and registry client instances.
 func InitializeClient() error {
 	var err error
 	clientOnce.Do(func() {
+		backendMu.Lock()
+		defer backendMu.Unlock()
+
+		var b *dockerbackend.DockerBackend
+		b, err = dockerbackend.New()
+		if err != nil {
+			return
+		}
+		backendInstance = b
+		registryClient = registry.NewClient()
+		quayRegistryClient = registry.NewQuayClient()
+
+		// Also initialize the legacy client wrapper for backward compat
 		clientMu.Lock()
 		defer clientMu.Unlock()
 		clientInstance, err = client.NewClient()
@@ -39,19 +63,41 @@ func InitializeClient() error {
 	return err
 }
 
-// GetClient returns the shared client instance.
+// GetBackend returns the shared backend instance.
+func GetBackend() backend.Backend {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	return backendInstance
+}
+
+// GetRegistryClient returns the shared DockerHub registry client.
+func GetRegistryClient() *registry.Client {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	return registryClient
+}
+
+// GetQuayRegistryClient returns the shared Quay registry client.
+func GetQuayRegistryClient() *registry.QuayClient {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	return quayRegistryClient
+}
+
+// GetClient returns the shared legacy client instance.
+// Deprecated: use GetBackend() instead. Will be removed in Task 13.
 func GetClient() *client.ClientWrapper {
 	clientMu.Lock()
 	defer clientMu.Unlock()
 	return clientInstance
 }
 
-// CloseClient closes the shared client instance.
+// CloseClient closes the shared backend instance.
 func CloseClient() error {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	if clientInstance != nil {
-		return clientInstance.CloseClient()
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	if backendInstance != nil {
+		return backendInstance.Close()
 	}
 	return nil
 }
