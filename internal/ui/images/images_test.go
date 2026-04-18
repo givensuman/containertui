@@ -372,9 +372,10 @@ func TestImagePulledMessageRefreshesImagesList(t *testing.T) {
 
 	updated, cmd := model.Update(base.MsgImagePulled{ImageName: "nginx:latest"})
 
-	// Execute the returned cmd to trigger the async load
+	// Execute the returned cmd to trigger the async load and deliver the message back
 	if cmd != nil {
-		cmd()
+		msg := cmd()
+		updated, _ = updated.Update(msg)
 	}
 
 	if !refreshed {
@@ -396,9 +397,10 @@ func TestImageResourceChangedMessageRefreshesImagesList(t *testing.T) {
 
 	updated, cmd := model.Update(base.MsgResourceChanged{Resource: base.ResourceImage, Operation: base.OperationUpdated})
 
-	// Execute the returned cmd to trigger the async load
+	// Execute the returned cmd to trigger the async load and deliver the message back
 	if cmd != nil {
-		cmd()
+		msg := cmd()
+		updated, _ = updated.Update(msg)
 	}
 
 	if !refreshed {
