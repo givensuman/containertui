@@ -6,7 +6,6 @@ import (
 
 	"github.com/givensuman/containertui/internal/backend"
 	dockerbackend "github.com/givensuman/containertui/internal/backend/docker"
-	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/config"
 	"github.com/givensuman/containertui/internal/registry"
 )
@@ -20,10 +19,6 @@ var (
 	registryClient     *registry.Client
 	quayRegistryClient *registry.QuayClient
 
-	// Shared Moby client instance (kept for backward compat until Task 13)
-	clientInstance *client.ClientWrapper
-	clientMu       sync.Mutex
-
 	// Configuration file/runtime instance
 	configInstance *config.Config
 	configMu       sync.RWMutex
@@ -35,7 +30,7 @@ var (
 		Height int
 	}
 
-	// Ensures client is only initialized once
+	// Ensures backend is only initialized once
 	clientOnce sync.Once
 )
 
@@ -54,11 +49,6 @@ func InitializeClient() error {
 		backendInstance = b
 		registryClient = registry.NewClient()
 		quayRegistryClient = registry.NewQuayClient()
-
-		// Also initialize the legacy client wrapper for backward compat
-		clientMu.Lock()
-		defer clientMu.Unlock()
-		clientInstance, err = client.NewClient()
 	})
 	return err
 }
@@ -82,14 +72,6 @@ func GetQuayRegistryClient() *registry.QuayClient {
 	backendMu.Lock()
 	defer backendMu.Unlock()
 	return quayRegistryClient
-}
-
-// GetClient returns the shared legacy client instance.
-// Deprecated: use GetBackend() instead. Will be removed in Task 13.
-func GetClient() *client.ClientWrapper {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	return clientInstance
 }
 
 // CloseClient closes the shared backend instance.

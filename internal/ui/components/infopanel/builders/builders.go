@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/givensuman/containertui/internal/backend"
-	"github.com/givensuman/containertui/internal/client"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/ui/components/infopanel"
 )
@@ -152,7 +151,7 @@ func BuildVolumePanel(vol backend.VolumeDetail, width int, format infopanel.Outp
 }
 
 // BuildServicePanel builds an informational panel for a service with raw YAML/JSON output.
-func BuildServicePanel(service client.Service, width int, showFullCompose bool, format infopanel.OutputFormat) string {
+func BuildServicePanel(service backend.Service, width int, showFullCompose bool, format infopanel.OutputFormat) string {
 	// If format is empty, use default from config
 	if format == "" {
 		format = infopanel.GetOutputFormat()
