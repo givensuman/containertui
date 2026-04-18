@@ -16,8 +16,13 @@ const (
 	ViewOverlay
 )
 
+// windowSizer is a duck-type interface for models that accept window dimension updates.
+type windowSizer interface {
+	UpdateWindowDimensions(msg tea.WindowSizeMsg)
+}
+
 type ResourceView[ID comparable, Item list.Item] struct {
-	base.Component
+	base.WindowSize
 	SplitView       SplitView
 	Selections      *SelectionManager[ID]
 	SessionState    SessionState
@@ -335,8 +340,8 @@ func (rv *ResourceView[ID, Item]) UpdateWindowDimensions(msg tea.WindowSizeMsg) 
 	rv.SplitView.SetSize(msg.Width, msg.Height)
 
 	if rv.SessionState == ViewOverlay && rv.Foreground != nil {
-		if component, ok := rv.Foreground.(base.ComponentModel); ok {
-			component.UpdateWindowDimensions(msg)
+		if ws, ok := rv.Foreground.(windowSizer); ok {
+			ws.UpdateWindowDimensions(msg)
 		}
 	}
 

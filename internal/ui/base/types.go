@@ -1,17 +1,9 @@
 package base
 
-import (
-	tea "charm.land/bubbletea/v2"
-)
-
-type Component struct {
+// WindowSize holds the current terminal dimensions for a UI model.
+type WindowSize struct {
 	WindowWidth  int
 	WindowHeight int
-}
-
-type ComponentModel interface {
-	tea.Model
-	UpdateWindowDimensions(msg tea.WindowSizeMsg)
 }
 
 type StringViewModel interface {

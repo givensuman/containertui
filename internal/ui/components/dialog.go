@@ -34,7 +34,7 @@ const (
 )
 
 type Dialog struct {
-	base.Component
+	base.WindowSize
 	style          lipgloss.Style
 	message        string
 	buttons        []DialogButton
@@ -46,8 +46,7 @@ type Dialog struct {
 }
 
 var (
-	_ base.ComponentModel = (*Dialog)(nil)
-	_ fmt.Stringer        = (*Dialog)(nil)
+	_ fmt.Stringer = (*Dialog)(nil)
 )
 
 // NewDialog creates a new dialog with default medium size and info type

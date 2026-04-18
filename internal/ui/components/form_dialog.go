@@ -23,7 +23,7 @@ type FormField struct {
 }
 
 type FormDialog struct {
-	base.Component
+	base.WindowSize
 	title          string
 	fields         []FormField
 	textInputs     []textinput.Model
@@ -39,8 +39,7 @@ type FormDialog struct {
 }
 
 var (
-	_ base.ComponentModel = (*FormDialog)(nil)
-	_ fmt.Stringer        = (*FormDialog)(nil)
+	_ fmt.Stringer = (*FormDialog)(nil)
 )
 
 // NewFormDialog creates a new form dialog with default medium size

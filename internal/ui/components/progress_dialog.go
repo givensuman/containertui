@@ -18,7 +18,7 @@ type progressTickMsg time.Time
 
 // ProgressDialog shows a dialog with a progress bar and status message.
 type ProgressDialog struct {
-	base.Component
+	base.WindowSize
 	title         string
 	status        string
 	progress      progress.Model
@@ -31,8 +31,6 @@ type ProgressDialog struct {
 	tickIncrement float64 // Amount to increment per tick
 	autoAdvance   bool
 }
-
-var _ base.ComponentModel = (*ProgressDialog)(nil)
 
 // NewProgressDialogWithBar creates a new progress dialog with a progress bar.
 func NewProgressDialogWithBar(title string) ProgressDialog {

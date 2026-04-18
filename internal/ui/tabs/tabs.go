@@ -93,7 +93,7 @@ func NewKeyMap() KeyMap {
 }
 
 type Model struct {
-	base.Component
+	base.WindowSize
 	ActiveTab Tab
 	Tabs      []Tab
 	KeyMap    KeyMap
