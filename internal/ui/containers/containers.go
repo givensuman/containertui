@@ -167,16 +167,6 @@ type Model struct {
 	WindowHeight int
 }
 
-// Ensure Model satisfies base.Component but we cannot directly assign (*Model)(nil) if Model has embedded fields that complicate it?
-// Actually base.Component is struct { WindowWidth, WindowHeight int }.
-// Model embeds ResourceView which embeds base.Component.
-// So Model HAS WindowWidth/WindowHeight.
-// BUT `var _ base.Component = (*Model)(nil)` tries to assign *Model to base.Component (struct).
-// This is invalid Go. You can assign to interface, but base.Component is a struct.
-// You cannot say "Model implements struct".
-// If base.Component was an interface it would be fine.
-// Since base.Component is a struct, we don't need this check.
-
 func New() Model {
 	containerKeybindings := newKeybindings()
 
