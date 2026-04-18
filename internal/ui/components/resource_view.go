@@ -9,6 +9,12 @@ import (
 	"github.com/givensuman/containertui/internal/ui/base"
 )
 
+// msgItemsLoaded is delivered to the update loop when async item loading completes.
+type msgItemsLoaded[ID comparable, Item list.Item] struct {
+	items []Item
+	err   error
+}
+
 type SessionState int
 
 const (
@@ -67,13 +73,11 @@ func NewResourceView[ID comparable, Item list.Item](
 		OnResize:        onResize,
 	}
 
-	rv.Refresh()
-
 	return rv
 }
 
 func (rv *ResourceView[ID, Item]) Init() tea.Cmd {
-	return nil
+	return rv.Refresh()
 }
 
 func (rv *ResourceView[ID, Item]) SetDelegate(delegate list.DefaultDelegate) {
@@ -84,20 +88,11 @@ func (rv *ResourceView[ID, Item]) Refresh() tea.Cmd {
 	if rv.LoadItems == nil {
 		return nil
 	}
-
-	items, err := rv.LoadItems()
-	if err != nil {
-		rv.loadErr = err
-		return nil
+	loadFn := rv.LoadItems // capture to avoid closure data race
+	return func() tea.Msg {
+		items, err := loadFn()
+		return msgItemsLoaded[ID, Item]{items: items, err: err}
 	}
-	rv.loadErr = nil
-
-	listItems := make([]list.Item, len(items))
-	for i, item := range items {
-		listItems[i] = item
-	}
-
-	return rv.SplitView.List.SetItems(listItems)
 }
 
 func (rv *ResourceView[ID, Item]) SetOverlay(model any) {
@@ -303,6 +298,21 @@ func NewDetailsKeybindings() DetailsKeybindings {
 
 func (rv *ResourceView[ID, Item]) Update(msg tea.Msg) (ResourceView[ID, Item], tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// Handle async item load result
+	if loaded, ok := msg.(msgItemsLoaded[ID, Item]); ok {
+		if loaded.err != nil {
+			rv.loadErr = loaded.err
+		} else {
+			rv.loadErr = nil
+			listItems := make([]list.Item, len(loaded.items))
+			for i, item := range loaded.items {
+				listItems[i] = item
+			}
+			return *rv, rv.SplitView.List.SetItems(listItems)
+		}
+		return *rv, nil
+	}
 
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		rv.UpdateWindowDimensions(sizeMsg)

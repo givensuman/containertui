@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 )
 
 type testListItem struct {
@@ -15,6 +16,17 @@ type testListItem struct {
 func (i testListItem) Title() string       { return i.value }
 func (i testListItem) Description() string { return "" }
 func (i testListItem) FilterValue() string { return i.value }
+
+// deliverRefresh executes a Refresh cmd synchronously and delivers the result to Update.
+func deliverRefresh[ID comparable, Item list.Item](rv *ResourceView[ID, Item]) {
+	cmd := rv.Refresh()
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	updated, _ := rv.Update(msg)
+	*rv = updated
+}
 
 func TestResourceViewRefreshTracksLoadErrors(t *testing.T) {
 	errLoad := fmt.Errorf("docker unavailable")
@@ -29,6 +41,9 @@ func TestResourceViewRefreshTracksLoadErrors(t *testing.T) {
 		nil,
 	)
 
+	// Simulate async delivery of initial load (which fails)
+	deliverRefresh(rv)
+
 	if rv.loadErr == nil {
 		t.Fatal("loadErr should be set after failing refresh")
 	}
@@ -41,7 +56,7 @@ func TestResourceViewRefreshTracksLoadErrors(t *testing.T) {
 		return []testListItem{{value: "item-1"}}, nil
 	}
 
-	rv.Refresh()
+	deliverRefresh(rv)
 
 	if rv.loadErr != nil {
 		t.Fatalf("loadErr should be cleared on successful refresh, got %v", rv.loadErr)
@@ -65,6 +80,9 @@ func TestResourceViewViewShowsLoadErrorWhenEmpty(t *testing.T) {
 		func(item testListItem) string { return item.value },
 		nil,
 	)
+
+	// Simulate async delivery of initial load (which fails)
+	deliverRefresh(rv)
 
 	rv.SplitView.SetSize(80, 20)
 	view := rv.View()
