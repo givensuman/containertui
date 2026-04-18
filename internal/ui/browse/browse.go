@@ -132,7 +132,7 @@ func New() Model {
 
 	// Initialize ResourceView
 	fetchPopularImages := func() ([]BrowseItem, error) {
-		client := state.GetClient().GetRegistryClient()
+		client := state.GetRegistryClient()
 		images, err := client.GetPopularImages(stdcontext.Background(), 50)
 		if err != nil {
 			return nil, err
@@ -417,7 +417,7 @@ func (model *Model) updateDetailContent() tea.Cmd {
 		}
 
 		return func() tea.Msg {
-			client := state.GetClient().GetRegistryClient()
+			client := state.GetRegistryClient()
 
 			// Determine namespace and name from RepoName
 			// Docker Hub format: "namespace/name" or just "name" for official images
@@ -589,7 +589,7 @@ func (model *Model) startPull(target pullTarget) tea.Cmd {
 
 	go func() {
 		ctx := stdcontext.Background()
-		err := state.GetClient().PullImage(ctx, imageName, progressChan)
+		err := state.GetBackend().PullImage(ctx, imageName, progressChan)
 		doneChan <- err
 		close(doneChan)
 	}()
@@ -658,10 +658,10 @@ func (model *Model) performRemoteSearch(query, registryName string) tea.Cmd {
 		normalizedRegistry := normalizeRegistry(registryName)
 		switch normalizedRegistry {
 		case registryQuay:
-			client := state.GetClient().GetQuayRegistryClient()
+			client := state.GetQuayRegistryClient()
 			response, err = client.Search(stdcontext.Background(), query, 25)
 		default:
-			client := state.GetClient().GetRegistryClient()
+			client := state.GetRegistryClient()
 			response, err = client.Search(stdcontext.Background(), query, 25)
 		}
 
