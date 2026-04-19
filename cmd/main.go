@@ -22,13 +22,13 @@ func resolveStartupTab(configTab, subcommandTab string) string {
 	return startupTab
 }
 
-func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, configPath string, colorsFlag []string, jsonFormat bool) error {
+func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, configPath string, colorsFlag []string, jsonFormat bool) (*cobra.Command, error) {
 	var cfg *config.Config
 	var err error
 	if configPath != "" {
 		cfg, err = config.LoadFromFile(configPath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		cfg = config.DefaultConfig()
@@ -47,7 +47,7 @@ func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, confi
 	if len(colorsFlag) > 0 {
 		colorOverrides, err := colors.ParseColors(colorsFlag)
 		if err != nil {
-			return fmt.Errorf("failed to parse colors: %w", err)
+			return nil, fmt.Errorf("failed to parse colors: %w", err)
 		}
 
 		if colorOverrides.Primary.IsAssigned() {
@@ -80,7 +80,7 @@ func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, confi
 
 	// Initialize the shared Docker client
 	if err := state.InitializeClient(); err != nil {
-		return fmt.Errorf("failed to initialize Docker client: %w", err)
+		return nil, fmt.Errorf("failed to initialize Docker client: %w", err)
 	}
 	defer func() {
 		if err := state.CloseClient(); err != nil {
@@ -92,10 +92,10 @@ func runContainertui(cmd *cobra.Command, tabName string, noNerdFonts bool, confi
 
 	// Start the UI
 	if err := ui.Start(); err != nil {
-		return fmt.Errorf("failed to run application: %w", err)
+		return nil, fmt.Errorf("failed to run application: %w", err)
 	}
 
-	return nil
+	return cmd, nil
 }
 
 func main() {
@@ -110,7 +110,8 @@ func main() {
 			Use:   use,
 			Short: short,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runContainertui(cmd, tabName, noNerdFonts, configPath, colorsFlag, jsonFormat)
+				_, err := runContainertui(cmd, tabName, noNerdFonts, configPath, colorsFlag, jsonFormat)
+				return err
 			},
 		}
 	}
@@ -119,7 +120,8 @@ func main() {
 		Use:   "containertui",
 		Short: "a tui for managing container lifecycles",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runContainertui(cmd, "", noNerdFonts, configPath, colorsFlag, jsonFormat)
+			_, err := runContainertui(cmd, "", noNerdFonts, configPath, colorsFlag, jsonFormat)
+			return err
 		},
 	}
 
@@ -130,7 +132,7 @@ func main() {
 	rootCmd.AddCommand(makeSubcommand("networks", "networks", "launch containertui to the networks tab"))
 	rootCmd.AddCommand(makeSubcommand("browse", "browse", "launch containertui to the browse tab"))
 
-	// Add global flags to root command
+	// Add flags to root command
 	rootCmd.PersistentFlags().BoolVar(&noNerdFonts, "no-nerd-fonts", false, "disable nerd fonts")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 	rootCmd.PersistentFlags().StringSliceVar(&colorsFlag, "colors", nil, "color overrides (format: --colors 'primary=#b4befe' --colors 'warning=#f9e2af,success=#a6e3a1')")
