@@ -10,7 +10,9 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
+	"github.com/givensuman/containertui/internal/colors"
 	"github.com/givensuman/containertui/internal/registry"
 	"github.com/givensuman/containertui/internal/state"
 	"github.com/givensuman/containertui/internal/ui/base"
@@ -398,7 +400,7 @@ func (model Model) View() string {
 func (model *Model) updateDetailContent() tea.Cmd {
 	selectedItem := model.GetSelectedItem()
 	if selectedItem == nil {
-		model.SetContent("No image selected")
+		model.SetContent(lipgloss.NewStyle().Foreground(colors.Muted()).Render("No image selected"))
 		return nil
 	}
 
@@ -750,6 +752,7 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
+
 func listenToProgressChannelWithDone(imageName string, progressChan <-chan string, doneChan <-chan error) tea.Cmd {
 	return func() tea.Msg {
 		select {
