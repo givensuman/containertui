@@ -129,62 +129,6 @@ func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
 	}
 }
 
-func TestContainerLogsKeybindingsIncludeFollowPauseAndSearch(t *testing.T) {
-	b := newLogsKeybindings()
-
-	if b.ToggleFollow.Help().Desc != "follow/pause" {
-		t.Fatalf("toggle follow help = %q, want %q", b.ToggleFollow.Help().Desc, "follow/pause")
-	}
-	if b.Clear.Help().Desc != "clear logs" {
-		t.Fatalf("clear help = %q, want %q", b.Clear.Help().Desc, "clear logs")
-	}
-	if b.Search.Help().Desc != "search logs" {
-		t.Fatalf("search help = %q, want %q", b.Search.Help().Desc, "search logs")
-	}
-	if b.Copy.Help().Desc != "copy logs" {
-		t.Fatalf("copy help = %q, want %q", b.Copy.Help().Desc, "copy logs")
-	}
-}
-
-func TestContainerLogsToggleFollowAndClear(t *testing.T) {
-	item := ContainerItem{Container: backend.Container{ID: "abc", Name: "api", State: "running"}}
-	logs := NewContainerLogs(item, 80, 24)
-	logs.lines = []string{"line1", "line2"}
-	logs.isLoaded = true
-
-	updated, _ := logs.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if updated.follow {
-		t.Fatal("expected follow to toggle off after pressing f")
-	}
-
-	updated, _ = updated.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	if len(updated.lines) != 0 {
-		t.Fatalf("expected lines to be cleared, got %d", len(updated.lines))
-	}
-}
-
-func TestContainerLogsSearchFiltersViewContent(t *testing.T) {
-	item := ContainerItem{Container: backend.Container{ID: "abc", Name: "api", State: "running"}}
-	logs := NewContainerLogs(item, 80, 24)
-	logs.lines = []string{"api started", "worker ready", "api request"}
-	logs.isLoaded = true
-	logs.refreshViewport()
-
-	updated, _ := logs.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	updated, _ = updated.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
-	updated, _ = updated.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
-	updated, _ = updated.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
-	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-
-	content := updated.viewport.View()
-	if !strings.Contains(content, "api started") || !strings.Contains(content, "api request") {
-		t.Fatalf("expected filtered api lines in viewport, got %q", content)
-	}
-	if strings.Contains(content, "worker ready") {
-		t.Fatalf("expected non-matching line removed by search, got %q", content)
-	}
-}
-
 func TestPruneConfirmationUsesSafetyHelper(t *testing.T) {
 	model := newContainersTestModel()
 	updated, cmd := model.Update(MsgContainersRefreshed{

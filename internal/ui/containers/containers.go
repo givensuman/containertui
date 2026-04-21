@@ -866,9 +866,18 @@ func (model *Model) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	logsOverlay := NewContainerLogs(*item, model.WindowWidth, model.WindowHeight)
-	model.SetOverlay(logsOverlay)
-	return logsOverlay.Init()
+	command := exec.Command("sh", "-c",
+		fmt.Sprintf("docker logs --tail 500 --follow --timestamps %s 2>&1 | less -R", item.ID))
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		if err != nil {
+			return notifications.AddNotificationMsg{
+				Message:  fmt.Sprintf("logs exited with error: %v", err),
+				Level:    notifications.Error,
+				Duration: 10 * time.Second,
+			}
+		}
+		return nil
+	})
 }
 
 func (model *Model) handleExecShell() tea.Cmd {
