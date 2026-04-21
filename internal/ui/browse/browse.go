@@ -3,6 +3,7 @@ package browse
 
 import (
 	stdcontext "context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -121,6 +122,16 @@ type Model struct {
 	pendingPulls   []pullTarget
 	batchPullTotal int
 	batchPulled    int
+
+	// Pull progress tracking
+	pullLayers     map[string]pullLayerProgress
+	pullPercent    float64
+	progressDialog *components.ProgressDialog
+}
+
+type pullLayerProgress struct {
+	current int64
+	total   int64
 }
 
 type pullTarget struct {
@@ -181,6 +192,7 @@ func New() Model {
 		pendingPulls:       nil,
 		batchPullTotal:     0,
 		batchPulled:        0,
+		pullLayers:         make(map[string]pullLayerProgress),
 	}
 }
 
@@ -248,15 +260,29 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		model.restoreScrollPosition()
 
 	case MsgPullProgress:
-		// Progress updates are handled internally, no UI update needed
+		var progressCmd tea.Cmd
+		if progressDialog, ok := model.Foreground.(components.ProgressDialog); ok {
+			progressDialog.SetStatus(parsePullStatusMessage(msg.Status))
+			if percent, hasPercent := model.estimatePullProgress(msg.Status); hasPercent {
+				progressCmd = progressDialog.SetPercent(percent)
+			}
+			model.Foreground = progressDialog
+		}
 		// Continue listening to the progress channel
 		if msg.ProgressChan != nil && msg.DoneChan != nil {
-			return model, listenToProgressChannelWithDone(msg.ImageName, msg.ProgressChan, msg.DoneChan)
+			return model, tea.Batch(progressCmd, listenToProgressChannelWithDone(msg.ImageName, msg.ProgressChan, msg.DoneChan))
 		}
+		return model, progressCmd
 
 	case MsgPullComplete:
 		model.isPulling = false
 		model.progressChan = nil
+		model.progressDialog = nil
+		model.pullLayers = make(map[string]pullLayerProgress)
+		model.pullPercent = 0
+
+		// Close the progress overlay
+		model.CloseOverlay()
 
 		// Stop the spinner for the pulled image
 		if model.currentPulling != "" {
@@ -584,6 +610,12 @@ func (model *Model) startPull(target pullTarget) tea.Cmd {
 
 	model.isPulling = true
 	model.currentPulling = imageName
+	model.pullLayers = make(map[string]pullLayerProgress)
+	model.pullPercent = 0
+
+	progressDialog := components.NewProgressDialogWithBar("Pulling " + imageName)
+	model.progressDialog = &progressDialog
+	model.SetOverlay(progressDialog)
 
 	progressChan := make(chan string, 100)
 	doneChan := make(chan error, 1)
@@ -751,6 +783,88 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func (model *Model) estimatePullProgress(raw string) (float64, bool) {
+	layerID, current, total, ok := parsePullLayerProgress(raw)
+	if !ok {
+		return 0, false
+	}
+
+	model.pullLayers[layerID] = pullLayerProgress{current: current, total: total}
+
+	var sumCurrent int64
+	var sumTotal int64
+	for _, layer := range model.pullLayers {
+		sumCurrent += layer.current
+		sumTotal += layer.total
+	}
+
+	if sumTotal <= 0 {
+		return 0, false
+	}
+
+	percent := float64(sumCurrent) / float64(sumTotal)
+	if percent > 0.98 {
+		percent = 0.98
+	}
+	if percent < model.pullPercent {
+		percent = model.pullPercent
+	}
+
+	model.pullPercent = percent
+	return percent, true
+}
+
+func parsePullLayerProgress(raw string) (string, int64, int64, bool) {
+	type pullProgressDetail struct {
+		Current int64 `json:"current"`
+		Total   int64 `json:"total"`
+	}
+	type pullStatus struct {
+		ID             string             `json:"id"`
+		ProgressDetail pullProgressDetail `json:"progressDetail"`
+	}
+
+	var status pullStatus
+	if err := json.Unmarshal([]byte(raw), &status); err != nil {
+		return "", 0, 0, false
+	}
+	if status.ID == "" || status.ProgressDetail.Total <= 0 {
+		return "", 0, 0, false
+	}
+
+	current := status.ProgressDetail.Current
+	if current < 0 {
+		current = 0
+	}
+	if current > status.ProgressDetail.Total {
+		current = status.ProgressDetail.Total
+	}
+	return status.ID, current, status.ProgressDetail.Total, true
+}
+
+// parsePullStatusMessage extracts a human-readable status string from raw pull JSON.
+func parsePullStatusMessage(raw string) string {
+	type pullMsg struct {
+		Status string `json:"status"`
+		ID     string `json:"id"`
+	}
+	var msg pullMsg
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		return raw
+	}
+	if msg.ID != "" {
+		return fmt.Sprintf("[%s] %s", msg.ID[:min(len(msg.ID), 12)], msg.Status)
+	}
+	return msg.Status
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func listenToProgressChannelWithDone(imageName string, progressChan <-chan string, doneChan <-chan error) tea.Cmd {
