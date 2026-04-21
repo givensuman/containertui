@@ -238,8 +238,11 @@ type ContainerConfig struct {
 	Name       string
 	Image      string
 	Ports      map[string]string // "hostPort" -> "containerPort"
-	Volumes    []string          // "hostPath:containerPath" format
+	Volumes    []string          // "hostPath:containerPort" format
 	Env        []string          // "KEY=value" format
+	Cmd        []string          // optional command override; nil = use image default
+	Tty        bool              // allocate a pseudo-TTY (keeps shell-based containers alive when detached)
+	OpenStdin  bool              // keep stdin open (required for interactive shells)
 	AutoStart  bool
 	AutoRemove bool
 	Network    string // Network name (default: "bridge")

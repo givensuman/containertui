@@ -171,6 +171,11 @@ func (d *DockerBackend) CreateContainer(ctx context.Context, config backend.Cont
 		Image:        config.Image,
 		Env:          config.Env,
 		ExposedPorts: exposedPorts,
+		Tty:          config.Tty,
+		OpenStdin:    config.OpenStdin,
+	}
+	if len(config.Cmd) > 0 {
+		containerConfig.Cmd = config.Cmd
 	}
 
 	hostConfig := &container.HostConfig{

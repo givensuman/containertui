@@ -357,6 +357,17 @@ func parseBool(input string) bool {
 	return lower == "yes"
 }
 
+// parseCommand splits a command string into argv tokens.
+// Returns nil if the input is empty (preserves image default CMD).
+func parseCommand(input string) []string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Fields(trimmed)
+	return parts
+}
+
 // Model represents the images component state.
 type Model struct {
 	components.ResourceView[string, ImageItem]
@@ -849,14 +860,20 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				volumes := parseVolumes(formValues["Volumes"])
 				env := parseEnv(formValues["Environment"])
 				autoStart := parseBool(formValues["Auto-start"])
+				cmd := parseCommand(formValues["Command"])
 
-				// Create container config
+				// Create container config.
+				// Always set Tty and OpenStdin so shell-based images (alpine, ubuntu, etc.)
+				// stay alive when started detached, and can be exec'd into with 'x'.
 				config := backend.ContainerConfig{
 					Name:      formValues["Name"],
 					Image:     imageID,
 					Ports:     ports,
 					Volumes:   volumes,
 					Env:       env,
+					Cmd:       cmd,
+					Tty:       true,
+					OpenStdin: true,
 					AutoStart: autoStart,
 					Network:   "bridge",
 				}
@@ -984,6 +1001,11 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 							{
 								Label:       "Name",
 								Placeholder: "my-container (optional)",
+								Required:    false,
+							},
+							{
+								Label:       "Command",
+								Placeholder: "sh, sleep infinity, ... (optional, uses image default)",
 								Required:    false,
 							},
 							{
@@ -1476,6 +1498,8 @@ func buildTempShellContainerConfig(imageID string, now time.Time) backend.Contai
 		Ports:      nil,
 		Volumes:    nil,
 		Env:        nil,
+		Tty:        true,
+		OpenStdin:  true,
 		AutoStart:  false,
 		AutoRemove: false,
 		Network:    "bridge",

@@ -31,6 +31,18 @@ type MsgContainerInspection struct {
 	Err       error
 }
 
+// msgExecShellReady is sent after confirming a container is running, to trigger terminal handoff.
+type msgExecShellReady struct {
+	containerID string
+}
+
+// msgExecShellNotRunning is sent when pre-exec state verification finds the container is not running.
+type msgExecShellNotRunning struct {
+	name  string
+	state string
+	err   error
+}
+
 // MsgRestoreScroll is sent to restore scroll position after content is set
 type MsgRestoreScroll struct{}
 
@@ -352,6 +364,27 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
 			cmds = append(cmds, func() tea.Msg { return MsgRestoreScroll{} })
+		}
+
+	case msgExecShellReady:
+		// Container state was freshly verified as running — hand off the terminal.
+		command := exec.Command("docker", "exec", "-it", msg.containerID, "/bin/sh")
+		return model, tea.ExecProcess(command, func(err error) tea.Msg {
+			if err != nil {
+				return notifications.AddNotificationMsg{
+					Message:  fmt.Sprintf("shell exited with error: %v", err),
+					Level:    notifications.Error,
+					Duration: 10 * time.Second,
+				}
+			}
+			return nil
+		})
+
+	case msgExecShellNotRunning:
+		if msg.err != nil {
+			cmds = append(cmds, notifications.ShowError(fmt.Errorf("could not verify container state: %w", msg.err)))
+		} else {
+			cmds = append(cmds, notifications.ShowInfo(fmt.Sprintf("%s is not running (state: %s)", msg.name, msg.state)))
 		}
 
 	case MsgRestoreScroll:
@@ -844,22 +877,27 @@ func (model *Model) handleExecShell() tea.Cmd {
 		return nil
 	}
 
+	// Fast pre-check using cached state — avoids the async round-trip for clearly non-running containers.
 	if item.State != "running" {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
-	// Use proper argument passing - no shell metacharacters possible
-	command := exec.Command("docker", "exec", "-it", item.ID, "/bin/sh")
-	return tea.ExecProcess(command, func(err error) tea.Msg {
+	containerID := item.ID
+	containerName := item.Name
+
+	// Re-verify the real container state via a fresh Docker API call immediately before
+	// exec-ing. The cached item.State can be up to 3 seconds stale, which is enough time
+	// for a short-lived container to have exited — causing an opaque "exit status 1".
+	return func() tea.Msg {
+		detail, err := state.GetBackend().InspectContainer(stdcontext.Background(), containerID)
 		if err != nil {
-			return notifications.AddNotificationMsg{
-				Message:  err.Error(),
-				Level:    notifications.Error,
-				Duration: 10 * time.Second,
-			}
+			return msgExecShellNotRunning{name: containerName, err: err}
 		}
-		return nil
-	})
+		if detail.State != "running" {
+			return msgExecShellNotRunning{name: containerName, state: detail.State}
+		}
+		return msgExecShellReady{containerID: containerID}
+	}
 }
 
 func (model *Model) handleToggleSelection() {
