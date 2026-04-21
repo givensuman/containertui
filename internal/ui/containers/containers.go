@@ -866,8 +866,10 @@ func (model *Model) handleShowLogs() tea.Cmd {
 		return notifications.ShowInfo(item.Name + " is not running")
 	}
 
+	tmpFile := fmt.Sprintf("/tmp/containertui-logs-%s.txt", item.ID)
 	command := exec.Command("sh", "-c",
-		fmt.Sprintf("docker logs --tail 500 --follow --timestamps %s 2>&1 | less -R", item.ID))
+		fmt.Sprintf("docker logs --tail 500 --timestamps %s > %s 2>&1; less -R %s; rm -f %s",
+			item.ID, tmpFile, tmpFile, tmpFile))
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		if err != nil {
 			return notifications.AddNotificationMsg{
