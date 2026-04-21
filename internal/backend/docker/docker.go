@@ -27,6 +27,8 @@ type DockerBackend struct {
 	client *client.Client
 }
 
+var _ backend.Backend = (*DockerBackend)(nil)
+
 // New creates a new Docker backend.
 func New() (*DockerBackend, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())

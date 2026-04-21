@@ -196,73 +196,105 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	cmds = append(cmds, notificationsCmd)
 
-	// Detect tab changes and trigger update on newly active tab
+	// Detect tab changes and trigger a refresh on the newly active tab so data is fresh.
 	if model.tabsModel.ActiveTab != model.previousTab {
 		model.previousTab = model.tabsModel.ActiveTab
 
-		// Send a window size message to trigger update on the newly active tab
-		// This ensures updateDetailContent() gets called
+		// Send a window size message to ensure layout is correct on the newly active tab.
 		dummyMsg := tea.WindowSizeMsg{Width: model.width, Height: model.height - 4}
 		switch model.tabsModel.ActiveTab {
+		case tabs.Containers:
+			var containersCmd tea.Cmd
+			model.containersModel, containersCmd = model.containersModel.Update(dummyMsg)
+			cmds = append(cmds, containersCmd)
+			cmds = append(cmds, model.containersModel.Refresh())
 		case tabs.Images:
 			var imagesCmd tea.Cmd
 			model.imagesModel, imagesCmd = model.imagesModel.Update(dummyMsg)
 			cmds = append(cmds, imagesCmd)
+			cmds = append(cmds, model.imagesModel.Refresh())
 		case tabs.Networks:
 			var networksCmd tea.Cmd
 			model.networksModel, networksCmd = model.networksModel.Update(dummyMsg)
 			cmds = append(cmds, networksCmd)
+			cmds = append(cmds, model.networksModel.Refresh())
 		case tabs.Volumes:
 			var volumesCmd tea.Cmd
 			model.volumesModel, volumesCmd = model.volumesModel.Update(dummyMsg)
 			cmds = append(cmds, volumesCmd)
+			cmds = append(cmds, model.volumesModel.Refresh())
 		case tabs.Browse:
 			var browseCmd tea.Cmd
 			model.browseModel, browseCmd = model.browseModel.Update(dummyMsg)
 			cmds = append(cmds, browseCmd)
+			cmds = append(cmds, model.browseModel.Refresh())
 		}
 	}
 
-	switch model.tabsModel.ActiveTab {
-	case tabs.Containers:
-		if !refreshContainers {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+	// Route keyboard input only to the active tab (to avoid triggering actions in background tabs).
+	// All other messages (including async msgItemsLoaded results) are routed to every tab model so
+	// that background loads initiated by Init() are never silently dropped.
+	_, isKeyPress := msg.(tea.KeyPressMsg)
+	_, isKeyRelease := msg.(tea.KeyReleaseMsg)
+	if isKeyPress || isKeyRelease {
+		switch model.tabsModel.ActiveTab {
+		case tabs.Containers:
+			if !refreshContainers {
 				var containersCmd tea.Cmd
 				model.containersModel, containersCmd = model.containersModel.Update(msg)
 				cmds = append(cmds, containersCmd)
 			}
-		}
-	case tabs.Images:
-		if !refreshImages {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+		case tabs.Images:
+			if !refreshImages {
 				var imagesCmd tea.Cmd
 				model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
 				cmds = append(cmds, imagesCmd)
 			}
-		}
-	case tabs.Volumes:
-		if !refreshVolumes {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+		case tabs.Volumes:
+			if !refreshVolumes {
 				var volumesCmd tea.Cmd
 				model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
 				cmds = append(cmds, volumesCmd)
 			}
-		}
-	case tabs.Networks:
-		if !refreshNetworks {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+		case tabs.Networks:
+			if !refreshNetworks {
 				var networksCmd tea.Cmd
 				model.networksModel, networksCmd = model.networksModel.Update(msg)
 				cmds = append(cmds, networksCmd)
 			}
-		}
-	case tabs.Browse:
-		if !refreshBrowse {
-			if _, ok := msg.(tea.WindowSizeMsg); !ok {
+		case tabs.Browse:
+			if !refreshBrowse {
 				var browseCmd tea.Cmd
 				model.browseModel, browseCmd = model.browseModel.Update(msg)
 				cmds = append(cmds, browseCmd)
 			}
+		}
+	} else if _, isWindowSize := msg.(tea.WindowSizeMsg); !isWindowSize {
+		// Non-keyboard, non-window-size messages go to all tabs so async results are delivered.
+		if !refreshContainers {
+			var containersCmd tea.Cmd
+			model.containersModel, containersCmd = model.containersModel.Update(msg)
+			cmds = append(cmds, containersCmd)
+		}
+		if !refreshImages {
+			var imagesCmd tea.Cmd
+			model.imagesModel, imagesCmd = model.imagesModel.Update(msg)
+			cmds = append(cmds, imagesCmd)
+		}
+		if !refreshVolumes {
+			var volumesCmd tea.Cmd
+			model.volumesModel, volumesCmd = model.volumesModel.Update(msg)
+			cmds = append(cmds, volumesCmd)
+		}
+		if !refreshNetworks {
+			var networksCmd tea.Cmd
+			model.networksModel, networksCmd = model.networksModel.Update(msg)
+			cmds = append(cmds, networksCmd)
+		}
+		if !refreshBrowse {
+			var browseCmd tea.Cmd
+			model.browseModel, browseCmd = model.browseModel.Update(msg)
+			cmds = append(cmds, browseCmd)
 		}
 	}
 
