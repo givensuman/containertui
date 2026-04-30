@@ -43,9 +43,6 @@ type msgExecShellNotRunning struct {
 	err   error
 }
 
-// MsgRestoreScroll is sent to restore scroll position after content is set
-type MsgRestoreScroll struct{}
-
 // MsgRefreshContainers is sent periodically to refresh the container list
 type MsgRefreshContainers time.Time
 
@@ -55,37 +52,11 @@ type MsgPruneComplete struct {
 	Err            error
 }
 
-type detailsKeybindings struct {
-	Up         key.Binding
-	Down       key.Binding
-	Switch     key.Binding
-	ToggleJSON key.Binding
-	CopyOutput key.Binding
-}
-
-func newDetailsKeybindings() detailsKeybindings {
-	return detailsKeybindings{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		Switch: key.NewBinding(
-			key.WithKeys("tab", "shift+tab"),
-			key.WithHelp("tab/shift+tab", "switch focus"),
-		),
-		ToggleJSON: key.NewBinding(
-			key.WithKeys("J"),
-			key.WithHelp("J", "toggle JSON/YAML"),
-		),
-		CopyOutput: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy to clipboard"),
-		),
-	}
+// MsgRenameComplete is sent when a container rename operation completes.
+type MsgRenameComplete struct {
+	ContainerID string
+	NewName     string
+	Err         error
 }
 
 type keybindings struct {
@@ -172,7 +143,7 @@ type Model struct {
 	keybindings *keybindings
 
 	inspection         backend.ContainerDetail
-	detailsKeybindings detailsKeybindings
+	detailsKeybindings components.DetailsKeybindings
 	detailsPanel       components.DetailsPanel
 
 	WindowWidth  int
@@ -216,8 +187,6 @@ func New() Model {
 	// Set detail panel title
 	resourceView.SplitView.SetDetailTitle("Inspect")
 
-	configureContainersSplitView(resourceView)
-
 	// Set the custom delegate
 	delegate := newDefaultDelegate()
 	resourceView.SetDelegate(delegate)
@@ -225,7 +194,7 @@ func New() Model {
 	model := Model{
 		ResourceView:       *resourceView,
 		keybindings:        containerKeybindings,
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		detailsPanel:       components.NewDetailsPanel(),
 	}
 
@@ -248,14 +217,6 @@ func New() Model {
 	}
 
 	return model
-}
-
-func (model *Model) UpdateWindowDimensions(msg tea.WindowSizeMsg) {
-	model.ResourceView.UpdateWindowDimensions(msg)
-}
-
-func configureContainersSplitView(resourceView *components.ResourceView[string, ContainerItem]) {
-	// Containers intentionally uses list + inspect split without extra stats pane.
 }
 
 // refreshWithState refreshes the container list while preserving isWorking and isSelected states
@@ -328,7 +289,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// 2. Handle custom messages
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		model.UpdateWindowDimensions(msg)
+		model.ResourceView.UpdateWindowDimensions(msg)
 
 	case MsgRefreshContainers:
 		// Schedule next refresh
@@ -363,7 +324,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			model.inspection = msg.Container
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
-			cmds = append(cmds, func() tea.Msg { return MsgRestoreScroll{} })
+			cmds = append(cmds, func() tea.Msg { return base.MsgRestoreScroll{} })
 		}
 
 	case msgExecShellReady:
@@ -387,7 +348,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			cmds = append(cmds, notifications.ShowInfo(fmt.Sprintf("%s is not running (state: %s)", msg.name, msg.state)))
 		}
 
-	case MsgRestoreScroll:
+	case base.MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 
@@ -410,10 +371,26 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return base.MsgResourceChanged{
 					Resource:  base.ResourceContainer,
 					Operation: base.OperationPruned,
-					IDs:       nil, // Prune affects multiple containers
+					IDs:       nil,
 					Metadata: map[string]any{
 						"spaceReclaimed": msg.SpaceReclaimed,
 					},
+				}
+			},
+		)
+
+	case MsgRenameComplete:
+		if msg.Err != nil {
+			return model, notifications.ShowError(msg.Err)
+		}
+		return model, tea.Batch(
+			notifications.ShowSuccess(fmt.Sprintf("Renamed to: %s", msg.NewName)),
+			model.Refresh(),
+			func() tea.Msg {
+				return base.MsgResourceChanged{
+					Resource:  base.ResourceContainer,
+					Operation: base.OperationUpdated,
+					IDs:       []string{msg.ContainerID},
 				}
 			},
 		)
@@ -495,15 +472,15 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			switch {
 			case key.Matches(msg, model.keybindings.pauseContainer):
-				cmds = append(cmds, model.handlePauseContainers())
+				cmds = append(cmds, model.handleContainerLifecycleOp(Pause))
 			case key.Matches(msg, model.keybindings.unpauseContainer):
-				cmds = append(cmds, model.handleUnpauseContainers())
+				cmds = append(cmds, model.handleContainerLifecycleOp(Unpause))
 			case key.Matches(msg, model.keybindings.startContainer):
-				cmds = append(cmds, model.handleStartContainers())
+				cmds = append(cmds, model.handleContainerLifecycleOp(Start))
 			case key.Matches(msg, model.keybindings.stopContainer):
-				cmds = append(cmds, model.handleStopContainers())
+				cmds = append(cmds, model.handleContainerLifecycleOp(Stop))
 			case key.Matches(msg, model.keybindings.restartContainer):
-				cmds = append(cmds, model.handleRestartContainers())
+				cmds = append(cmds, model.handleContainerLifecycleOp(Restart))
 			case key.Matches(msg, model.keybindings.removeContainer):
 				if cmd := model.handleRemoveContainers(false); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -594,10 +571,6 @@ func (model Model) ShortHelp() []key.Binding {
 		}
 	}
 
-	if model.IsExtraFocused() {
-		return model.ResourceView.ShortHelp()
-	}
-
 	return model.ResourceView.ShortHelp()
 }
 
@@ -638,14 +611,8 @@ func (model Model) FullHelp() [][]key.Binding {
 		}
 	}
 
-	if model.IsExtraFocused() {
-		return model.ResourceView.FullHelp()
-	}
-
 	return model.ResourceView.FullHelp()
 }
-
-// Handler Functions (Moved from list.go/handlers.go)
 
 func (model *Model) setWorkingState(containerIDs []string, working bool) tea.Cmd {
 	var cmds []tea.Cmd
@@ -683,92 +650,19 @@ func (model *Model) anySelectedWorking() bool {
 	return false
 }
 
-func (model *Model) handlePauseContainers() tea.Cmd {
+func (model *Model) handleContainerLifecycleOp(op Operation) tea.Cmd {
 	selectedIDs := model.GetSelectedIDs()
 	if len(selectedIDs) > 0 {
 		if model.anySelectedWorking() {
 			return nil
 		}
 		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Pause, selectedIDs, false))
-	} else {
-		selectedItem := model.GetSelectedItem()
-		if selectedItem != nil && !selectedItem.isWorking {
-			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Pause, selectedItem.ID, false))
-		}
+		return tea.Batch(spinnerCmd, PerformContainerOperations(op, selectedIDs, false))
 	}
-	return nil
-}
-
-func (model *Model) handleUnpauseContainers() tea.Cmd {
-	selectedIDs := model.GetSelectedIDs()
-	if len(selectedIDs) > 0 {
-		if model.anySelectedWorking() {
-			return nil
-		}
-		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Unpause, selectedIDs, false))
-	} else {
-		selectedItem := model.GetSelectedItem()
-		if selectedItem != nil && !selectedItem.isWorking {
-			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Unpause, selectedItem.ID, false))
-		}
-	}
-	return nil
-}
-
-func (model *Model) handleStartContainers() tea.Cmd {
-	selectedIDs := model.GetSelectedIDs()
-	if len(selectedIDs) > 0 {
-		if model.anySelectedWorking() {
-			return nil
-		}
-		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Start, selectedIDs, false))
-	} else {
-		selectedItem := model.GetSelectedItem()
-		if selectedItem != nil && !selectedItem.isWorking {
-			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Start, selectedItem.ID, false))
-		}
-	}
-	return nil
-}
-
-func (model *Model) handleStopContainers() tea.Cmd {
-	selectedIDs := model.GetSelectedIDs()
-	if len(selectedIDs) > 0 {
-		if model.anySelectedWorking() {
-			return nil
-		}
-		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Stop, selectedIDs, false))
-	} else {
-		selectedItem := model.GetSelectedItem()
-		if selectedItem != nil && !selectedItem.isWorking {
-			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Stop, selectedItem.ID, false))
-		}
-	}
-	return nil
-}
-
-func (model *Model) handleRestartContainers() tea.Cmd {
-	selectedIDs := model.GetSelectedIDs()
-	if len(selectedIDs) > 0 {
-		if model.anySelectedWorking() {
-			return nil
-		}
-		spinnerCmd := model.setWorkingState(selectedIDs, true)
-		return tea.Batch(spinnerCmd, PerformContainerOperations(Restart, selectedIDs, false))
-	} else {
-		selectedItem := model.GetSelectedItem()
-		if selectedItem != nil && !selectedItem.isWorking {
-			spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
-			return tea.Batch(spinnerCmd, PerformContainerOperation(Restart, selectedItem.ID, false))
-		}
+	selectedItem := model.GetSelectedItem()
+	if selectedItem != nil && !selectedItem.isWorking {
+		spinnerCmd := model.setWorkingState([]string{selectedItem.ID}, true)
+		return tea.Batch(spinnerCmd, PerformContainerOperation(op, selectedItem.ID, false))
 	}
 	return nil
 }
@@ -830,19 +724,6 @@ func (model *Model) handleRemoveContainers(force bool) tea.Cmd {
 	} else {
 		item := model.GetSelectedItem()
 		if item != nil && !item.isWorking {
-			if force {
-				// Force delete single container with confirmation
-				confirmDialog := components.NewDialog(
-					fmt.Sprintf("⚠️  FORCE DELETE container %s?\n\nThis action is destructive and cannot be undone. It may disrupt running workloads.", item.Name),
-					[]components.DialogButton{
-						{Label: "Cancel"},
-						{Label: "Force Delete", Action: base.SmartDialogAction{Type: "ForceDeleteContainer", Payload: []string{item.ID}}},
-					},
-				)
-				model.SetOverlay(confirmDialog)
-				return nil
-			}
-
 			confirmDialog := components.NewDialog(
 				safety.DeleteConfirmation("container", item.Name),
 				[]components.DialogButton{
@@ -1127,19 +1008,6 @@ func (model *Model) performRenameContainer(containerID, newName string) tea.Cmd 
 	return func() tea.Msg {
 		ctx := stdcontext.Background()
 		err := state.GetBackend().RenameContainer(ctx, containerID, newName)
-		if err != nil {
-			return notifications.ShowError(err)
-		}
-		return tea.Batch(
-			notifications.ShowSuccess(fmt.Sprintf("Renamed to: %s", newName)),
-			model.Refresh(),
-			func() tea.Msg {
-				return base.MsgResourceChanged{
-					Resource:  base.ResourceContainer,
-					Operation: base.OperationUpdated,
-					IDs:       []string{containerID},
-				}
-			},
-		)
+		return MsgRenameComplete{ContainerID: containerID, NewName: newName, Err: err}
 	}
 }

@@ -72,7 +72,7 @@ func TestHasPrunableVolumesNone(t *testing.T) {
 }
 
 func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
-	b := newDetailsKeybindings()
+	b := components.NewDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
 	}

@@ -312,10 +312,8 @@ func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func crossTabRefreshTargets(msg tea.Msg) (refreshContainers, refreshImages, refreshVolumes, refreshNetworks, refreshBrowse bool) {
 	switch typed := msg.(type) {
 	case base.MsgContainerCreated:
-		_ = typed
 		return true, false, false, false, false
 	case base.MsgImagePulled:
-		_ = typed
 		return false, true, false, false, false
 	case base.MsgResourceChanged:
 		switch typed.Resource {
@@ -329,10 +327,8 @@ func crossTabRefreshTargets(msg tea.Msg) (refreshContainers, refreshImages, refr
 			return false, false, false, true, false
 		}
 	case containers.MsgContainersRefreshed:
-		_ = typed
 		return true, false, false, false, false
 	case containers.MsgRefreshContainers:
-		_ = typed
 		return true, false, false, false, false
 	}
 

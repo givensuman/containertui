@@ -70,40 +70,12 @@ func additionalHelpBindings(bindings *keybindings) []key.Binding {
 	}
 }
 
-type detailsKeybindings struct {
-	Up         key.Binding
-	Down       key.Binding
-	Switch     key.Binding
-	CopyOutput key.Binding
-}
-
-func newDetailsKeybindings() detailsKeybindings {
-	return detailsKeybindings{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		Switch: key.NewBinding(
-			key.WithKeys("tab", "shift+tab"),
-			key.WithHelp("tab/shift+tab", "switch focus"),
-		),
-		CopyOutput: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy to clipboard"),
-		),
-	}
-}
-
 // Model represents the browse component state.
 type Model struct {
 	components.ResourceView[string, BrowseItem]
 
 	keybindings        *keybindings
-	detailsKeybindings detailsKeybindings
+	detailsKeybindings components.DetailsKeybindings
 
 	// Current state
 	currentItemID      string
@@ -184,7 +156,7 @@ func New() Model {
 	return Model{
 		ResourceView:       *resourceView,
 		keybindings:        browseKeybindings,
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		scrollPositions:    make(map[string]int),
 		isPulling:          false,
 		currentSearchQuery: "",

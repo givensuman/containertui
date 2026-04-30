@@ -18,14 +18,13 @@ func newContainersTestModel() Model {
 
 	return Model{
 		ResourceView:       components.ResourceView[string, ContainerItem]{SplitView: splitView},
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		detailsPanel:       components.NewDetailsPanel(),
 	}
 }
 
 func TestContainersViewHasNoStatsExtraPane(t *testing.T) {
 	model := newContainersTestModel()
-	configureContainersSplitView(&model.ResourceView)
 
 	if model.SplitView.Extra != nil {
 		t.Fatal("expected containers view to have no extra stats pane")
@@ -123,7 +122,7 @@ func TestHasPrunableContainersNone(t *testing.T) {
 }
 
 func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
-	b := newDetailsKeybindings()
+	b := components.NewDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
 	}

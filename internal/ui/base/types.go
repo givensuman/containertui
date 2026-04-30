@@ -98,3 +98,6 @@ type MsgResourceChanged struct {
 	IDs       []string       // IDs of affected resources
 	Metadata  map[string]any // Optional operation-specific data
 }
+
+// MsgRestoreScroll is sent to restore scroll position after content is set.
+type MsgRestoreScroll struct{}

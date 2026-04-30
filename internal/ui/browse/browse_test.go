@@ -32,7 +32,7 @@ func newTestBrowseModel(items []BrowseItem) Model {
 	return Model{
 		ResourceView:       rv,
 		keybindings:        newKeybindings(),
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		scrollPositions:    make(map[string]int),
 		currentRegistry:    registryDockerHub,
 	}
@@ -96,7 +96,7 @@ func TestAdditionalHelpBindingsSwitchTabFirst(t *testing.T) {
 }
 
 func TestDetailsKeybindingsSwitchHelpIncludesShiftTab(t *testing.T) {
-	b := newDetailsKeybindings()
+	b := components.NewDetailsKeybindings()
 	if b.Switch.Help().Key != "tab/shift+tab" {
 		t.Fatalf("switch help key = %q, want %q", b.Switch.Help().Key, "tab/shift+tab")
 	}

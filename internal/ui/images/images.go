@@ -61,40 +61,10 @@ type MsgImageInspection struct {
 	Err   error
 }
 
-// MsgRestoreScroll is sent to restore scroll position after content is set.
-type MsgRestoreScroll struct{}
-
-type detailsKeybindings struct {
-	Up         key.Binding
-	Down       key.Binding
-	Switch     key.Binding
-	ToggleJSON key.Binding
-	CopyOutput key.Binding
-}
-
-func newDetailsKeybindings() detailsKeybindings {
-	return detailsKeybindings{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		Switch: key.NewBinding(
-			key.WithKeys("tab", "shift+tab"),
-			key.WithHelp("tab/shift+tab", "switch focus"),
-		),
-		ToggleJSON: key.NewBinding(
-			key.WithKeys("J"),
-			key.WithHelp("J", "toggle JSON/YAML"),
-		),
-		CopyOutput: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy to clipboard"),
-		),
-	}
+// pullProgressDetail is the JSON payload inside Docker pull progress events.
+type pullProgressDetail struct {
+	Current int64 `json:"current"`
+	Total   int64 `json:"total"`
 }
 
 // MsgPullProgress contains progress information from image pull.
@@ -372,7 +342,7 @@ func parseCommand(input string) []string {
 type Model struct {
 	components.ResourceView[string, ImageItem]
 	keybindings        *keybindings
-	detailsKeybindings detailsKeybindings
+	detailsKeybindings components.DetailsKeybindings
 	inspection         backend.ImageDetail
 	detailsPanel       components.DetailsPanel
 	pullLayers         map[string]pullLayerProgress
@@ -456,7 +426,7 @@ func New() Model {
 	model := Model{
 		ResourceView:       *resourceView,
 		keybindings:        imageKeybindings,
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		inspection:         backend.ImageDetail{},
 		detailsPanel:       components.NewDetailsPanel(),
 		pullLayers:         make(map[string]pullLayerProgress),
@@ -506,10 +476,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			model.inspection = msg.Image
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
-			cmds = append(cmds, func() tea.Msg { return MsgRestoreScroll{} })
+			cmds = append(cmds, func() tea.Msg { return base.MsgRestoreScroll{} })
 		}
 
-	case MsgRestoreScroll:
+	case base.MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 		return model, nil
@@ -1275,8 +1245,8 @@ func buildImageUsageAndHistoryContent(inspection backend.ImageDetail, usedBy []s
 
 	b.WriteString("\nMetadata\n")
 	b.WriteString(fmt.Sprintf("Layers: %d\n", len(inspection.RootFS.Layers)))
-	b.WriteString(fmt.Sprintf("Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.Size, 0)))))
-	b.WriteString(fmt.Sprintf("Virtual Size: %s\n", utils.HumanizeBytes(uint64(maxInt64(inspection.VirtualSize, 0)))))
+	b.WriteString(fmt.Sprintf("Size: %s\n", utils.HumanizeBytes(uint64(max(inspection.Size, 0)))))
+	b.WriteString(fmt.Sprintf("Virtual Size: %s\n", utils.HumanizeBytes(uint64(max(inspection.VirtualSize, 0)))))
 	if !inspection.Created.IsZero() {
 		b.WriteString("Created: ")
 		b.WriteString(inspection.Created.Format(time.RFC3339))
@@ -1308,14 +1278,6 @@ func buildImageUsageAndHistoryContent(inspection backend.ImageDetail, usedBy []s
 	}
 
 	return strings.TrimSpace(b.String())
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-
-	return b
 }
 
 func (model Model) ShortHelp() []key.Binding {
@@ -1674,11 +1636,6 @@ func (model *Model) estimatePullProgress(raw string) (float64, bool) {
 }
 
 func parsePullLayerProgress(raw string) (string, int64, int64, bool) {
-	type pullProgressDetail struct {
-		Current int64 `json:"current"`
-		Total   int64 `json:"total"`
-	}
-
 	type pullStatus struct {
 		ID             string             `json:"id"`
 		ProgressDetail pullProgressDetail `json:"progressDetail"`
@@ -1705,11 +1662,6 @@ func parsePullLayerProgress(raw string) (string, int64, int64, bool) {
 }
 
 func parsePullStatusMessage(raw string) string {
-	type pullProgressDetail struct {
-		Current int64 `json:"current"`
-		Total   int64 `json:"total"`
-	}
-
 	type pullStatus struct {
 		ID             string             `json:"id"`
 		Status         string             `json:"status"`

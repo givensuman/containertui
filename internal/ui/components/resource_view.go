@@ -274,9 +274,11 @@ func (rv *ResourceView[ID, Item]) HandleToggleAll() {
 }
 
 type DetailsKeybindings struct {
-	Up     key.Binding
-	Down   key.Binding
-	Switch key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Switch     key.Binding
+	ToggleJSON key.Binding
+	CopyOutput key.Binding
 }
 
 func NewDetailsKeybindings() DetailsKeybindings {
@@ -292,6 +294,14 @@ func NewDetailsKeybindings() DetailsKeybindings {
 		Switch: key.NewBinding(
 			key.WithKeys("tab", "shift+tab"),
 			key.WithHelp("tab/shift+tab", "switch focus"),
+		),
+		ToggleJSON: key.NewBinding(
+			key.WithKeys("J"),
+			key.WithHelp("J", "toggle JSON/YAML"),
+		),
+		CopyOutput: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy to clipboard"),
 		),
 	}
 }

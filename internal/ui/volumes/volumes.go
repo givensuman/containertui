@@ -29,9 +29,6 @@ type MsgVolumeInspection struct {
 	Err    error
 }
 
-// MsgRestoreScroll is sent to restore scroll position after content is set.
-type MsgRestoreScroll struct{}
-
 // MsgPruneComplete is sent when the prune operation completes
 type MsgPruneComplete struct {
 	SpaceReclaimed uint64
@@ -54,39 +51,6 @@ type MsgDetachVolumeComplete struct {
 	VolumeName  string
 	ContainerID string
 	Err         error
-}
-
-type detailsKeybindings struct {
-	Up         key.Binding
-	Down       key.Binding
-	Switch     key.Binding
-	ToggleJSON key.Binding
-	CopyOutput key.Binding
-}
-
-func newDetailsKeybindings() detailsKeybindings {
-	return detailsKeybindings{
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "down"),
-		),
-		Switch: key.NewBinding(
-			key.WithKeys("tab", "shift+tab"),
-			key.WithHelp("tab/shift+tab", "switch focus"),
-		),
-		ToggleJSON: key.NewBinding(
-			key.WithKeys("J"),
-			key.WithHelp("J", "toggle JSON/YAML"),
-		),
-		CopyOutput: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy to clipboard"),
-		),
-	}
 }
 
 type keybindings struct {
@@ -141,7 +105,7 @@ func newKeybindings() *keybindings {
 type Model struct {
 	components.ResourceView[string, VolumeItem]
 	keybindings        *keybindings
-	detailsKeybindings detailsKeybindings
+	detailsKeybindings components.DetailsKeybindings
 	inspection         backend.VolumeDetail
 	detailsPanel       components.DetailsPanel
 }
@@ -200,7 +164,7 @@ func New() Model {
 	model := Model{
 		ResourceView:       *resourceView,
 		keybindings:        volumeKeybindings,
-		detailsKeybindings: newDetailsKeybindings(),
+		detailsKeybindings: components.NewDetailsKeybindings(),
 		inspection:         backend.VolumeDetail{},
 		detailsPanel:       components.NewDetailsPanel(),
 	}
@@ -236,10 +200,10 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			model.inspection = msg.Volume
 			model.refreshInspectionContent()
 			// Send a message to restore scroll position on next update
-			cmds = append(cmds, func() tea.Msg { return MsgRestoreScroll{} })
+			cmds = append(cmds, func() tea.Msg { return base.MsgRestoreScroll{} })
 		}
 
-	case MsgRestoreScroll:
+	case base.MsgRestoreScroll:
 		// Restore scroll position after viewport has processed content
 		model.detailsPanel.RestoreScrollPosition(model.getViewport())
 

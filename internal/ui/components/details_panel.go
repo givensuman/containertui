@@ -100,9 +100,8 @@ func (dp *DetailsPanel) HandleCopyToClipboard(data any) tea.Cmd {
 		return nil
 	}
 
-	format := infopanel.GetOutputFormat()
-	currentFormat := dp.GetCurrentFormat()
-	if currentFormat == "json" {
+	var format infopanel.OutputFormat
+	if dp.GetCurrentFormat() == "json" {
 		format = infopanel.FormatJSON
 	} else {
 		format = infopanel.FormatYAML
